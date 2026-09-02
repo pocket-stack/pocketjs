@@ -7,6 +7,7 @@
 // and a finger on the trackpad becomes pointer motion. No Solid here so
 // tests can run it bare.
 
+import { RADIUS, ROW_H, SPACE } from "./design.ts";
 import type { Direction, HostState, WinInfo, WsInfo } from "./protocol.ts";
 
 export const SCREEN_W = 480;
@@ -73,6 +74,23 @@ export const TILE_TWO_LINES_H = 40;
 /** Fixed pool of tile slots (protocol WINDOWS_MAX). */
 export const TILE_SLOTS = 24;
 
+/** The corner a drag resizes the window by. Tiles too small to carry it
+ *  keep their whole face for focus and the hold. */
+export const TILE_GRIP = 18;
+export const TILE_GRIP_MIN = 52;
+
+export function tileGripRect(tile: Rect): Rect {
+  return { x: tile.x + tile.w - TILE_GRIP, y: tile.y + tile.h - TILE_GRIP, w: TILE_GRIP, h: TILE_GRIP };
+}
+
+/** Whether the point is on a tile's resize corner, with a few px of slack
+ *  outside the tile so the very corner is reachable. */
+export function tileGripHit(x: number, y: number, tile: Rect): boolean {
+  if (tile.w < TILE_GRIP_MIN || tile.h < TILE_GRIP_MIN) return false;
+  const grip = tileGripRect(tile);
+  return within(x, y, { x: grip.x - 2, y: grip.y - 2, w: grip.w + 6, h: grip.h + 6 });
+}
+
 /** One of the launch bar's equal cells. */
 export function launchCellRect(i: number, count: number): Rect {
   const w = Math.floor(LAUNCH_BAR.w / count);
@@ -95,9 +113,14 @@ export const BALL_Y_MIN = STRIP.h + 6;
 /** It never sits on the launch bar: those three targets are fixed and the
  *  ball would cover one of them. */
 export const BALL_Y_MAX = LAUNCH_BAR.y - BALL - 4;
-/** Where it starts: the right edge, low, over the corner a window's tile
- *  least often needs. */
-export const BALL_HOME = { x: SCREEN_W - BALL - BALL_MARGIN, y: BALL_Y_MAX };
+/**
+ * Where it starts: the LEFT edge, low. The right edge is where a tile's
+ * resize corner lives — in a dwindle layout the rightmost window's corner
+ * lands under a right-edge ball exactly — and a handle that covers a
+ * control is worse than one on the hand's weaker side. It can be dragged
+ * anywhere either way.
+ */
+export const BALL_HOME = { x: BALL_MARGIN, y: BALL_Y_MAX };
 
 /** Released anywhere, the ball goes to the nearer side edge and keeps its
  *  height, clamped under the strip. */
@@ -117,11 +140,11 @@ export function ballHit(x: number, y: number, ball: { x: number; y: number }): b
 // popup (the classic one: a container of rows over the point it answers)
 // ---------------------------------------------------------------------------
 
-export const POPUP_W = 176;
-/** A held tile answers with three rows (stage.tsx). */
-export const TILE_POPUP_ROWS = 3;
-export const POPUP_ROW_H = 36;
-export const POPUP_PAD = 4;
+export const POPUP_W = 184;
+/** A held tile answers with four rows (stage.tsx). */
+export const TILE_POPUP_ROWS = 4;
+export const POPUP_ROW_H = ROW_H.popup;
+export const POPUP_PAD = SPACE.md;
 /** Distance between the anchor point and the popup's near edge. Short: the
  *  popup opens under a held finger and the first row has to be reachable
  *  without letting go. */
@@ -240,9 +263,9 @@ export function trackFill(level: number): number {
 
 export const SHEET: Rect = { x: 68, y: 34, w: 344, h: 274 };
 export const SHEET_HEAD_H = 36;
-export const SHEET_PAD = 8;
-export const SHEET_ROW_H = 40;
-export const SHEET_RADIUS = 14;
+export const SHEET_PAD = SPACE.lg;
+export const SHEET_ROW_H = ROW_H.list;
+export const SHEET_RADIUS = RADIUS.card;
 /** The scrolling list's viewport. */
 export const SHEET_LIST: Rect = {
   x: SHEET.x + SHEET_PAD,

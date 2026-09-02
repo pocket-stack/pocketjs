@@ -362,8 +362,8 @@ async function shots(outDir: string): Promise<void> {
 
   // hold the floating tile: the popup
   const fit = store.fit()!;
-  const px = Math.round(fit.ox + (900 + 210) * fit.s);
-  const py = Math.round(fit.oy + (500 + 130) * fit.s);
+  const px = Math.round(fit.ox + (900 + 180) * fit.s);
+  const py = Math.round(fit.oy + (500 + 100) * fit.s);
   hold(px, py, 30);
   frames(12, [pack(px, py)]);
   shot("popup");
@@ -408,10 +408,6 @@ async function shots(outDir: string): Promise<void> {
   frames(15);
   shot("deck");
   const f = keyboardKeys("lower").find((k) => k.def.label === "f")!;
-  frames(4, [pack(f.x + f.w / 2, f.y + f.h / 2)]);
-  shot("deck-key");
-  frames(1);
-  frames(10);
   hold(f.x + f.w / 2, f.y + f.h / 2, 30);
   frames(12, [pack(f.x + f.w / 2, f.y + f.h / 2)]);
   shot("deck-variants");

@@ -69,6 +69,24 @@ export interface HyprActiveWindow {
  * and the windows — most recently focused first, clipped to WINDOWS_MAX so
  * the line stays under the device's poll cap.
  */
+/**
+ * A title as a person would read it: without the program's own name tacked
+ * on the end. Browsers and editors append " - Chromium", " — Zed", "- NVIM";
+ * the tile already says which program it is.
+ */
+export function cleanTitle(title: string, windowClass: string): string {
+  let out = title.trim();
+  const name = windowClass.trim();
+  if (!name) return out;
+  const tail = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : name;
+  for (const candidate of [name, tail]) {
+    if (!candidate) continue;
+    const pattern = new RegExp(`\\s*[-—–|]\\s*${candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i");
+    out = out.replace(pattern, "");
+  }
+  return out.trim();
+}
+
 export function buildState(
   monitors: HyprMonitor[],
   workspaces: HyprWorkspace[],
@@ -98,10 +116,11 @@ export function buildState(
     .sort((a, b) => a.focusHistoryID - b.focusHistoryID)
     .slice(0, WINDOWS_MAX)
     .map((c) => {
+      const windowClass = c.class || c.initialClass || "?";
       const info: WinInfo = {
         a: c.address,
-        c: c.class || c.initialClass || "?",
-        ti: clipTitle(c.title || ""),
+        c: windowClass,
+        ti: clipTitle(cleanTitle(c.title || "", windowClass)),
         ws: c.workspace.id,
         x: Math.round(c.at[0] - monX),
         y: Math.round(c.at[1] - monY),

@@ -30,8 +30,8 @@ against a scripted desktop; the panel is 480x320.
 | ![the stage](media/stage.png) | ![a held tile's popup](media/popup.png) |
 | ![the control centre](media/control-centre.png) | ![Omarchy's menu as a sheet](media/menu-root.png) |
 | ![the Trigger submenu](media/menu-trigger.png) | ![the machine's applications](media/menu-apps.png) |
-| ![the deck](media/deck.png) | ![a key's bubble](media/deck-key.png) |
-| ![a held key's variants](media/deck-variants.png) | ![an empty workspace](media/empty.png) |
+| ![the deck](media/deck.png) | ![a held key's variants](media/deck-variants.png) |
+| ![an empty workspace](media/empty.png) | ![the connect screen](media/connect.png) |
 
 The stage is 260 px between the strip and the launch bar; the deck runs to
 the bottom edge.
@@ -220,11 +220,13 @@ Lines are JSON (`protocol.ts`, `REMOTE_PROTO` 2). Host → device: `hello`,
 `auth`, `state`, `levels`, `theme`, `cc` (Wi-Fi and what is playing), `menu`
 (hidden and checked ids), `apps` (one page of the application list), `toast`.
 Device → host: `hello`, `act`, `ws`, `win` (focus, close, swap, move, place,
-float, full), `vol`, `bri`, `mute`, `media`, `type`, `key`, `ptr`, `click`,
-`scroll`, `drag`, `wifi`, `menu`, `launch`. **A snapshot has to fit one 8 KiB
-poll batch**, so titles are clipped to 28 code points, windows to the 24 most
-recently focused, coordinates are integers, and the application list arrives
-forty entries at a time. Pointer motion is accumulated on the device and sent
+resize, float, full, same), `vol`, `bri`, `mute`, `media`, `type`, `key`,
+`ptr`, `click`, `scroll`, `drag`, `wifi`, `menu`, `launch`. **A snapshot has
+to fit one 8 KiB poll batch**, so titles are clipped to 34 code points (a
+title is what tells two terminals apart, and the daemon strips the program's
+own name off its tail first), windows to the 24 most recently focused,
+coordinates are integers, and the application list arrives forty entries at a
+time. Pointer motion is accumulated on the device and sent
 at most once per frame.
 
 **The cable.** The device listens on port 8624. When the iPod is plugged into

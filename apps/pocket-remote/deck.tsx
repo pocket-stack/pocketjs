@@ -3,12 +3,14 @@
 // iPod. Five compact rows of keys over a trackpad, so typing and pointing
 // need no mode of their own. Keys go straight to the desktop (wtype) as they
 // are pressed; nothing is buffered on the device, so what the desktop shows
-// is the truth. A pressed key rises, brightens and shows its character in a
-// bubble above the finger — the feedback a capacitive keyboard owes.
+// is the truth. A pressed key rises and brightens — no character bubble: on
+// a keyboard this compact it covered the row above, and on the top row it
+// had to open downwards, which read as a different key lighting up.
 //
-// Chords two ways: sticky modifiers (tap ctrl, then the key; ctrl arms,
-// paints itself, drops after one key) and hold-and-slide variants (hold a
-// letter and ^X ⌥X fan out above it; hold a digit for its F-key).
+// Chords two ways: sticky modifiers (tap ctrl, alt or super, then the key;
+// the modifier arms, paints itself, drops after one key) and hold-and-slide
+// variants (hold a letter and ^X ⌥X fan out above it; hold a digit for its
+// F-key). SUPER is there because Omarchy's own grammar lives on it.
 //
 // The trackpad is a relative pointer: one finger moves, tap clicks, two
 // fingers scroll, a two-finger tap is the right button, and a hold picks
@@ -22,7 +24,6 @@ import { GLYPH } from "./glyphs.ts";
 import type { GestureHandlers } from "./handlers.ts";
 import { Icon } from "./icons.tsx";
 import {
-  bubbleRect,
   chipAt,
   chipRects,
   keyAt,
@@ -101,44 +102,6 @@ function Key(p: { store: RemoteStore; key: KeyRect }) {
   );
 }
 
-/**
- * The pressed character, large, above the key. One instance follows the
- * pressed key: Show holds it while the key underneath changes, so its
- * position has to be written through the mirror rather than read once into
- * a style object — typing "hello" left the bubble parked on the h.
- */
-function Bubble(p: { store: RemoteStore; key: () => KeyRect }) {
-  let root: NodeMirror | null = null;
-  createEffect(() => {
-    if (!root) return;
-    const r = bubbleRect(p.key());
-    jump(root, "insetL", r.x);
-    jump(root, "insetT", r.y);
-    jump(root, "width", r.w);
-    jump(root, "height", r.h);
-  });
-  createEffect(() => {
-    if (!root) return;
-    const depth = p.store.pressT();
-    jump(root, "opacity", depth);
-    jump(root, "translateY", Math.round((1 - depth) * 8));
-    jump(root, "scale", 0.9 + 0.1 * depth);
-  });
-  return (
-    <View
-      class="absolute rounded-[9] bg-[#c0caf5] items-center justify-center"
-      ref={(node) => {
-        root = node;
-        themed("fgFill")(node);
-      }}
-    >
-      <Text class="text-2xl font-bold text-[#13141c]" ref={themed("textOnAccent")}>
-        {p.key().def.label}
-      </Text>
-    </View>
-  );
-}
-
 function Chip(p: { store: RemoteStore; rect: Rect; label: string; i: number; count: number; hot: boolean }) {
   let root: NodeMirror | null = null;
   createEffect(() => {
@@ -166,13 +129,6 @@ function Chip(p: { store: RemoteStore; rect: Rect; label: string; i: number; cou
 
 function Keyboard(p: { store: RemoteStore }) {
   const keys = () => keyboardKeys(p.store.kbLayer());
-  const pressedKey = (): KeyRect | null => {
-    const id = p.store.pressed();
-    if (!id || !id.startsWith("key:")) return null;
-    const [, row, col] = id.split(":");
-    const key = keys().find((k) => k.row === Number(row) && k.col === Number(col));
-    return key && "ch" in key.def.act ? key : null;
-  };
   return (
     <>
       <Index each={keys()}>{(key) => <Key store={p.store} key={key()} />}</Index>
@@ -182,9 +138,6 @@ function Keyboard(p: { store: RemoteStore }) {
             {(rect, i) => <Chip store={p.store} rect={rect()} label={f().variants[i]!.label} i={i} count={f().variants.length} hot={f().hot === i} />}
           </Index>
         )}
-      </Show>
-      <Show when={!p.store.keyFly() && pressedKey()}>
-        <Bubble store={p.store} key={() => pressedKey()!} />
       </Show>
     </>
   );

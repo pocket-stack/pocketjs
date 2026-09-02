@@ -12,8 +12,9 @@ import type { ActionId } from "./actions.ts";
 export const REMOTE_APP = "pocket-remote";
 export const REMOTE_PROTO = 2;
 
-/** Title bytes kept per window in a snapshot. */
-export const TITLE_MAX = 28;
+/** Title code points kept per window in a snapshot. A window's title is
+ *  what tells two terminals apart, so it earns a few more than the class. */
+export const TITLE_MAX = 34;
 /** Windows carried per snapshot; Hyprland's `clients` beyond this are dropped
  *  by focus history (oldest first) so the line stays under the poll cap. */
 export const WINDOWS_MAX = 24;
@@ -202,9 +203,14 @@ export type WindowOp =
   | { op: "move"; a: string; n: number }
   /** Put a floating window at monitor-relative logical px (a drag). */
   | { op: "place"; a: string; x: number; y: number }
+  /** Grow or shrink by monitor px (a corner drag). Relative, like the
+   *  keyboard's own resize bindings. */
+  | { op: "resize"; a: string; dx: number; dy: number }
   /** Toggle floating / fullscreen on one window. */
   | { op: "float"; a: string }
-  | { op: "full"; a: string };
+  | { op: "full"; a: string }
+  /** Open another window of the same program. */
+  | { op: "same"; a: string };
 
 export type ClientWindow = { t: "win" } & WindowOp;
 

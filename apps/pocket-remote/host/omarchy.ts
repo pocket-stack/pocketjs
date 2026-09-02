@@ -476,10 +476,27 @@ export function applicationDirectories(env: NodeJS.ProcessEnv = process.env): st
     .filter((dir) => (seen.has(dir) ? false : (seen.add(dir), true)));
 }
 
-/** Every launchable application on the machine, by name. First directory to
- *  carry an id wins, which is XDG's own rule. */
-export function readApps(env: NodeJS.ProcessEnv = process.env): AppEntry[] {
+export interface AppIndex {
+  /** By display name, for the device's list. */
+  apps: AppEntry[];
+  /** Window class (lowercased) -> desktop entry id, for "open same". */
+  byClass: Map<string, string>;
+}
+
+/**
+ * Every launchable application on the machine, plus an index from window
+ * class to entry so a window can be opened again. First directory to carry
+ * an id wins, which is XDG's own rule; the class index takes
+ * StartupWMClass first, then the entry id, then the executable's name —
+ * which is how a launcher recognises its own windows.
+ */
+export function readAppIndex(env: NodeJS.ProcessEnv = process.env): AppIndex {
   const byId = new Map<string, string>();
+  const byClass = new Map<string, string>();
+  const claim = (key: string, id: string): void => {
+    const k = key.trim().toLowerCase();
+    if (k && !byClass.has(k)) byClass.set(k, id);
+  };
   for (const dir of applicationDirectories(env)) {
     let files: string[];
     try {
@@ -491,18 +508,34 @@ export function readApps(env: NodeJS.ProcessEnv = process.env): AppEntry[] {
       if (!file.endsWith(".desktop")) continue;
       const id = file.slice(0, -".desktop".length);
       if (byId.has(id)) continue;
-      let name: string | null;
+      let entry: Record<string, string>;
       try {
-        name = launchableName(parseDesktopEntry(readFileSync(join(dir, file), "utf8")));
+        entry = parseDesktopEntry(readFileSync(join(dir, file), "utf8"));
       } catch {
         continue;
       }
-      if (name) byId.set(id, name);
+      const name = launchableName(entry);
+      if (!name) continue;
+      byId.set(id, name);
+      if (entry.StartupWMClass) claim(entry.StartupWMClass, id);
+      claim(id, id);
+      const exec = entry.Exec?.split(/\s+/)[0];
+      if (exec) claim(exec.slice(exec.lastIndexOf("/") + 1), id);
     }
   }
-  return [...byId]
-    .map(([i, n]) => ({ i, n }))
-    .sort((a, b) => a.n.localeCompare(b.n));
+  return {
+    apps: [...byId].map(([i, n]) => ({ i, n })).sort((a, b) => a.n.localeCompare(b.n)),
+    byClass,
+  };
+}
+
+/** The entry that would open another window of this class, if any. The
+ *  class's last reverse-DNS component is tried too (org.gnome.Nautilus). */
+export function appForClass(index: AppIndex, windowClass: string): string | null {
+  const raw = windowClass.trim().toLowerCase();
+  if (!raw) return null;
+  const tail = raw.includes(".") ? raw.slice(raw.lastIndexOf(".") + 1) : raw;
+  return index.byClass.get(raw) ?? index.byClass.get(tail) ?? null;
 }
 
 const APP_ID = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;

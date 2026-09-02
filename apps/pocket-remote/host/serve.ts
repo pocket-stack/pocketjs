@@ -48,7 +48,9 @@ import {
   loadMenu,
   Pointer,
   pressKey,
-  readApps,
+  appForClass,
+  type AppIndex,
+  readAppIndex,
   readLevels,
   readMedia,
   readTheme,
@@ -216,7 +218,7 @@ let theme = readTheme();
 let monitorOrigin = { x: 0, y: 0 };
 let lastCc: HostLine | null = null;
 let lastMenu: { hide: string[]; check: string[] } | null = null;
-let lastApps: AppEntry[] = [];
+let apps: AppIndex = { apps: [], byClass: new Map() };
 let menuEntries = loadMenu();
 let menuBusy = false;
 const pointer = new Pointer(undefined, log);
@@ -331,11 +333,14 @@ function appPages(apps: AppEntry[]): HostLine[] {
 
 function refreshApps(): void {
   try {
-    const apps = readApps();
-    if (JSON.stringify(apps) === JSON.stringify(lastApps)) return;
-    lastApps = apps;
-    for (const page of appPages(apps)) broadcast(page);
-    log(`apps: ${apps.length} entries`);
+    const next = readAppIndex();
+    if (JSON.stringify(next.apps) === JSON.stringify(apps.apps)) {
+      apps = next;
+      return;
+    }
+    apps = next;
+    for (const page of appPages(apps.apps)) broadcast(page);
+    log(`apps: ${apps.apps.length} entries, ${apps.byClass.size} classes`);
   } catch (error) {
     log(`apps: ${(error as Error).message}`);
   }
@@ -359,7 +364,7 @@ function sendMirror(conn: Conn): void {
   if (lastState) sendLine(conn, lastState);
   if (lastCc) sendLine(conn, lastCc);
   if (lastMenu) sendLine(conn, { t: "menu", hide: lastMenu.hide, check: lastMenu.check });
-  for (const page of appPages(lastApps)) sendLine(conn, page);
+  for (const page of appPages(apps.apps)) sendLine(conn, page);
 }
 
 // ---------------------------------------------------------------------------
@@ -454,12 +459,39 @@ async function handle(conn: Conn, line: ClientLine): Promise<void> {
           );
           break;
         }
+        case "resize": {
+          // Relative, in monitor px: the same dispatcher Omarchy's own
+          // SUPER+arrow bindings use, so a tiled window moves its split and
+          // a floating one changes size.
+          const dx = Number(line.dx);
+          const dy = Number(line.dy);
+          if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.abs(dx) > 4000 || Math.abs(dy) > 4000) return;
+          if (Math.round(dx) === 0 && Math.round(dy) === 0) return;
+          await batchLogged([
+            `hl.dsp.focus({ window = ${window} })`,
+            `hl.dsp.window.resize({ x = ${Math.round(dx)}, y = ${Math.round(dy)}, relative = true })`,
+          ]);
+          break;
+        }
         case "float":
           await dispatchLogged(`hl.dsp.window.float({ window = ${window}, action = "toggle" })`);
           break;
         case "full":
           await batchLogged([`hl.dsp.focus({ window = ${window} })`, 'hl.dsp.window.fullscreen({ mode = "fullscreen" })']);
           break;
+        case "same": {
+          // Another window of the same program: the class is resolved
+          // against the machine's own desktop entries.
+          const windowClass = lastState?.win.find((w) => w.a === line.a)?.c ?? "";
+          const entry = appForClass(apps, windowClass);
+          if (!entry || !launchApp(entry, log)) {
+            log(`same: no launcher for ${JSON.stringify(windowClass)}`);
+            sendLine(conn, { t: "toast", text: `no launcher for ${windowClass}` });
+            return;
+          }
+          log(`same: ${windowClass} -> ${entry}`);
+          break;
+        }
       }
       scheduleSnapshot();
       return;

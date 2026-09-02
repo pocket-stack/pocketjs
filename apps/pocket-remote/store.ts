@@ -19,6 +19,7 @@ import type { NodeMirror } from "@pocketjs/framework/components";
 import { createScroller, type Scroller } from "@pocketjs/framework/kinetics";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { type ActionId, actionById } from "./actions.ts";
+import { windowLabels } from "./names.ts";
 import type { KbLayer, KeyVariant } from "./keyboard-layout.ts";
 import {
   approach,
@@ -43,6 +44,8 @@ import {
   stripTabs,
   swapDirection,
   type Tab,
+  TILE_GRIP_MIN,
+  tileGripHit,
   TILE_SLOTS,
   TILE_TWO_LINES_H,
   tileRect,
@@ -131,23 +134,33 @@ export interface TileSlot {
   node: NodeMirror | null;
   /** True while the slot is showing a window (free slots paint nothing). */
   live: Accessor<boolean>;
+  /** What the tile leads with: the window's title, or its program's name. */
   label: Accessor<string>;
+  /** The program's name, under the lead line (empty when the lead IS it). */
   title: Accessor<string>;
   /** Tall enough for class + title. */
   twoLines: Accessor<boolean>;
   focused: Accessor<boolean>;
   floating: Accessor<boolean>;
+  /** Big enough to carry the resize corner. */
+  grip: Accessor<boolean>;
   setLive(live: boolean): void;
   setLabel(label: string): void;
   setTitle(title: string): void;
   setTwoLines(two: boolean): void;
   setFocused(focused: boolean): void;
   setFloating(floating: boolean): void;
+  setGrip(grip: boolean): void;
   /** Motion targets, owned by the frame loop. */
   target: Rect;
   targetAlpha: number;
   cur: TileView;
   dying: boolean;
+  /** Paint order among the tiles, written straight to the node: floating
+   *  windows sit above tiled ones and the recently focused above their
+   *  peers, the way the compositor stacks them. The pool assigns slots by
+   *  first free index, so document order says nothing about depth. */
+  z: number;
 }
 
 /** A tiled window being dragged onto another (swap) or onto a tab (move). */
@@ -396,6 +409,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     const [twoLines, setTwoLines] = createSignal(false);
     const [focused, setFocused] = createSignal(false);
     const [floating, setFloating] = createSignal(false);
+    const [grip, setGrip] = createSignal(false);
     slots.push({
       index: i,
       a: null,
@@ -406,16 +420,19 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
       twoLines,
       focused,
       floating,
+      grip,
       setLive,
       setLabel,
       setTitle,
       setTwoLines,
       setFocused,
       setFloating,
+      setGrip,
       target: { x: 0, y: 0, w: 0, h: 0 },
       targetAlpha: 0,
       cur: { x: 0, y: 0, w: 0, h: 0, alpha: 0 },
       dying: false,
+      z: 0,
     });
   }
   const slotOf = (a: string): TileSlot | undefined => slots.find((s) => s.a === a);
@@ -429,6 +446,14 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     jump(node, "height", Math.max(1, Math.round(c.h)));
     jump(node, "opacity", c.alpha);
   };
+  /** zIndex is paint-only and not animatable, so it goes through the raw op
+   *  rather than jump(). PROP.zIndex from contracts/spec/spec.ts, repeated
+   *  here so the guest does not pull the spec module in; the unit test pins
+   *  it to the contract. */
+  const PROP_Z_INDEX = 31;
+  const paintZ = (slot: TileSlot) => {
+    if (slot.node) getOps().setProp(slot.node.id, PROP_Z_INDEX, slot.z);
+  };
 
   /** A floating tile under the finger: its own geometry is the truth until
    *  the daemon echoes the placement, so a snapshot must not yank it back. */
@@ -441,7 +466,8 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     const shown = stageWindows(s);
     const seen = new Set<string>();
     batch(() => {
-      for (const win of shown) {
+      for (let index = 0; index < shown.length; index += 1) {
+        const win = shown[index]!;
         seen.add(win.a);
         const rect = tileRect(win, f);
         let slot = slotOf(win.a);
@@ -456,11 +482,18 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
         slot.dying = false;
         if (!(placing && placing.a === win.a)) slot.target = rect;
         slot.targetAlpha = 1;
-        slot.setLabel(win.c);
-        slot.setTitle(win.ti);
-        slot.setTwoLines(rect.h >= TILE_TWO_LINES_H && rect.w >= 56);
+        const labels = windowLabels(win.c, win.ti);
+        slot.setLabel(labels.lead);
+        slot.setTitle(labels.under);
+        slot.setTwoLines(labels.under !== "" && rect.h >= TILE_TWO_LINES_H && rect.w >= 56);
         slot.setFocused(win.a === s.focus);
         slot.setFloating(win.f === 1);
+        slot.setGrip(rect.w >= TILE_GRIP_MIN && rect.h >= TILE_GRIP_MIN);
+        // stageWindows is tiled-then-floating, each group most recently
+        // focused first: the compositor's own stacking, so later in the
+        // group means lower, and the focused window tops its group.
+        slot.z = (win.f === 1 ? 100 : 10) + (shown.length - index);
+        paintZ(slot);
       }
       for (const slot of slots) {
         if (slot.a !== null && !seen.has(slot.a)) {
@@ -491,6 +524,14 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     return out;
   };
   const isFloating = (a: string): boolean => state()?.win.find((w) => w.a === a)?.f === 1;
+  /** The window whose resize corner is under the point, topmost first. */
+  const gripAt = (x: number, y: number): string | null => {
+    const tiles = tilesForHit();
+    for (let i = tiles.length - 1; i >= 0; i -= 1) {
+      if (tileGripHit(x, y, tiles[i]!.rect)) return tiles[i]!.a;
+    }
+    return null;
+  };
 
   // ---- senders -------------------------------------------------------------------
   const send = (line: ClientLine) => {
@@ -554,6 +595,44 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   const fullWindow = (a: string) => {
     send({ t: "win", op: "full", a });
     say("full screen");
+  };
+
+  /**
+   * A corner drag: grow or shrink the window. Deltas are stage px turned
+   * into monitor px and sent relative, so a tiled window moves its split
+   * and a floating one changes size — the same dispatcher the keyboard's
+   * own resize bindings use. The tile itself is not moved locally: the
+   * layout is the compositor's to compute, and its snapshot follows in a
+   * frame or two.
+   */
+  let sizing: { a: string; dx: number; dy: number; sentAt: number } | null = null;
+  const resizeBegin = (a: string) => {
+    sizing = { a, dx: 0, dy: 0, sentAt: frameCount };
+    focusWindow(a);
+  };
+  const resizeBy = (stageDx: number, stageDy: number, final = false) => {
+    const f = fit();
+    if (!sizing || !f) return;
+    sizing.dx += stageDx / f.s;
+    sizing.dy += stageDy / f.s;
+    if (!final && frameCount < sizing.sentAt + PLACE_SEND_EVERY) return;
+    const dx = Math.round(sizing.dx);
+    const dy = Math.round(sizing.dy);
+    if (dx !== 0 || dy !== 0) {
+      send({ t: "win", op: "resize", a: sizing.a, dx, dy });
+      sizing.dx -= dx;
+      sizing.dy -= dy;
+    }
+    sizing.sentAt = frameCount;
+    if (final) sizing = null;
+  };
+  const resizeCancel = () => {
+    sizing = null;
+  };
+  /** Another window of the same program (the daemon resolves the class). */
+  const openSame = (a: string) => {
+    send({ t: "win", op: "same", a });
+    say("opening another");
   };
 
   /** Begin dragging a floating tile: remember where inside it the finger
@@ -664,14 +743,15 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     if (p && p.hot !== hot) setPopup({ ...p, hot });
   };
   const closePopup = () => setPopup(null);
-  /** Rows: float / tile, full screen, close. */
+  /** Rows: float / tile, full screen, open another, close. */
   const popupRun = (row: number) => {
     const p = popup();
     if (!p) return;
     closePopup();
     if (row === 0) floatWindow(p.a);
     else if (row === 1) fullWindow(p.a);
-    else if (row === 2) closeWindow(p.a);
+    else if (row === 2) openSame(p.a);
+    else if (row === 3) closeWindow(p.a);
   };
 
   const openCc = (ccMode: Cc["mode"], row: 0 | 1 | null = null, refX = 0) => {
@@ -1004,6 +1084,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   const bindSlot = (slot: TileSlot) => (node: NodeMirror) => {
     slot.node = node;
     paintSlot(slot);
+    paintZ(slot);
   };
 
   return {
@@ -1032,6 +1113,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     slots,
     tilesForHit,
     windowAt: (x: number, y: number) => windowAt(x, y, tilesForHit()),
+    gripAt,
     isFloating,
     mode,
     setMode,
@@ -1098,6 +1180,10 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     placeBegin,
     placeTo,
     placeCancel,
+    resizeBegin,
+    resizeBy,
+    resizeCancel,
+    openSame,
     setLevel,
     toggleMute,
     mediaOp,

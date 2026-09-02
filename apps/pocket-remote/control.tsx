@@ -12,12 +12,14 @@ import { createEffect, Show } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 import { jump } from "@pocketjs/framework/animation";
 import type { NodeMirror } from "@pocketjs/framework/components";
+import { GUTTER, ICON_BOX, SPACE } from "./design.ts";
 import { GLYPH } from "./glyphs.ts";
 import type { GestureHandlers } from "./handlers.ts";
 import { Icon } from "./icons.tsx";
 import {
   CC,
   CC_BUTTON,
+  CC_ROW_H,
   CC_ICON_W,
   CC_ICON_X,
   CC_MEDIA,
@@ -40,6 +42,12 @@ import {
 import type { RemoteStore } from "./store.ts";
 import { themed } from "./theme.ts";
 
+/** A name too long for its box, with an ellipsis rather than a hard cut. */
+function clip(text: string, max: number): string {
+  const chars = Array.from(text);
+  return chars.length <= max ? text : `${chars.slice(0, max - 1).join("")}…`;
+}
+
 function Slider(p: { store: RemoteStore; row: 0 | 1 }) {
   const level = () => (p.row === 0 ? p.store.bri() : p.store.vol());
   const hot = () => p.store.cc()?.row === p.row;
@@ -56,7 +64,7 @@ function Slider(p: { store: RemoteStore; row: 0 | 1 }) {
     <View class="absolute left-0 w-[268] h-[36]" style={{ insetT: CC_ROW_Y[p.row] }}>
       <View
         class={hot() ? "absolute top-0 w-[36] h-[36] rounded-[10] bg-[#7aa2f733] items-center justify-center" : "absolute top-0 w-[36] h-[36] rounded-[10] bg-[#1a1b26] items-center justify-center"}
-        style={{ insetL: CC_ICON_X, width: CC_ICON_W }}
+        style={{ insetL: CC_ICON_X, width: CC_ICON_W, height: CC_ROW_H }}
         ref={themed(() => (hot() ? "accentTint" : "surface"))}
       >
         <Icon glyph={glyph} tone={() => (p.row === 1 && p.store.mute() ? "dim" : "fg")} size="lg" />
@@ -117,17 +125,20 @@ export function ControlCentre(p: { store: RemoteStore }) {
           style={{ insetL: CC_WIFI.x, insetT: CC_WIFI.y, width: CC_WIFI.w, height: CC_WIFI.h }}
           ref={themed(() => (wifi().on ? "accentFill" : "surface"))}
         >
-          <View class="absolute left-[10] top-[14] w-[24] h-[24] items-center justify-center">
+          <View
+            class="absolute items-center justify-center"
+            style={{ insetL: GUTTER, insetT: (CC_WIFI.h - ICON_BOX) / 2, width: ICON_BOX, height: ICON_BOX }}
+          >
             <Icon glyph={() => (wifi().on ? GLYPH.wifi : GLYPH.wifiOff)} tone={() => (wifi().on ? "onAccent" : "dim")} size="xl" />
           </View>
-          <View class="absolute left-[42] top-[9] w-[84] h-[18] items-center">
+          <View class="absolute left-[42] top-[8] w-[80] h-[18] items-center">
             <Text class={wifi().on ? "text-sm font-bold text-[#13141c]" : "text-sm font-bold text-[#a9b1d6]"} ref={themed(() => (wifi().on ? "textOnAccent" : "text"))}>
               Wi-Fi
             </Text>
           </View>
-          <View class="absolute left-[42] top-[27] w-[84] h-[16] items-center overflow-hidden">
+          <View class="absolute left-[42] top-[26] w-[80] h-[18] items-center overflow-hidden">
             <Text class={wifi().on ? "text-xs text-[#13141c]" : "text-xs text-[#565f89]"} ref={themed(() => (wifi().on ? "textOnAccent" : "textDim"))}>
-              {wifi().on ? (wifi().ssid || "not connected") : "off"}
+              {wifi().on ? clip(wifi().ssid, 12) || "not connected" : "off"}
             </Text>
           </View>
           <View class={pressed("cc:wifi") ? "absolute left-0 top-0 w-full h-full rounded-[12] bg-[#ffffff22]" : "hidden"} />
@@ -156,15 +167,18 @@ export function ControlCentre(p: { store: RemoteStore }) {
           style={{ insetL: CC_MEDIA.x, insetT: CC_MEDIA.y, width: CC_MEDIA.w, height: CC_MEDIA.h }}
           ref={themed("surface")}
         >
-          <View class="absolute left-[10] top-[12] w-[24] h-[24] items-center justify-center">
+          <View
+            class="absolute items-center justify-center"
+            style={{ insetL: GUTTER, insetT: (CC_MEDIA.h - ICON_BOX) / 2, width: ICON_BOX, height: ICON_BOX }}
+          >
             <Icon glyph={GLYPH.music} tone={() => (media().st === "playing" ? "accent" : "dim")} size="xl" />
           </View>
-          <View class="absolute left-[42] top-[6] w-[100] h-[18] items-center overflow-hidden">
+          <View class="absolute left-[42] top-[5] w-[100] h-[19] items-center overflow-hidden">
             <Text class="text-sm text-[#c0caf5]" ref={themed("text")}>
               {media().st === "none" ? "Nothing playing" : media().title || "Untitled"}
             </Text>
           </View>
-          <View class="absolute left-[42] top-[25] w-[100] h-[16] items-center overflow-hidden">
+          <View class="absolute left-[42] top-[24] w-[100] h-[19] items-center overflow-hidden">
             <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
               {media().st === "none" ? "" : media().artist}
             </Text>

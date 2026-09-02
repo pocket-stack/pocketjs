@@ -24,14 +24,19 @@ import {
   SHEET_HEAD_H,
   SHEET_LIST,
   SHEET_RADIUS,
+  SHEET_ROW_H,
   sheetRowAt,
   sheetRowRect,
   within,
 } from "./layout.ts";
+import { rowMetrics } from "./design.ts";
 import { MENU_DOT_EMOJI, menuTitle } from "./menu-tree.ts";
 import { APPS_ROUTE, type RemoteStore, type SheetRow } from "./store.ts";
 import { themed } from "./theme.ts";
+import { Row as UiRow } from "./ui.tsx";
 
+/** Omarchy's update channels are coloured dots; the remote draws them as
+ *  its own themed dots rather than baking four emoji. */
 function dotClass(tone: "ok" | "warn" | "danger"): string {
   switch (tone) {
     case "ok":
@@ -43,24 +48,8 @@ function dotClass(tone: "ok" | "warn" | "danger"): string {
   }
 }
 
-function RowIcon(p: { row: SheetRow }) {
-  const dot = () => MENU_DOT_EMOJI[p.row.icon];
-  return (
-    <Show
-      when={!dot()}
-      fallback={<View class={dotClass(dot()!)} ref={themed(dot() === "ok" ? "okFillDot" : dot() === "warn" ? "warnFill" : "dangerFill")} />}
-    >
-      <Icon
-        glyph={() => p.row.icon || (p.row.kind === "app" ? GLYPH.apps : GLYPH.dot)}
-        tone={() => (p.row.icon || p.row.kind === "app" ? "fg" : "dim")}
-        size="lg"
-      />
-    </Show>
-  );
-}
-
 function Row(p: { store: RemoteStore; row: SheetRow; i: number }) {
-  const hot = () => p.store.sheet()?.hot === p.i;
+  const dot = () => MENU_DOT_EMOJI[p.row.icon];
   const trailing = (): { glyph: string; tone: Tone } | null => {
     if (p.row.checked) return { glyph: GLYPH.check, tone: "accent" };
     if (p.row.kind === "menu" || (p.row.kind === "provider" && p.row.id === APPS_ROUTE)) {
@@ -69,25 +58,36 @@ function Row(p: { store: RemoteStore; row: SheetRow; i: number }) {
     if (p.row.kind === "provider" || p.row.kind === "link") return { glyph: GLYPH.launch, tone: "dim" };
     return null;
   };
+  const metrics = rowMetrics(SHEET_LIST.w, SHEET_ROW_H, true);
   return (
-    <View class="absolute left-0 w-[328] h-[40]" style={{ insetT: sheetRowRect(p.i).y }}>
-      <View class={hot() ? "absolute left-0 top-[2] w-[328] h-[36] rounded-[8] bg-[#7aa2f733]" : "hidden"} ref={themed("accentTint")} />
-      <View class="absolute left-[8] top-[8] w-[24] h-[24] items-center justify-center">
-        <RowIcon row={p.row} />
-      </View>
-      <View class="absolute left-[42] top-0 w-[252] h-[40] items-center overflow-hidden">
-        <Text class="text-sm text-[#c0caf5]" ref={themed("text")}>
-          {p.row.label}
-        </Text>
-      </View>
-      <Show when={trailing()}>
-        {(t) => (
-          <View class="absolute left-[298] top-[8] w-[24] h-[24] items-center justify-center">
-            <Icon glyph={() => t().glyph} tone={() => t().tone} size="base" />
-          </View>
-        )}
+    <>
+      <UiRow
+        y={sheetRowRect(p.i).y}
+        width={SHEET_LIST.w}
+        height={SHEET_ROW_H}
+        glyph={() => (dot() ? "" : p.row.icon || (p.row.kind === "app" ? GLYPH.apps : GLYPH.dot))}
+        glyphTone={() => (p.row.icon || p.row.kind === "app" ? "fg" : "dim")}
+        label={() => p.row.label}
+        trailing={trailing}
+        hot={() => p.store.sheet()?.hot === p.i}
+      />
+      <Show when={dot()}>
+        <View
+          class="absolute items-center justify-center"
+          style={{
+            insetL: metrics.icon.x,
+            insetT: sheetRowRect(p.i).y + metrics.icon.y,
+            width: metrics.icon.w,
+            height: metrics.icon.h,
+          }}
+        >
+          <View
+            class={dotClass(dot()!)}
+            ref={themed(dot() === "ok" ? "okFillDot" : dot() === "warn" ? "warnFill" : "dangerFill")}
+          />
+        </View>
       </Show>
-    </View>
+    </>
   );
 }
 

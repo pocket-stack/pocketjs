@@ -6,6 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  PROP,
   SVC_POLL_BUF,
   WIRE_BEACON_MAGIC,
   WIRE_BEACON_PORT,
@@ -17,9 +18,20 @@ import {
   WIRE_VERSION,
 } from "../contracts/spec/spec.ts";
 import { ACTIONS, actionById, actionsOf, LAUNCHERS } from "../apps/pocket-remote/actions.ts";
+import { GUTTER, ICON_BOX, RADIUS, ROW_H, rowMetrics, SPACE } from "../apps/pocket-remote/design.ts";
+import { appName, windowLabels } from "../apps/pocket-remote/names.ts";
 import { GLYPH } from "../apps/pocket-remote/glyphs.ts";
 import * as wire from "../apps/pocket-remote/host/wire.ts";
-import { buildState, luaWindow, luaWorkspace, parseEvent, type HyprClient, type HyprMonitor, type HyprWorkspace } from "../apps/pocket-remote/host/hypr.ts";
+import {
+  buildState,
+  cleanTitle,
+  luaWindow,
+  luaWorkspace,
+  parseEvent,
+  type HyprClient,
+  type HyprMonitor,
+  type HyprWorkspace,
+} from "../apps/pocket-remote/host/hypr.ts";
 import { childrenOf, normalizeMenu, parentOf, parseMenuJsonc, stripJsonc } from "../apps/pocket-remote/host/menu-source.ts";
 import {
   applicationDirectories,
@@ -39,9 +51,9 @@ import {
   wtypeArgs,
 } from "../apps/pocket-remote/host/omarchy.ts";
 import {
-  bubbleRect,
   chipAt,
   chipRects,
+  HALF_H,
   KEYBOARD,
   keyAt,
   keyboardKeys,
@@ -74,12 +86,15 @@ import {
   MODE,
   placePopup,
   pointerGain,
+  POPUP_PAD,
   POPUP_ROW_H,
+  POPUP_W,
   popupRowAt,
   SCREEN_H,
   SCREEN_W,
   SHEET,
   SHEET_LIST,
+  SHEET_RADIUS,
   SHEET_ROW_H,
   sheetContentH,
   sheetMaxScroll,
@@ -97,6 +112,9 @@ import {
   TAB_W,
   TAB_X0,
   tabAt,
+  TILE_GRIP,
+  tileGripHit,
+  tileGripRect,
   TILE_POPUP_ROWS,
   tileRect,
   trackDelta,
@@ -340,9 +358,9 @@ describe("pocket-remote layout", () => {
     const below = placePopup(240, 60, TILE_POPUP_ROWS);
     expect(below.below).toBe(true);
     expect(below.y).toBeGreaterThan(60);
-    expect(below.h).toBe(TILE_POPUP_ROWS * POPUP_ROW_H + 8);
+    expect(below.h).toBe(TILE_POPUP_ROWS * POPUP_ROW_H + 2 * POPUP_PAD);
     // A hold-and-slide has to reach row zero without letting go.
-    expect(below.y + 4 + POPUP_ROW_H / 2 - 60).toBeLessThanOrEqual(32);
+    expect(below.y + POPUP_PAD + POPUP_ROW_H / 2 - 60).toBeLessThanOrEqual(32);
     const above = placePopup(240, 300, TILE_POPUP_ROWS);
     expect(above.below).toBe(false);
     expect(above.y + above.h).toBeLessThan(300);
@@ -350,8 +368,8 @@ describe("pocket-remote layout", () => {
     expect(edge.x).toBeGreaterThanOrEqual(STAGE.x + 6);
     const far = placePopup(478, 60, TILE_POPUP_ROWS);
     expect(far.x + far.w).toBeLessThanOrEqual(SCREEN_W - 6);
-    expect(popupRowAt(below, below.x + 10, below.y + 4 + 10)).toBe(0);
-    expect(popupRowAt(below, below.x + 10, below.y + 4 + POPUP_ROW_H * 2 + 10)).toBe(2);
+    expect(popupRowAt(below, below.x + 10, below.y + POPUP_PAD + 10)).toBe(0);
+    expect(popupRowAt(below, below.x + 10, below.y + POPUP_PAD + POPUP_ROW_H * 3 + 10)).toBe(3);
     expect(popupRowAt(below, below.x - 1, below.y + 10)).toBeNull();
     expect(popupRowAt(below, below.x + 10, below.y + below.h + 4)).toBeNull();
   });
@@ -472,7 +490,7 @@ describe("pocket-remote hypr mirror", () => {
   test("reduces monitors, workspaces and clients to one snapshot", () => {
     const clients = [
       client({}),
-      client({ address: "0x55f90e41dd40", class: "chromium", title: "ChatGPT - Chromium", at: [725, 38], size: [1423, 850], focusHistoryID: 1 }),
+      client({ address: "0x55f90e41dd40", class: "chromium", title: "ChatGPT — Chromium", at: [725, 38], size: [1423, 850], focusHistoryID: 1 }),
       client({ address: "0xdead", mapped: false }),
       client({ address: "0xbeef", workspace: { id: -98, name: "special:scratchpad" } }),
     ];
@@ -486,7 +504,7 @@ describe("pocket-remote hypr mirror", () => {
     expect(state.win[1]).toEqual({
       a: "0x55f90e41dd40",
       c: "chromium",
-      ti: "ChatGPT - Chromium",
+      ti: "ChatGPT",
       ws: 1,
       x: 725,
       y: 38,
@@ -725,6 +743,76 @@ describe("pocket-remote baked menu", () => {
   });
 });
 
+describe("pocket-remote design system", () => {
+  test("every list row is laid out from the same tokens", () => {
+    const popup = rowMetrics(POPUP_W, ROW_H.popup, false);
+    const list = rowMetrics(SHEET_LIST.w, ROW_H.list, true);
+    // The leading gutter and the label offset are the same on both.
+    expect(popup.icon.x).toBe(GUTTER);
+    expect(list.icon.x).toBe(GUTTER);
+    expect(popup.label.x).toBe(list.label.x);
+    expect(popup.label.x).toBe(GUTTER + ICON_BOX + SPACE.lg);
+    // The icon box is centred on the row's own height.
+    expect(popup.icon.y * 2 + ICON_BOX).toBe(ROW_H.popup);
+    expect(list.icon.y * 2 + ICON_BOX).toBe(ROW_H.list);
+    // Highlights and hairlines are inset symmetrically.
+    for (const m of [popup, list]) {
+      expect(m.highlight.x * 2 + m.highlight.w).toBe(m === popup ? POPUP_W : SHEET_LIST.w);
+      expect(m.hairline.x * 2 + m.hairline.w).toBe(m === popup ? POPUP_W : SHEET_LIST.w);
+      expect(m.label.x + m.label.w).toBeLessThanOrEqual((m === popup ? POPUP_W : SHEET_LIST.w) - GUTTER);
+    }
+    // Only the row with a trailing glyph reserves room for one.
+    expect(popup.trailing).toBeNull();
+    expect(list.trailing).not.toBeNull();
+    expect(list.trailing!.x + ICON_BOX + GUTTER).toBe(SHEET_LIST.w);
+    expect(list.label.x + list.label.w).toBeLessThanOrEqual(list.trailing!.x);
+    // The tokens the popup and the sheet spell out agree with the geometry.
+    expect(POPUP_ROW_H).toBe(ROW_H.popup);
+    expect(SHEET_ROW_H).toBe(ROW_H.list);
+    expect(SHEET_RADIUS).toBe(RADIUS.card);
+  });
+
+  test("a window is named by its title, and its program by a readable name", () => {
+    expect(appName("foot")).toBe("Foot");
+    expect(appName("org.gnome.Nautilus")).toBe("Files");
+    expect(appName("dev.zed.Zed")).toBe("Zed");
+    expect(appName("qutebrowser")).toBe("Qutebrowser");
+    expect(appName("my-app_thing")).toBe("My app thing");
+    expect(appName("")).toBe("window");
+    // Four terminals used to read "foot" four times; now they read their
+    // own titles with the program underneath.
+    expect(windowLabels("foot", "evan@x1nano:~/code")).toEqual({ lead: "evan@x1nano:~/code", under: "Foot" });
+    expect(windowLabels("foot", "")).toEqual({ lead: "Foot", under: "" });
+    expect(windowLabels("foot", "foot")).toEqual({ lead: "Foot", under: "" });
+    expect(windowLabels("chromium", "Chromium")).toEqual({ lead: "Chromium", under: "" });
+  });
+
+  test("a title loses the program's own name from its tail", () => {
+    expect(cleanTitle("Omarchy Manual - Chromium", "chromium")).toBe("Omarchy Manual");
+    expect(cleanTitle("layout.ts — Zed", "dev.zed.Zed")).toBe("layout.ts");
+    expect(cleanTitle("main.rs | nvim", "nvim")).toBe("main.rs");
+    expect(cleanTitle("Chromium", "chromium")).toBe("Chromium");
+    expect(cleanTitle("evan@x1nano:~", "foot")).toBe("evan@x1nano:~");
+  });
+
+  test("a tile's resize corner sits inside it and only on tiles big enough", () => {
+    const tile = { x: 100, y: 100, w: 120, h: 90 };
+    const grip = tileGripRect(tile);
+    expect(grip.x + grip.w).toBe(tile.x + tile.w);
+    expect(grip.y + grip.h).toBe(tile.y + tile.h);
+    expect(grip.w).toBe(TILE_GRIP);
+    expect(tileGripHit(tile.x + tile.w - 4, tile.y + tile.h - 4, tile)).toBe(true);
+    expect(tileGripHit(tile.x + 10, tile.y + 10, tile)).toBe(false);
+    // Too small to carry one: the whole face stays focus and hold.
+    expect(tileGripHit(104, 104, { x: 100, y: 100, w: 40, h: 40 })).toBe(false);
+  });
+
+  test("the zIndex prop id the tiles write matches the contract", () => {
+    // store.ts repeats it so the guest does not import the spec module.
+    expect(PROP.zIndex).toBe(31);
+  });
+});
+
 describe("pocket-remote deck", () => {
   test("every layer fits over the trackpad and no two keys overlap", () => {
     for (const layer of ["lower", "upper", "sym"] as const) {
@@ -748,6 +836,9 @@ describe("pocket-remote deck", () => {
       expect(labels).toContain("esc");
       expect(labels).toContain("tab");
       expect(labels).toContain("ctrl");
+      // Omarchy's grammar lives on SUPER, so the deck carries it.
+      expect(labels).toContain("super");
+      expect(labels).toContain("return");
     }
     expect(TRACKPAD.y + TRACKPAD.h).toBeLessThanOrEqual(SCREEN_H);
     expect(TRACKPAD.h).toBeGreaterThanOrEqual(96);
@@ -755,19 +846,40 @@ describe("pocket-remote deck", () => {
     expect(lower).toContain(",");
     expect(lower).toContain(".");
     expect(lower).toContain("'");
-    const sym = keyboardKeys("sym").map((k) => k.def.label);
-    expect(sym).toContain("`");
-    expect(sym).toContain("~");
+    expect(keyboardKeys("sym").map((k) => k.def.label)).toContain("`");
     const f = keyboardKeys("lower").find((k) => k.def.label === "f")!;
     expect(keyAt("lower", f.x + 2, f.y + 2)).toBe(f);
     expect(keyAt("lower", f.x + f.w + 1, f.y + 2)).toBe(f); // the gap belongs to a key
     expect(keyAt("lower", 240, TRACKPAD.y + 10)).toBeNull();
   });
 
+  test("the arrows are a laptop's cluster: left, up over down, right", () => {
+    const keys = keyboardKeys("lower");
+    const left = keys.find((k) => k.def.label === "←")!;
+    const up = keys.find((k) => k.def.label === "↑")!;
+    const downKey = keys.find((k) => k.def.label === "↓")!;
+    const right = keys.find((k) => k.def.label === "→")!;
+    // All four in the bottom row, in reading order.
+    for (const key of [left, up, downKey, right]) expect(key.row).toBe(4);
+    expect(left.x).toBeLessThan(up.x);
+    expect(up.x).toBeLessThan(right.x);
+    // Up and down share a column, half height each.
+    expect(up.x).toBe(downKey.x);
+    expect(up.w).toBe(downKey.w);
+    expect(up.h).toBe(HALF_H);
+    expect(downKey.y).toBeGreaterThan(up.y + up.h);
+    expect(downKey.y + downKey.h).toBe(left.y + left.h);
+    // The pair's own gap picks a side rather than sticking to one key.
+    expect(keyAt("lower", up.x + 4, up.y + 2)).toBe(up);
+    expect(keyAt("lower", downKey.x + 4, downKey.y + 2)).toBe(downKey);
+    expect(keyAt("lower", left.x + 4, left.y + 4)).toBe(left);
+  });
+
   test("keys become wire lines: text plain, keysyms under modifiers", () => {
     expect(keyToLine({ ch: "a" }, [])).toEqual({ t: "type", text: "a" });
     expect(keyToLine({ ch: "a" }, ["ctrl"])).toEqual({ t: "key", k: "a", mods: ["ctrl"] });
     expect(keyToLine({ ch: "." }, ["alt"])).toEqual({ t: "key", k: "period", mods: ["alt"] });
+    expect(keyToLine({ key: "space" }, ["super"])).toEqual({ t: "key", k: "space", mods: ["super"] });
     expect(keyToLine({ ch: "€" }, ["ctrl"])).toBeNull();
     expect(keyToLine({ key: "Tab" }, [])).toEqual({ t: "key", k: "Tab" });
     expect(keyToLine({ key: "Return" }, ["ctrl"])).toEqual({ t: "key", k: "Return", mods: ["ctrl"] });
@@ -776,7 +888,7 @@ describe("pocket-remote deck", () => {
     expect(keysymFor("Z")).toBeNull();
   });
 
-  test("held letters and digits offer variants as chips inside the screen; the bubble stays on screen", () => {
+  test("held letters and digits offer variants as chips inside the screen", () => {
     const keys = keyboardKeys("lower");
     const x = keys.find((k) => k.def.label === "x")!;
     expect(x.def.variants!.map((v) => v.label)).toEqual(["^X", "⌥X"]);
@@ -791,14 +903,10 @@ describe("pocket-remote deck", () => {
       }
       expect(chipAt(key, 2, chips[1]!.x + 5, chips[1]!.y + 5)).toBe(1);
       expect(chipAt(key, 2, key.x, key.y + key.h + 60)).toBeNull();
-      const bubble = bubbleRect(key);
-      expect(bubble.x).toBeGreaterThanOrEqual(0);
-      expect(bubble.x + bubble.w).toBeLessThanOrEqual(SCREEN_W);
     }
-    // The top row's chips and bubble open below it.
+    // The top row's chips open below it.
     expect(chipRects(one, 2)[0]!.y).toBeGreaterThan(one.y);
-    expect(bubbleRect(one).y).toBeGreaterThan(one.y);
-    expect(bubbleRect(x).y).toBeLessThan(x.y);
+    expect(chipRects(x, 2)[0]!.y).toBeLessThan(x.y);
   });
 });
 

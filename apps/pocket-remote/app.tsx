@@ -62,7 +62,9 @@ export default function PocketRemote() {
     if (store.sheet()) return sheet;
     if (store.cc()) return control;
     if (store.popup()) return popup;
-    if (ballHit(x, y, store.ball())) return ball;
+    // A tile's resize corner wins where the ball overlaps it: the corner is
+    // 18 px and fixed to its window, the ball is 44 px and can be dragged.
+    if (store.mode() === "stage" && ballHit(x, y, store.ball()) && !store.gripAt(x, y)) return ball;
     if (y < STRIP.h) return strip;
     return store.mode() === "stage" ? stage : deck;
   };
@@ -97,7 +99,9 @@ export default function PocketRemote() {
         </Show>
         <TilePopup store={store} />
         <Toast store={store} />
-        <Show when={!store.sheet()}>
+        {/* The ball belongs to the stage: on the deck it would sit on the
+            trackpad, and the deck has SUPER for Omarchy's own menu. */}
+        <Show when={!store.sheet() && store.mode() === "stage"}>
           <Ball store={store} />
         </Show>
         <Show when={store.cc()}>

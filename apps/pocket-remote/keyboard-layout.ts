@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/keyboard-layout.ts — the deck's geometry and key table
-// with no Solid in it: the keyboard's five compact rows over the trackpad
-// (the laptop's C surface, upside up), keysym names, hold-and-slide
-// variants, chip placement, and the key -> wire-line mapping. deck.tsx
-// renders and handles; tests import this file bare (bun test cannot load the
-// app's .tsx through the Solid transform).
+// with no Solid in it: the keyboard's five rows over the trackpad (the
+// laptop's C surface, upside up), keysym names, hold-and-slide variants,
+// chip placement, and the key -> wire-line mapping. deck.tsx renders and
+// handles; tests import this file bare (bun test cannot load the app's .tsx
+// through the Solid transform).
+//
+// The arrows are a laptop's cluster, not two keys parked at the end of the
+// letters: ← then ↑ over ↓ in one column, then →, at the bottom right where
+// a hand expects them. A stacked pair shares its column, each key half the
+// row's height.
+//
+// SUPER is a sticky modifier like ctrl and alt, so Omarchy's own bindings
+// are reachable from the deck: super then space opens its menu on the
+// laptop, super then 1..9 switches workspace.
 
 import { type Rect, SCREEN_H, SCREEN_W, STRIP } from "./layout.ts";
 import type { Modifier } from "./protocol.ts";
@@ -23,6 +32,9 @@ export const ROWS_TOP = STRIP.h + 4;
 export const ROW_PITCH = 36;
 export const KEY_H = 32;
 export const ROW_COUNT = 5;
+/** Half-height keys (the stacked arrow pair) with a gap between them. */
+export const HALF_GAP = 2;
+export const HALF_H = (KEY_H - HALF_GAP) / 2;
 /** Letter rows: ten columns of 44 px. The top row: twelve of 40. */
 const UNIT = 44;
 const TOP_UNIT = 40;
@@ -45,6 +57,9 @@ export interface KeyDef {
   dark?: boolean;
   /** Hold-and-slide variants (letters and digits). */
   variants?: KeyVariant[];
+  /** Half-height, sharing a column with its partner: "top" comes first and
+   *  does not advance the row, "bottom" sits under it and does. */
+  stack?: "top" | "bottom";
 }
 
 /** Keysym names for the characters that need one (wtype -k). */
@@ -78,53 +93,66 @@ const letters = (row: string): KeyDef[] =>
 const digits = (row: string): KeyDef[] => [...row].map((ch) => ({ label: ch, w: 1, act: { ch }, variants: digitVariants(ch) }));
 const chars = (row: string): KeyDef[] => [...row].map((ch) => ({ label: ch, w: 1, act: { ch } }));
 
+/** esc, the digits, backspace. Twelve columns of 40. */
 const TOP_ROW: KeyDef[] = [
   { label: "esc", w: 1, act: { key: "Escape" }, dark: true },
   ...digits("1234567890"),
   { label: "⌫", w: 1, act: { key: "BackSpace" }, dark: true },
 ];
 
-/** Row three's ends: shift, then the arrows. */
-const rowThree = (middle: KeyDef[], shiftTo: KbLayer): KeyDef[] => [
-  { label: "shift", w: 1.25, act: { layer: shiftTo }, dark: true },
-  ...middle,
-  { label: "↑", w: 0.75, act: { key: "Up" }, dark: true },
-  { label: "↓", w: 0.75, act: { key: "Down" }, dark: true },
-];
+/** Return closes the home row, where a keyboard puts it. */
+const RETURN: KeyDef = { label: "return", w: 1.75, act: { key: "Return" }, dark: true };
 
-/** The bottom row: layer switch, ctrl, alt, tab, space, two punctuation
- *  keys (comma and period; apostrophe and backtick on the symbol layer),
- *  the horizontal arrows and return. 10.75 units. */
+/** The bottom row: the layer switch, the modifiers, tab, space, and the
+ *  arrow cluster. 10.25 units, the same width as the row above. */
 const bottomRow = (layer: KbLayer): KeyDef[] => [
   { label: layer === "sym" ? "abc" : "123", w: 1, act: { layer: layer === "sym" ? "lower" : "sym" }, dark: true },
   { label: "ctrl", w: 1, act: { mod: "ctrl" }, dark: true },
   { label: "alt", w: 1, act: { mod: "alt" }, dark: true },
+  { label: "super", w: 1, act: { mod: "super" }, dark: true },
   { label: "tab", w: 1, act: { key: "Tab" }, dark: true },
-  { label: "space", w: 2.25, act: { key: "space" } },
-  { label: layer === "sym" ? "'" : ",", w: 0.75, act: { ch: layer === "sym" ? "'" : "," } },
-  { label: layer === "sym" ? "`" : ".", w: 0.75, act: { ch: layer === "sym" ? "`" : "." } },
+  { label: "space", w: 3, act: { key: "space" } },
   { label: "←", w: 0.75, act: { key: "Left" }, dark: true },
+  { label: "↑", w: 0.75, act: { key: "Up" }, dark: true, stack: "top" },
+  { label: "↓", w: 0.75, act: { key: "Down" }, dark: true, stack: "bottom" },
   { label: "→", w: 0.75, act: { key: "Right" }, dark: true },
-  { label: "return", w: 1.5, act: { key: "Return" }, dark: true },
 ];
 
 const ROWS: Record<KbLayer, KeyDef[][]> = {
   lower: [
     letters("qwertyuiop"),
-    letters("asdfghjkl"),
-    rowThree([...letters("zxcvbnm"), { label: "'", w: 1, act: { ch: "'" } }], "upper"),
+    [...letters("asdfghjkl"), RETURN],
+    [
+      { label: "shift", w: 1.25, act: { layer: "upper" }, dark: true },
+      ...letters("zxcvbnm"),
+      { label: ",", w: 0.75, act: { ch: "," } },
+      { label: ".", w: 0.75, act: { ch: "." } },
+      { label: "'", w: 1, act: { ch: "'" } },
+    ],
     bottomRow("lower"),
   ],
   upper: [
     chars("QWERTYUIOP"),
-    chars("ASDFGHJKL"),
-    rowThree([...chars("ZXCVBNM"), { label: '"', w: 1, act: { ch: '"' } }], "lower"),
+    [...chars("ASDFGHJKL"), RETURN],
+    [
+      { label: "shift", w: 1.25, act: { layer: "lower" }, dark: true },
+      ...chars("ZXCVBNM"),
+      { label: "!", w: 0.75, act: { ch: "!" } },
+      { label: "?", w: 0.75, act: { ch: "?" } },
+      { label: '"', w: 1, act: { ch: '"' } },
+    ],
     bottomRow("upper"),
   ],
   sym: [
     chars("-/:;()$&@\""),
-    chars("[]{}#%^*+="),
-    rowThree(chars("_\\|~<>!?"), "lower"),
+    [...chars("[]{}#%^*+"), RETURN],
+    [
+      { label: "shift", w: 1.25, act: { layer: "lower" }, dark: true },
+      ...chars("_\\|~<>!"),
+      { label: "=", w: 0.75, act: { ch: "=" } },
+      { label: "?", w: 0.75, act: { ch: "?" } },
+      { label: "`", w: 1, act: { ch: "`" } },
+    ],
     bottomRow("sym"),
   ],
 };
@@ -136,15 +164,25 @@ export interface KeyRect extends Rect {
 }
 
 function layoutRow(row: KeyDef[], r: number, unit: number): KeyRect[] {
-  const total = row.reduce((sum, key) => sum + key.w, 0);
+  const total = row.reduce((sum, key) => sum + (key.stack === "top" ? 0 : key.w), 0);
   let x = Math.round((SCREEN_W - total * unit) / 2);
   const y = ROWS_TOP + r * ROW_PITCH;
-  return row.map((def, c) => {
+  const out: KeyRect[] = [];
+  row.forEach((def, c) => {
     const w = Math.round(def.w * unit);
-    const rect = { x: x + 2, y, w: w - 4, h: KEY_H, def, row: r, col: c };
+    if (def.stack === "top") {
+      out.push({ x: x + 2, y, w: w - 4, h: HALF_H, def, row: r, col: c });
+      return; // its partner shares the column
+    }
+    if (def.stack === "bottom") {
+      out.push({ x: x + 2, y: y + HALF_H + HALF_GAP, w: w - 4, h: HALF_H, def, row: r, col: c });
+      x += w;
+      return;
+    }
+    out.push({ x: x + 2, y, w: w - 4, h: KEY_H, def, row: r, col: c });
     x += w;
-    return rect;
   });
+  return out;
 }
 
 function layoutKeys(layer: KbLayer): KeyRect[] {
@@ -161,25 +199,17 @@ export function keyboardKeys(layer: KbLayer): readonly KeyRect[] {
   return LAYOUTS[layer];
 }
 
-/** The key under a point, with the gaps between keys belonging to their
- *  nearer neighbour so a finger never falls between two. */
+/**
+ * The key under a point. The gaps between keys belong to their nearer
+ * neighbour so a finger never falls between two — except vertically inside
+ * a stacked pair, where the gap is the boundary between up and down.
+ */
 export function keyAt(layer: KbLayer, x: number, y: number): KeyRect | null {
   for (const key of LAYOUTS[layer]) {
-    if (x >= key.x - 2 && x < key.x + key.w + 2 && y >= key.y - 2 && y < key.y + key.h + 2) return key;
+    const slackY = key.def.stack ? 0 : 2;
+    if (x >= key.x - 2 && x < key.x + key.w + 2 && y >= key.y - slackY && y < key.y + key.h + slackY) return key;
   }
   return null;
-}
-
-/** The pressed key's preview bubble: the character, large, above the key
- *  (below it for the top row), the classic capacitive-keyboard feedback. */
-export const BUBBLE_W = 44;
-export const BUBBLE_H = 40;
-export function bubbleRect(key: Rect): Rect {
-  const x = Math.max(2, Math.min(SCREEN_W - 2 - BUBBLE_W, Math.round(key.x + key.w / 2 - BUBBLE_W / 2)));
-  // Sits on the key's top edge, so the first letter row's bubble ends where
-  // the strip begins; the top row's opens below it.
-  const y = key.y >= ROWS_TOP + ROW_PITCH ? key.y - BUBBLE_H : key.y + key.h + 4;
-  return { x, y, w: BUBBLE_W, h: BUBBLE_H };
 }
 
 /** Variant chip geometry: above the key, or below it for the top row. */

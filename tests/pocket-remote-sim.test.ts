@@ -14,6 +14,8 @@ import {
   launchCellRect,
   MODE,
   MODE_HALF_W,
+  POPUP_PAD,
+  POPUP_ROW_H,
   SHEET_LIST,
   sheetRowRect,
   STAGE,
@@ -37,7 +39,7 @@ const SNAPSHOT: HostState = {
   layout: "dwindle",
   win: [
     { a: "0x55f90cb39300", c: "foot", ti: "evan@x1nano-omarchy:~", ws: 1, x: 12, y: 38, w: 701, h: 850 },
-    { a: "0x55f90e41dd40", c: "chromium", ti: "ChatGPT - Chromium", ws: 1, x: 725, y: 38, w: 703, h: 850 },
+    { a: "0x55f90e41dd40", c: "chromium", ti: "ChatGPT", ws: 1, x: 725, y: 38, w: 703, h: 850 },
   ],
 };
 
@@ -143,10 +145,16 @@ describe("pocket-remote in the sim", () => {
     expect(store.vol()).toBeCloseTo(0.4);
     expect(store.wifi().ssid).toBe("Petite Auberge");
     expect(store.media().st).toBe("paused");
-    expect(store.slots.filter((slot) => slot.a !== null).map((slot) => slot.label())).toEqual(["foot", "chromium"]);
+    // A tile leads with the window's title and names its program under it:
+    // four terminals used to read "foot" four times.
+    expect(store.slots.filter((slot) => slot.a !== null).map((slot) => slot.label())).toEqual([
+      "evan@x1nano-omarchy:~",
+      "ChatGPT",
+    ]);
+    expect(store.slots.filter((slot) => slot.a !== null).map((slot) => slot.title())).toEqual(["Foot", "Chromium"]);
     const shown = texts(world.getTree());
-    expect(shown).toContain("foot");
-    expect(shown).toContain("chromium");
+    expect(shown).toContain("evan@x1nano-omarchy:~");
+    expect(shown).toContain("Chromium");
     expect(shown).toContain("dwindle");
     // Tabs are the fixed set Omarchy binds, not the two Hyprland reports.
     expect(store.tabs().map((t) => t.id)).toEqual([1, 2, 3, 4, 5]);
@@ -260,11 +268,11 @@ describe("pocket-remote in the sim", () => {
     for (let i = 0; i < 30; i += 1) world.frame(0, undefined, [pack(from.x, from.y)]);
     const popup = store.popup();
     expect(popup?.a).toBe("0x55f90e41dd40");
-    expect(popup!.place.h).toBe(TILE_POPUP_ROWS * 36 + 8);
+    expect(popup!.place.h).toBe(TILE_POPUP_ROWS * POPUP_ROW_H + 2 * POPUP_PAD);
     // No tree probe while a finger is down: the probe advances the world by
     // one touchless frame, which would end the hold being tested.
     // Slide onto the second row and release: one gesture, no second tap.
-    const row = { x: popup!.place.x + 40, y: popup!.place.y + 4 + 36 + 18 };
+    const row = { x: popup!.place.x + 40, y: popup!.place.y + POPUP_PAD + POPUP_ROW_H + POPUP_ROW_H / 2 };
     for (let i = 1; i <= 6; i += 1) {
       world.frame(0, undefined, [pack(Math.round(from.x + ((row.x - from.x) * i) / 6), Math.round(from.y + ((row.y - from.y) * i) / 6))]);
     }
@@ -274,14 +282,15 @@ describe("pocket-remote in the sim", () => {
     expect(store.popup()).toBeNull();
     expect(sent).toContainEqual({ t: "win", op: "full", a: "0x55f90e41dd40" });
 
-    // Lifting without sliding leaves the popup up, and a later tap acts.
+    // Lifting without sliding leaves the popup up (whatever it covers), and
+    // a later tap acts.
     for (let i = 0; i < 30; i += 1) world.frame(0, undefined, [pack(from.x, from.y)]);
     world.frame(0, undefined, []);
     for (let i = 0; i < 10; i += 1) world.frame(0);
     expect(store.popup()).not.toBeNull();
     expect(texts(world.getTree()).join(" ")).toContain("Full screen");
     const place = store.popup()!.place;
-    tap(world, place.x + 40, place.y + 4 + 18);
+    tap(world, place.x + 40, place.y + POPUP_PAD + POPUP_ROW_H / 2);
     expect(store.popup()).toBeNull();
     expect(sent).toContainEqual({ t: "win", op: "float", a: "0x55f90e41dd40" });
   });
@@ -349,24 +358,66 @@ describe("pocket-remote in the sim", () => {
     expect(sent).toContainEqual({ t: "launch", app: "foot" });
   });
 
-  test("the key bubble follows the key being pressed", async () => {
-    const { world, store } = await connected();
+  test("a tile's corner resizes the window, and its popup opens another", async () => {
+    const { world, store, sent } = await connected();
+    const tile = store.slots.find((slot) => slot.a === "0x55f90e41dd40")!;
+    const grip = { x: Math.round(tile.cur.x + tile.cur.w - 6), y: Math.round(tile.cur.y + tile.cur.h - 6) };
+    expect(store.gripAt(grip.x, grip.y)).toBe("0x55f90e41dd40");
+    // Drag the corner left: the window is asked to shrink by monitor px.
+    world.frame(0, undefined, [pack(grip.x, grip.y)]);
+    for (let i = 1; i <= 8; i += 1) world.frame(0, undefined, [pack(grip.x - i * 6, grip.y)]);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 6; i += 1) world.frame(0);
+    const resizes = sent.filter((line) => (line as { op?: string }).op === "resize") as { dx: number; dy: number }[];
+    expect(resizes.length).toBeGreaterThan(0);
+    expect(resizes.reduce((sum, r) => sum + r.dx, 0)).toBeLessThan(-100);
+    // The focus follows the corner being grabbed, the way a resize does.
+    expect(sent).toContainEqual({ t: "win", op: "focus", a: "0x55f90e41dd40" });
+
+    // Its popup's third row opens another window of the same program.
+    const mid = { x: Math.round(tile.cur.x + tile.cur.w / 2), y: Math.round(tile.cur.y + tile.cur.h / 2) };
+    for (let i = 0; i < 30; i += 1) world.frame(0, undefined, [pack(mid.x, mid.y)]);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 10; i += 1) world.frame(0);
+    const place = store.popup()!.place;
+    expect(texts(world.getTree()).join(" ")).toContain("Open another");
+    tap(world, place.x + 40, place.y + POPUP_PAD + POPUP_ROW_H * 2 + POPUP_ROW_H / 2);
+    expect(sent).toContainEqual({ t: "win", op: "same", a: "0x55f90e41dd40" });
+  });
+
+  test("floating windows are stacked above the tiled ones", async () => {
+    const { store } = await connected();
+    store.applyLine({
+      t: "state",
+      mon: { w: 1440, h: 900, x: 0, y: 0 },
+      ws: [{ id: 1, n: 3 }],
+      active: 1,
+      focus: "0xT1",
+      layout: "dwindle",
+      win: [
+        { a: "0xT1", c: "foot", ti: "one", ws: 1, x: 0, y: 0, w: 720, h: 900 },
+        { a: "0xF1", c: "mpv", ti: "float", ws: 1, x: 300, y: 300, w: 400, h: 300, f: 1 },
+        { a: "0xT2", c: "foot", ti: "two", ws: 1, x: 720, y: 0, w: 720, h: 900 },
+      ],
+    });
+    const z = (a: string) => store.slots.find((slot) => slot.a === a)!.z;
+    expect(z("0xF1")).toBeGreaterThan(z("0xT1"));
+    expect(z("0xF1")).toBeGreaterThan(z("0xT2"));
+    // Within a group, the more recently focused sits higher.
+    expect(z("0xT1")).toBeGreaterThan(z("0xT2"));
+  });
+
+  test("the ball is on the stage only: the deck's bottom half is the trackpad", async () => {
+    const { world, store, sent } = await connected();
     tap(world, MODE.x + MODE_HALF_W + 17, MODE.y + 11);
     expect(store.mode()).toBe("deck");
-    const centres: number[] = [];
-    for (const label of ["h", "e"]) {
-      const key = keyboardKeys("lower").find((k) => k.def.label === label)!;
-      for (let i = 0; i < 5; i += 1) world.frame(0, undefined, [pack(key.x + key.w / 2, key.y + key.h / 2)]);
-      const bubble = brightCentre(world.render(), key.y - 40, key.y);
-      expect(bubble).not.toBeNull();
-      expect(Math.abs(bubble! - (key.x + key.w / 2))).toBeLessThan(8);
-      centres.push(bubble!);
-      world.frame(0, undefined, []);
-      for (let i = 0; i < 14; i += 1) world.frame(0);
-    }
-    // It moved: one instance follows the pressed key rather than parking on
-    // the first one.
-    expect(Math.abs(centres[1]! - centres[0]!)).toBeGreaterThan(40);
+    // A touch where the ball would be moves the pointer instead.
+    const ball = store.ball();
+    for (let i = 0; i < 6; i += 1) world.frame(0, undefined, [pack(ball.x + 22 + i * 5, ball.y + 22)]);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 4; i += 1) world.frame(0);
+    expect(store.sheet()).toBeNull();
+    expect(sent.some((line) => (line as { t: string }).t === "ptr")).toBe(true);
   });
 
   test("a hello that is still pending shows the approval screen", async () => {

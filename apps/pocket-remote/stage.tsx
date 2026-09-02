@@ -14,7 +14,18 @@ import { type ActionId, actionById, LAUNCHERS } from "./actions.ts";
 import { GLYPH } from "./glyphs.ts";
 import type { GestureHandlers } from "./handlers.ts";
 import { Icon } from "./icons.tsx";
-import { LAUNCH_BAR, launchCellAt, launchCellRect, popupRowAt, STAGE, STRIP, SWIPE_PX, tabAt, within } from "./layout.ts";
+import {
+  LAUNCH_BAR,
+  launchCellAt,
+  launchCellRect,
+  popupRowAt,
+  STAGE,
+  STRIP,
+  SWIPE_PX,
+  tabAt,
+  within,
+} from "./layout.ts";
+import { ICON_BOX, SPACE } from "./design.ts";
 import { PopupBox, type PopupRow } from "./popup.tsx";
 import type { RemoteStore, TileSlot } from "./store.ts";
 import { themed } from "./theme.ts";
@@ -60,6 +71,15 @@ function Tile(p: { store: RemoteStore; slot: TileSlot }) {
           <Icon glyph={GLYPH.float} tone="dim" size="sm" />
         </View>
       </Show>
+      {/* the resize corner: three steps, the way a window's own grip reads */}
+      <Show when={s.grip()}>
+        <View class="absolute right-[3] bottom-[3] w-[14] h-[14]">
+          <View class="absolute right-0 bottom-0 w-[14] h-[2] bg-[#565f89]" ref={themed("fgDimFill")} />
+          <View class="absolute right-0 bottom-0 w-[2] h-[14] bg-[#565f89]" ref={themed("fgDimFill")} />
+          <View class="absolute right-[5] bottom-[5] w-[9] h-[2] bg-[#565f8999]" ref={themed("fgDimFill")} />
+          <View class="absolute right-[5] bottom-[5] w-[2] h-[9] bg-[#565f8999]" ref={themed("fgDimFill")} />
+        </View>
+      </Show>
       <View
         class={
           dragged()
@@ -90,19 +110,26 @@ export function LaunchBar(p: { store: RemoteStore }) {
       <Index each={LAUNCHERS}>
         {(id, i) => {
           const r = launchCellRect(i, LAUNCHERS.length);
+          // The icon-plus-label group, centred: a 24 px glyph, a gap, and
+          // room for the longest of the three labels.
+          const groupW = ICON_BOX + SPACE.lg + 62;
+          const group = { x: Math.round((r.w - groupW) / 2), w: groupW };
           return (
-            <View class="absolute top-0 h-[32] items-center justify-center" style={{ insetL: r.x, width: r.w }}>
-              <View class="absolute left-[34] top-[4] w-[24] h-[24] items-center justify-center">
-                <Icon glyph={LAUNCH_GLYPH[id()] ?? GLYPH.launch} tone="fg" size="lg" />
-              </View>
-              <View class="absolute left-[62] top-0 w-[70] h-[32] items-center">
-                <Text class="text-sm text-[#c0caf5]" ref={themed("text")}>
-                  {actionById(id())?.label ?? id()}
-                </Text>
+            <View class="absolute top-0 h-[32]" style={{ insetL: r.x, width: r.w }}>
+              {/* the icon and label sit as one group, centred in the cell */}
+              <View class="absolute top-0 h-[32]" style={{ insetL: group.x, width: group.w }}>
+                <View class="absolute left-0 top-[4] w-[24] h-[24] items-center justify-center">
+                  <Icon glyph={LAUNCH_GLYPH[id()] ?? GLYPH.launch} tone="fg" size="lg" />
+                </View>
+                <View class="absolute top-0 h-[32] items-center" style={{ insetL: ICON_BOX + SPACE.lg, width: group.w - ICON_BOX - SPACE.lg }}>
+                  <Text class="text-sm text-[#c0caf5]" ref={themed("text")}>
+                    {actionById(id())?.label ?? id()}
+                  </Text>
+                </View>
               </View>
               <View
-                class={p.store.pressed() === `launch:${i}` ? "absolute left-[2] top-[2] h-[28] rounded-[8] bg-[#ffffff22]" : "hidden"}
-                style={{ width: r.w - 4 }}
+                class={p.store.pressed() === `launch:${i}` ? "absolute top-[2] h-[28] rounded-[8] bg-[#ffffff22]" : "hidden"}
+                style={{ insetL: SPACE.xs, width: r.w - 2 * SPACE.xs }}
               />
               <View class={i === 0 ? "hidden" : "absolute left-0 top-[6] w-[1] h-[20] bg-[#41486880]"} ref={themed("surfaceMutedDim")} />
             </View>
@@ -118,6 +145,7 @@ export function LaunchBar(p: { store: RemoteStore }) {
 const popupRows = (floating: boolean): PopupRow[] => [
   { glyph: floating ? GLYPH.tile : GLYPH.float, label: floating ? "Tile" : "Float" },
   { glyph: GLYPH.fullscreen, label: "Full screen" },
+  { glyph: GLYPH.apps, label: "Open another" },
   { glyph: GLYPH.close, label: "Close", tone: "danger" },
 ];
 
@@ -174,12 +202,21 @@ export function TilePopup(p: { store: RemoteStore }) {
 // gestures
 // ---------------------------------------------------------------------------
 
-type Target = { kind: "tile"; a: string } | { kind: "launch"; i: number } | { kind: "stage" } | { kind: "none" };
+type Target =
+  | { kind: "tile"; a: string }
+  | { kind: "grip"; a: string }
+  | { kind: "launch"; i: number }
+  | { kind: "stage" }
+  | { kind: "none" };
 
 function stageTarget(store: RemoteStore, x: number, y: number): Target {
   const cell = launchCellAt(x, y, LAUNCHERS.length);
   if (cell !== null) return { kind: "launch", i: cell };
   if (!within(x, y, STAGE)) return { kind: "none" };
+  // The corner first: it overlaps the tile it belongs to, and on the stage
+  // it may also overlap the neighbour below and to the right.
+  const grip = store.gripAt(x, y);
+  if (grip) return { kind: "grip", a: grip };
   const a = store.windowAt(x, y);
   if (a) return { kind: "tile", a };
   return { kind: "stage" };
@@ -189,40 +226,56 @@ export function stageHandlers(store: RemoteStore): GestureHandlers {
   let down: Target = { kind: "none" };
   let swiping = false;
   let placing = false;
-  /** The contact that opened a tile's popup is still down: it now picks a
-   *  row. One gesture — hold, slide, release — with lifting early leaving
-   *  the popup up for a tap. */
+  /**
+   * The contact that opened a tile's popup is still down: it now picks a
+   * row. One gesture — hold, slide, release — and lifting WITHOUT sliding
+   * leaves the popup up for a tap instead of running whatever the resting
+   * finger happens to cover, which on a 260 px stage is often a row (and
+   * the last row closes the window).
+   */
   let picking = false;
+  let pickFrom = { x: 0, y: 0 };
+  const PICK_SLOP = 12;
+  const slid = (c: { x: number; y: number }): boolean =>
+    Math.abs(c.x - pickFrom.x) > PICK_SLOP || Math.abs(c.y - pickFrom.y) > PICK_SLOP;
+  /** A corner drag: the window is being resized. */
+  let sizing = false;
   const reset = () => {
     store.pressRelease();
     store.setDrag(null);
     swiping = false;
     placing = false;
     picking = false;
+    sizing = false;
   };
   return {
     onDown: (c) => {
       down = stageTarget(store, c.x, c.y);
       picking = false;
-      store.pressDown(down.kind === "tile" ? `tile:${down.a}` : down.kind === "launch" ? `launch:${down.i}` : null);
+      sizing = false;
+      store.pressDown(
+        down.kind === "tile" || down.kind === "grip" ? `tile:${down.a}` : down.kind === "launch" ? `launch:${down.i}` : null,
+      );
     },
     onMove: (c) => {
       if (!picking) return;
       const popup = store.popup();
-      if (popup) store.popupHover(popupRowAt(popup.place, c.x, c.y));
+      if (popup) store.popupHover(slid(c) ? popupRowAt(popup.place, c.x, c.y) : null);
     },
     onTap: () => {
       const t = down;
       store.pressRelease();
-      if (t.kind === "tile") store.focusWindow(t.a);
+      if (t.kind === "tile" || t.kind === "grip") store.focusWindow(t.a);
       else if (t.kind === "launch") store.act(LAUNCHERS[t.i] as ActionId);
       down = { kind: "none" };
     },
     onLongPress: (c) => {
+      if (down.kind === "grip") return; // the corner is a drag, not a menu
       if (down.kind === "tile") {
         store.pressDown(null);
         store.openPopup(down.a, c.x, c.y);
         picking = true;
+        pickFrom = { x: c.x, y: c.y };
         down = { kind: "none" };
       }
     },
@@ -230,7 +283,11 @@ export function stageHandlers(store: RemoteStore): GestureHandlers {
       if (picking) return; // the slide belongs to the popup, not the stage
       const t = down;
       store.pressDown(null);
-      if (t.kind === "tile" && store.isFloating(t.a)) {
+      if (t.kind === "grip") {
+        sizing = true;
+        store.resizeBegin(t.a);
+        store.resizeBy(c.fdx, c.fdy);
+      } else if (t.kind === "tile" && store.isFloating(t.a)) {
         placing = true;
         store.placeBegin(t.a, c.startX, c.startY);
         store.placeTo(c.x, c.y);
@@ -243,7 +300,11 @@ export function stageHandlers(store: RemoteStore): GestureHandlers {
     onPanMove: (c) => {
       if (picking) {
         const popup = store.popup();
-        if (popup) store.popupHover(popupRowAt(popup.place, c.x, c.y));
+        if (popup) store.popupHover(slid(c) ? popupRowAt(popup.place, c.x, c.y) : null);
+        return;
+      }
+      if (sizing) {
+        store.resizeBy(c.fdx, c.fdy);
         return;
       }
       if (placing) {
@@ -265,12 +326,17 @@ export function stageHandlers(store: RemoteStore): GestureHandlers {
     },
     onUp: (c) => {
       if (picking) {
-        // Released on a row: run it. Released anywhere else: the popup stays
+        // Slid onto a row: run it. Lifted where it started: the popup stays
         // up, so the same choice can be made with a tap.
         const popup = store.popup();
-        const row = popup ? popupRowAt(popup.place, c.x, c.y) : null;
+        const row = popup && slid(c) ? popupRowAt(popup.place, c.x, c.y) : null;
         if (row !== null) store.popupRun(row);
         else store.popupHover(null);
+        reset();
+        return;
+      }
+      if (sizing) {
+        store.resizeBy(0, 0, true);
         reset();
         return;
       }
@@ -293,6 +359,7 @@ export function stageHandlers(store: RemoteStore): GestureHandlers {
     },
     onCancel: () => {
       if (placing) store.placeCancel();
+      if (sizing) store.resizeCancel();
       if (picking) store.popupHover(null);
       reset();
     },
