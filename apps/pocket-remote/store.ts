@@ -28,6 +28,7 @@ import {
   type KbLayer,
   type KeyVariant,
 } from "./keyboard-layout.ts";
+
 import {
   approach,
   BALL,
@@ -53,6 +54,7 @@ import {
   type Tab,
   TILE_GRIP_MIN,
   tileGripHit,
+  tileGripTarget,
   TILE_SLOTS,
   TILE_TWO_LINES_H,
   tileRect,
@@ -244,17 +246,14 @@ export interface KeyFly {
 }
 
 /**
- * The arrow compass: the key is down, a direction may be armed by the slide,
- * and holding one repeats it. `mods` is the sticky modifier state the press
- * consumed, kept for the whole hold so a held ctrl+Left stays ctrl+Left.
+ * A d-pad key under a finger: it fires at once, then repeats while held.
+ * `mods` is the sticky modifier state the press consumed, kept for the whole
+ * hold so a held ctrl+Left stays ctrl+Left.
  */
-export interface ArrowFan {
-  key: Rect;
-  dir: Direction4 | null;
-  /** Frame the current direction was armed. */
+export interface DpadHold {
+  dir: Direction4;
+  /** Frame the key went down. */
   at: number;
-  /** Presses already sent during this hold. */
-  fired: number;
   mods: Modifier[];
 }
 
@@ -352,7 +351,10 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   /** Restarted on every route change: the list's own entrance. */
   const [sheetListT, setSheetListT] = createSignal(0);
   const [keyFly, setKeyFly] = createSignal<KeyFly | null>(null);
-  const [arrowFan, setArrowFan] = createSignal<ArrowFan | null>(null);
+  const [dpad, setDpad] = createSignal<DpadHold | null>(null);
+  /** The click key is held: the laptop's left button is down, and a finger
+   *  on the pad is now dragging a selection. */
+  const [clickHeld, setClickHeld] = createSignal(false);
   const [flyT, setFlyT] = createSignal(0);
   const [toast, setToast] = createSignal("");
   const [frame, setFrame] = createSignal(0);
@@ -629,8 +631,11 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
    * frame or two.
    */
   let sizing: { a: string; dx: number; dy: number; sentAt: number } | null = null;
+  /** The window under a corner drag, so its tile can say so. */
+  const [resizing, setResizing] = createSignal<string | null>(null);
   const resizeBegin = (a: string) => {
     sizing = { a, dx: 0, dy: 0, sentAt: frameCount };
+    setResizing(a);
     focusWindow(a);
   };
   const resizeBy = (stageDx: number, stageDy: number, final = false) => {
@@ -647,10 +652,14 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
       sizing.dy -= dy;
     }
     sizing.sentAt = frameCount;
-    if (final) sizing = null;
+    if (final) {
+      sizing = null;
+      setResizing(null);
+    }
   };
   const resizeCancel = () => {
     sizing = null;
+    setResizing(null);
   };
   /** Another window of the same program (the daemon resolves the class). */
   const openSame = (a: string) => {
@@ -739,8 +748,27 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     scrollDx += dx;
     scrollDy += dy;
   };
-  const click = (b: "l" | "r" | "m") => send({ t: "click", b });
-  const dragButton = (on: boolean) => send({ t: "drag", on: on ? 1 : 0 });
+  /** A pointer click, with any sticky modifier held around it — ctrl-click
+   *  extends a selection, and a virtual pointer cannot carry a modifier of
+   *  its own, so the daemon holds it. */
+  const click = (b: "l" | "r" | "m") => {
+    const mods = kbMods();
+    if (mods.length) setKbMods([]);
+    send(mods.length ? { t: "click", b, mods } : { t: "click", b });
+  };
+  /** The left button down or up. Down takes the sticky modifiers with it and
+   *  the daemon holds them until the button comes back up. */
+  const dragButton = (on: boolean) => {
+    if (!on) {
+      setClickHeld(false);
+      send({ t: "drag", on: 0 });
+      return;
+    }
+    const mods = kbMods();
+    if (mods.length) setKbMods([]);
+    setClickHeld(true);
+    send(mods.length ? { t: "drag", on: 1, mods } : { t: "drag", on: 1 });
+  };
 
   /** Run a row of Omarchy's menu on the laptop. */
   const menuRun = (id: string) => {
@@ -874,28 +902,15 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     else menuRun(row.id);
   };
 
-  /** The compass key went down: open the legend and take the sticky
-   *  modifiers with it, so ctrl+Left is one gesture. */
-  const openArrows = (key: Rect) => {
+  /** A d-pad key went down: one press now, then a repeat while it is held.
+   *  A sticky modifier rides along for the whole hold. */
+  const dpadDown = (dir: Direction4) => {
     const mods = kbMods();
     if (mods.length) setKbMods([]);
-    setArrowFan({ key, dir: null, at: frameCount, fired: 0, mods });
+    setDpad({ dir, at: frameCount, mods });
+    typeKey(DIRECTION_KEYSYM[dir], mods);
   };
-  /** The slide picked a direction. Changing direction restarts the hold, and
-   *  nothing is sent on the way: sliding through a direction must not move
-   *  the cursor. */
-  const armArrow = (dir: Direction4 | null) => {
-    const fan = arrowFan();
-    if (!fan || fan.dir === dir) return;
-    setArrowFan({ ...fan, dir, at: frameCount, fired: 0 });
-  };
-  /** Released: a flick that never repeated sends its one press. */
-  const releaseArrows = () => {
-    const fan = arrowFan();
-    setArrowFan(null);
-    if (fan && fan.dir && fan.fired === 0) typeKey(DIRECTION_KEYSYM[fan.dir], fan.mods);
-  };
-  const closeArrows = () => setArrowFan(null);
+  const dpadUp = () => setDpad(null);
 
   const openKeyFly = (fly: KeyFly) => {
     setKeyFly(fly);
@@ -1070,14 +1085,11 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
       setFlyT(easeProgress(flyT()));
       moved = true;
     }
-    const fan = arrowFan();
-    if (fan) {
-      if (fan.dir) {
-        const held = frameCount - fan.at;
-        if (held >= ARROW_HOLD_FRAMES && (held - ARROW_HOLD_FRAMES) % ARROW_REPEAT_FRAMES === 0) {
-          typeKey(DIRECTION_KEYSYM[fan.dir], fan.mods);
-          setArrowFan({ ...fan, fired: fan.fired + 1 });
-        }
+    const held = dpad();
+    if (held) {
+      const frames = frameCount - held.at;
+      if (frames >= ARROW_HOLD_FRAMES && (frames - ARROW_HOLD_FRAMES) % ARROW_REPEAT_FRAMES === 0) {
+        typeKey(DIRECTION_KEYSYM[held.dir], held.mods);
       }
       moved = true;
     }
@@ -1217,11 +1229,10 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     sheetArm,
     sheetTap,
     keyFly,
-    arrowFan,
-    openArrows,
-    armArrow,
-    releaseArrows,
-    closeArrows,
+    dpad,
+    dpadDown,
+    dpadUp,
+    clickHeld,
     flyT,
     openKeyFly,
     closeKeyFly,
@@ -1242,6 +1253,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     placeBegin,
     placeTo,
     placeCancel,
+    resizing,
     resizeBegin,
     resizeBy,
     resizeCancel,

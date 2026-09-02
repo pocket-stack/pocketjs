@@ -50,6 +50,7 @@ import {
   pressKey,
   appForClass,
   type AppIndex,
+  holdModifiers,
   readAppIndex,
   readLevels,
   readMedia,
@@ -222,6 +223,16 @@ let apps: AppIndex = { apps: [], byClass: new Map() };
 let menuEntries = loadMenu();
 let menuBusy = false;
 const pointer = new Pointer(undefined, log);
+/** How long a modifier is held around a pointer press, and how long the
+ *  press waits for it to land. A press is one round trip on the same
+ *  machine; 40 ms is generous and invisible. */
+const MODIFIER_HOLD_MS = 400;
+const MODIFIER_DRAG_MS = 1500;
+const MODIFIER_SETTLE_MS = 40;
+
+function modifiersOf(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((m): m is string => typeof m === "string") : [];
+}
 let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 let snapshotBusy = false;
 let snapshotDirty = false;
@@ -535,18 +546,39 @@ async function handle(conn: Conn, line: ClientLine): Promise<void> {
       if (Number.isFinite(dx) && Number.isFinite(dy) && Math.abs(dx) < 2000 && Math.abs(dy) < 2000) pointer.move(dx, dy);
       return;
     }
-    case "click":
-      if (line.b === "l" || line.b === "r" || line.b === "m") pointer.click(line.b);
+    case "click": {
+      if (line.b !== "l" && line.b !== "r" && line.b !== "m") return;
+      const mods = modifiersOf(line.mods);
+      if (mods.length === 0) {
+        pointer.click(line.b);
+        return;
+      }
+      // The modifier has to be down while the button goes down, and the
+      // pointer cannot hold one: wtype keeps it for a moment and the click
+      // lands inside that window.
+      if (holdModifiers(mods, MODIFIER_HOLD_MS, log)) {
+        const button = line.b;
+        setTimeout(() => pointer.click(button), MODIFIER_SETTLE_MS);
+      } else {
+        pointer.click(line.b);
+      }
       return;
+    }
     case "scroll": {
       const dx = Number(line.dx);
       const dy = Number(line.dy);
       if (Number.isFinite(dx) && Number.isFinite(dy) && Math.abs(dx) < 2000 && Math.abs(dy) < 2000) pointer.scroll(dx, dy);
       return;
     }
-    case "drag":
+    case "drag": {
+      const mods = modifiersOf(line.mods);
+      if (line.on === 1 && mods.length && holdModifiers(mods, MODIFIER_DRAG_MS, log)) {
+        setTimeout(() => pointer.button("l", true), MODIFIER_SETTLE_MS);
+        return;
+      }
       pointer.button("l", line.on === 1);
       return;
+    }
     case "wifi":
       setWifi(line.on === 1, log);
       setTimeout(() => void refreshCc(), 1500);

@@ -257,6 +257,9 @@ export interface ClientPointer {
 export interface ClientClick {
   t: "click";
   b: "l" | "r" | "m";
+  /** Held around the click: ctrl-click extends a selection, and a virtual
+   *  pointer cannot carry a modifier on its own. */
+  mods?: Modifier[];
 }
 
 /** Two-finger scroll, in px of travel. */
@@ -266,10 +269,12 @@ export interface ClientScroll {
   dy: number;
 }
 
-/** Hold the left button down (a long-press on the trackpad) and let go. */
+/** Hold the left button down (the click key, or a long-press on the pad) and
+ *  let go. `mods` is held for as long as the button is. */
 export interface ClientDrag {
   t: "drag";
   on: 0 | 1;
+  mods?: Modifier[];
 }
 
 export interface ClientWifi {

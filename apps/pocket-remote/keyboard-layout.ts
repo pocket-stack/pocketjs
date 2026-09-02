@@ -1,27 +1,38 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/keyboard-layout.ts — the deck's geometry and key table
-// with no Solid in it: the keyboard's five rows over the trackpad (the
-// laptop's C surface, upside up), keysym names, hold-and-slide variants,
-// chip placement, and the key -> wire-line mapping. deck.tsx renders and
-// handles; tests import this file bare (bun test cannot load the app's .tsx
-// through the Solid transform).
+// with no Solid in it: the keyboard's five rows, the palm-rest band under
+// them (menu key, click key, trackpad, d-pad), keysym names, hold-and-slide
+// variants, and the key -> wire-line mapping. deck.tsx renders and handles;
+// tests import this file bare (bun test cannot load the app's .tsx through
+// the Solid transform).
 //
-// The arrows are ONE key. Four keys sharing the width of two were each too
-// small to hit on a 480 px panel, so pressing the arrow key fans a compass
-// out above it and the SLIDE picks the direction — no aiming, and holding a
-// direction repeats it, which is what an arrow key is for. Vector, not
-// target: the legend shows what is armed, the finger does not have to reach
-// it.
+// The band under the keyboard is a laptop's C surface read literally: the
+// trackpad does not run edge to edge, and what a laptop leaves as palm rest
+// carries the two things a hand wants beside a pad — Omarchy's menu on the
+// left with the click button under it, a d-pad cross on the right. Four
+// discrete arrow keys beat the slide-a-direction compass they replace: no
+// gesture to learn and nothing to aim inside.
+//
+// TYPING ACCURACY. Two cheap, well-worn corrections, because the visual gaps
+// a keyboard wants and the target sizes a finger wants are not the same
+// thing:
+//   1. Hit regions TILE the keyboard. A touch goes to the key whose
+//      rectangle it is nearest (zero inside), not to a rectangle it must
+//      land inside, so the gaps between keys belong to their neighbours
+//      instead of swallowing a press. Keys can then be drawn with generous
+//      gaps — 6 px here, up from 4 — without shrinking what a finger hits.
+//   2. A downward BIAS correction. On a capacitive panel a press lands below
+//      where the eye aimed (the contact patch grows towards the palm), so
+//      the hit test moves the touch up a few pixels before assigning it.
+// Both are what the platform keyboards do, and neither costs a frame.
 //
 // SUPER is a sticky modifier like ctrl and alt, so Omarchy's own bindings
 // are reachable from the deck: super then space opens its menu on the
 // laptop, super then 1..9 switches workspace.
 
 import { GLYPH } from "./glyphs.ts";
-import { type Rect, SCREEN_H, SCREEN_W, STRIP } from "./layout.ts";
+import { type Rect, SCREEN_H, SCREEN_W, STRIP, within } from "./layout.ts";
 import type { Modifier } from "./protocol.ts";
-
-const ARROWS_GLYPH = GLYPH.arrows;
 
 export type KbLayer = "lower" | "upper" | "sym";
 
@@ -32,32 +43,83 @@ export interface KeyVariant {
   mods: Modifier[];
 }
 
-/** Five rows of 32 px keys on a 36 px pitch, starting under the strip. */
+/** Five rows on a 36 px pitch: 30 px of key and 6 px of gap. */
 export const ROWS_TOP = STRIP.h + 4;
 export const ROW_PITCH = 36;
-export const KEY_H = 32;
+export const KEY_H = 30;
 export const ROW_COUNT = 5;
+/** Horizontal inset per key: 3 px a side, so 6 px between two keys. */
+const KEY_INSET = 3;
 /** Letter rows: ten columns of 44 px. The top row: twelve of 40. */
 const UNIT = 44;
 const TOP_UNIT = 40;
 
-export const KEYBOARD: Rect = { x: 0, y: STRIP.h, w: SCREEN_W, h: ROWS_TOP - STRIP.h + ROW_COUNT * ROW_PITCH };
-/** The trackpad fills what the keyboard leaves. */
-export const TRACKPAD: Rect = { x: 4, y: KEYBOARD.y + KEYBOARD.h, w: SCREEN_W - 8, h: SCREEN_H - 4 - (KEYBOARD.y + KEYBOARD.h) };
+export const KEYBOARD: Rect = {
+  x: 0,
+  y: STRIP.h,
+  w: SCREEN_W,
+  h: ROWS_TOP - STRIP.h + (ROW_COUNT - 1) * ROW_PITCH + KEY_H,
+};
 
-/** The four directions the compass key can send. */
+// ---------------------------------------------------------------------------
+// the band under the keyboard: menu | click | trackpad | d-pad
+// ---------------------------------------------------------------------------
+
+export const BAND: Rect = {
+  x: 0,
+  y: KEYBOARD.y + KEYBOARD.h + 4,
+  w: SCREEN_W,
+  h: SCREEN_H - (KEYBOARD.y + KEYBOARD.h + 4) - 4,
+};
+/** Left rest: Omarchy's menu above, the click button below. */
+export const MENU_KEY: Rect = { x: 4, y: BAND.y, w: 72, h: Math.round(BAND.h / 2) - 3 };
+export const CLICK_KEY: Rect = { x: 4, y: MENU_KEY.y + MENU_KEY.h + 6, w: 72, h: BAND.h - MENU_KEY.h - 6 };
+/** The pad itself: narrower than the panel, like a laptop's. */
+export const TRACKPAD: Rect = { x: 82, y: BAND.y, w: 286, h: BAND.h };
+/** Right rest: the d-pad cross. */
+export const DPAD: Rect = { x: 374, y: BAND.y, w: 102, h: BAND.h };
+
 export type Direction4 = "u" | "d" | "l" | "r";
-
 export const DIRECTION_KEYSYM: Record<Direction4, string> = { u: "Up", d: "Down", l: "Left", r: "Right" };
 export const DIRECTION_GLYPH: Record<Direction4, string> = { u: "↑", d: "↓", l: "←", r: "→" };
 
-export type KeyAction =
-  | { ch: string }
-  | { key: string }
-  | { layer: KbLayer }
-  | { mod: Modifier }
-  /** The arrow compass: press, slide a direction, hold to repeat. */
-  | { pad: true };
+const DPAD_KEY_W = 34;
+const DPAD_KEY_H = Math.floor((DPAD.h - 8) / 3);
+
+/** The cross: up and down in the middle column, left and right beside it. */
+export const DPAD_KEYS: Record<Direction4, Rect> = (() => {
+  const cx = DPAD.x + Math.round(DPAD.w / 2);
+  const cy = DPAD.y + Math.round(DPAD.h / 2);
+  const midY = cy - Math.round(DPAD_KEY_H / 2);
+  const left = cx - Math.round(DPAD_KEY_W / 2);
+  return {
+    u: { x: left, y: midY - DPAD_KEY_H - 4, w: DPAD_KEY_W, h: DPAD_KEY_H },
+    d: { x: left, y: midY + DPAD_KEY_H + 4, w: DPAD_KEY_W, h: DPAD_KEY_H },
+    l: { x: left - DPAD_KEY_W - 3, y: midY, w: DPAD_KEY_W, h: DPAD_KEY_H },
+    r: { x: left + DPAD_KEY_W + 3, y: midY, w: DPAD_KEY_W, h: DPAD_KEY_H },
+  };
+})();
+
+/** Frames a d-pad key must be held before it repeats, and the frames
+ *  between repeats. Each repeat is one key press on the laptop, so the rate
+ *  is a walking pace rather than a keyboard's. */
+export const ARROW_HOLD_FRAMES = 20;
+export const ARROW_REPEAT_FRAMES = 7;
+
+/** Which d-pad key a point is on, with slack around the cross. */
+export function dpadAt(x: number, y: number): Direction4 | null {
+  for (const dir of ["u", "d", "l", "r"] as const) {
+    const r = DPAD_KEYS[dir];
+    if (within(x, y, { x: r.x - 4, y: r.y - 4, w: r.w + 8, h: r.h + 8 })) return dir;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// the keys
+// ---------------------------------------------------------------------------
+
+export type KeyAction = { ch: string } | { key: string } | { layer: KbLayer } | { mod: Modifier };
 
 export interface KeyDef {
   label: string;
@@ -112,8 +174,8 @@ const TOP_ROW: KeyDef[] = [
 /** Return closes the home row, where a keyboard puts it. */
 const RETURN: KeyDef = { label: "return", w: 1.75, act: { key: "Return" }, dark: true };
 
-/** The bottom row: the layer switch, the modifiers, tab, space, and the
- *  arrow cluster. 10.25 units, the same width as the row above. */
+/** The bottom row: the layer switch, the modifiers, tab, space, and the two
+ *  punctuation keys a terminal reaches for. The arrows are the d-pad now. */
 const bottomRow = (layer: KbLayer): KeyDef[] => [
   { label: layer === "sym" ? "abc" : "123", w: 1, act: { layer: layer === "sym" ? "lower" : "sym" }, dark: true },
   { label: "ctrl", w: 1, act: { mod: "ctrl" }, dark: true },
@@ -121,7 +183,8 @@ const bottomRow = (layer: KbLayer): KeyDef[] => [
   { label: "super", w: 1, act: { mod: "super" }, dark: true },
   { label: "tab", w: 1, act: { key: "Tab" }, dark: true },
   { label: "space", w: 3.75, act: { key: "space" } },
-  { label: "arrows", w: 1.5, act: { pad: true }, dark: true, glyph: ARROWS_GLYPH },
+  { label: "-", w: 0.75, act: { ch: "-" } },
+  { label: "/", w: 0.75, act: { ch: "/" } },
 ];
 
 const ROWS: Record<KbLayer, KeyDef[][]> = {
@@ -175,7 +238,7 @@ function layoutRow(row: KeyDef[], r: number, unit: number): KeyRect[] {
   const y = ROWS_TOP + r * ROW_PITCH;
   return row.map((def, c) => {
     const w = Math.round(def.w * unit);
-    const rect = { x: x + 2, y, w: w - 4, h: KEY_H, def, row: r, col: c };
+    const rect = { x: x + KEY_INSET, y, w: w - 2 * KEY_INSET, h: KEY_H, def, row: r, col: c };
     x += w;
     return rect;
   });
@@ -195,60 +258,74 @@ export function keyboardKeys(layer: KbLayer): readonly KeyRect[] {
   return LAYOUTS[layer];
 }
 
-/** The key under a point, with the gaps between keys belonging to their
- *  nearer neighbour so a finger never falls between two. */
-export function keyAt(layer: KbLayer, x: number, y: number): KeyRect | null {
-  for (const key of LAYOUTS[layer]) {
-    if (x >= key.x - 2 && x < key.x + key.w + 2 && y >= key.y - 2 && y < key.y + key.h + 2) return key;
-  }
-  return null;
+// ---------------------------------------------------------------------------
+// hit testing
+// ---------------------------------------------------------------------------
+
+/** How far up the hit test moves a touch before assigning it: a press on a
+ *  capacitive panel lands below where the eye aimed. */
+export const TOUCH_BIAS_Y = 3;
+/** A row change is a worse mistake than a column change, so vertical
+ *  distance counts for more when the nearest key is chosen. */
+const VERTICAL_WEIGHT = 1.7;
+/** How far outside a key a touch may still be claimed by it. */
+const HIT_REACH = 16;
+
+/** Distance from a point to a rectangle's edge: zero inside it. */
+function edgeDistance(x: number, y: number, r: Rect): { dx: number; dy: number } {
+  return {
+    dx: Math.max(0, Math.abs(x - (r.x + r.w / 2)) - r.w / 2),
+    dy: Math.max(0, Math.abs(y - (r.y + r.h / 2)) - r.h / 2),
+  };
 }
-
-// ---------------------------------------------------------------------------
-// the arrow compass
-// ---------------------------------------------------------------------------
-
-/** Travel before a slide counts as a direction. Below it, nothing is armed
- *  and a release sends nothing. */
-export const ARROW_DEAD_ZONE = 14;
-export const ARROW_CHIP_W = 38;
-export const ARROW_CHIP_H = 30;
-const ARROW_CHIP_GAP = 4;
-/** Frames a direction must be held before it starts repeating, and the
- *  frames between repeats after that. Each repeat is one key press on the
- *  laptop, so the rate is a walking pace rather than a keyboard's. */
-export const ARROW_HOLD_FRAMES = 22;
-export const ARROW_REPEAT_FRAMES = 8;
 
 /**
- * The compass's four chips as a diamond, drawn over the TRACKPAD rather than
- * over the keys: the pad is the one empty place on the deck, so the legend
- * covers nothing that matters and sits right under the thumb holding the
- * key. It is a legend — the finger picks by direction, not by touching one —
- * so only its association with the key matters, and that comes from being
- * under it.
+ * The key a touch means. Hit regions tile the keyboard: the nearest key by
+ * edge distance wins, so the gaps between keys belong to their neighbours
+ * instead of swallowing the press. The touch is moved up by TOUCH_BIAS_Y
+ * first (see the note at the top of this file).
  */
-export function arrowFanRects(key: Rect, pad: Rect = TRACKPAD): Record<Direction4, Rect> {
-  const spanW = 3 * ARROW_CHIP_W + 2 * ARROW_CHIP_GAP;
-  const stepX = ARROW_CHIP_W + ARROW_CHIP_GAP;
-  const stepY = ARROW_CHIP_H + ARROW_CHIP_GAP;
-  const cx = Math.max(pad.x + 4 + spanW / 2, Math.min(pad.x + pad.w - 4 - spanW / 2, key.x + key.w / 2));
-  const cy = pad.y + pad.h / 2;
-  const at = (dx: number, dy: number): Rect => ({
-    x: Math.round(cx - ARROW_CHIP_W / 2 + dx * stepX),
-    y: Math.round(cy - ARROW_CHIP_H / 2 + dy * stepY),
-    w: ARROW_CHIP_W,
-    h: ARROW_CHIP_H,
-  });
-  return { u: at(0, -1), d: at(0, 1), l: at(-1, 0), r: at(1, 0) };
+export function keyAt(layer: KbLayer, x: number, y: number): KeyRect | null {
+  const ay = y - TOUCH_BIAS_Y;
+  // The reach must not spill into the band: those controls are fixed and a
+  // press on the pad is never a keystroke.
+  if (ay >= BAND.y) return null;
+  let best: KeyRect | null = null;
+  let bestScore = Infinity;
+  for (const key of LAYOUTS[layer]) {
+    const { dx, dy } = edgeDistance(x, ay, key);
+    if (dx > HIT_REACH || dy > HIT_REACH) continue;
+    const score = dx * dx + dy * dy * VERTICAL_WEIGHT;
+    if (score < bestScore) {
+      bestScore = score;
+      best = key;
+    }
+  }
+  return best;
 }
 
-/** The direction a slide has chosen: the dominant axis once it is past the
- *  dead zone, or null while the finger has barely moved. */
-export function arrowDirection(dx: number, dy: number): Direction4 | null {
-  if (Math.abs(dx) < ARROW_DEAD_ZONE && Math.abs(dy) < ARROW_DEAD_ZONE) return null;
-  if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? "r" : "l";
-  return dy > 0 ? "d" : "u";
+/** What a touch on the deck means: the band's own controls first (they are
+ *  fixed, and the keyboard's hit regions reach past its own edge), then a
+ *  key. */
+export type DeckTarget =
+  | { kind: "menu" }
+  | { kind: "click" }
+  | { kind: "pad" }
+  | { kind: "dpad"; dir: Direction4 }
+  | { kind: "key"; key: KeyRect }
+  | { kind: "none" };
+
+export function deckTargetAt(layer: KbLayer, x: number, y: number): DeckTarget {
+  if (y >= BAND.y - 2) {
+    if (within(x, y, MENU_KEY)) return { kind: "menu" };
+    if (within(x, y, CLICK_KEY)) return { kind: "click" };
+    if (within(x, y, TRACKPAD)) return { kind: "pad" };
+    const dir = dpadAt(x, y);
+    if (dir) return { kind: "dpad", dir };
+    return { kind: "none" };
+  }
+  const key = keyAt(layer, x, y);
+  return key ? { kind: "key", key } : { kind: "none" };
 }
 
 /** Variant chip geometry: above the key, or below it for the top row. */
@@ -283,5 +360,5 @@ export function keyToLine(
     return k ? { t: "key", k, mods } : null;
   }
   if ("key" in act) return mods.length ? { t: "key", k: act.key, mods } : { t: "key", k: act.key };
-  return null; // a layer switch, a modifier and the compass send nothing here
+  return null; // a layer switch and a modifier send nothing here
 }

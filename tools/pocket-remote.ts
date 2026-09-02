@@ -413,15 +413,20 @@ async function shots(outDir: string): Promise<void> {
   shot("deck-variants");
   frames(1);
   frames(10);
-  // the arrow compass, mid-slide
-  const compass = keyboardKeys("lower").find((k) => "pad" in k.def.act)!;
-  const cx = compass.x + compass.w / 2;
-  const cy = compass.y + compass.h / 2;
-  frames(2, [pack(cx, cy)]);
-  for (let i = 1; i <= 4; i += 1) frames(2, [pack(Math.round(cx - i * 8), cy)]);
-  shot("deck-arrows");
+  // the band: the click key held while a finger drags on the pad
+  const { CLICK_KEY, DPAD_KEYS, TRACKPAD: PAD } = await import("../apps/pocket-remote/keyboard-layout.ts");
+  frames(6, [pack(CLICK_KEY.x + 30, CLICK_KEY.y + 20)]);
+  for (let i = 1; i <= 6; i += 1) {
+    frames(2, [pack(CLICK_KEY.x + 30, CLICK_KEY.y + 20), pack(PAD.x + 60 + i * 10, PAD.y + 50, 1)]);
+  }
+  shot("deck-drag");
   frames(1);
-  frames(10);
+  frames(8);
+  // a d-pad key held
+  frames(6, [pack(DPAD_KEYS.l.x + 16, DPAD_KEYS.l.y + 14)]);
+  shot("deck-dpad");
+  frames(1);
+  frames(8);
 
   // back to the stage, then an empty workspace: the launch bar is fixed, so
   // there is nothing on the stage but the hint.

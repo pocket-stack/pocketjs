@@ -74,21 +74,35 @@ export const TILE_TWO_LINES_H = 40;
 /** Fixed pool of tile slots (protocol WINDOWS_MAX). */
 export const TILE_SLOTS = 24;
 
-/** The corner a drag resizes the window by. Tiles too small to carry it
- *  keep their whole face for focus and the hold. */
+/** The corner a drag resizes the window by: what it looks like, and how far
+ *  around it a finger counts. The reach is what makes it usable — the mark
+ *  is 18 px because a bigger one would cover the tile's own content, while
+ *  the target it stands for is 34 px square. */
 export const TILE_GRIP = 18;
-export const TILE_GRIP_MIN = 52;
+export const TILE_GRIP_REACH = 16;
+/** Tiles smaller than this carry no corner: their whole face is worth more
+ *  as focus and hold than as a resize handle. */
+export const TILE_GRIP_MIN = 72;
 
 export function tileGripRect(tile: Rect): Rect {
   return { x: tile.x + tile.w - TILE_GRIP, y: tile.y + tile.h - TILE_GRIP, w: TILE_GRIP, h: TILE_GRIP };
 }
 
-/** Whether the point is on a tile's resize corner, with a few px of slack
- *  outside the tile so the very corner is reachable. */
+/** The corner's touch target: the mark, grown by TILE_GRIP_REACH up and to
+ *  the left and a little past the tile's own edge. */
+export function tileGripTarget(tile: Rect): Rect {
+  const grip = tileGripRect(tile);
+  return {
+    x: grip.x - TILE_GRIP_REACH,
+    y: grip.y - TILE_GRIP_REACH,
+    w: grip.w + TILE_GRIP_REACH + 4,
+    h: grip.h + TILE_GRIP_REACH + 4,
+  };
+}
+
 export function tileGripHit(x: number, y: number, tile: Rect): boolean {
   if (tile.w < TILE_GRIP_MIN || tile.h < TILE_GRIP_MIN) return false;
-  const grip = tileGripRect(tile);
-  return within(x, y, { x: grip.x - 2, y: grip.y - 2, w: grip.w + 6, h: grip.h + 6 });
+  return within(x, y, tileGripTarget(tile));
 }
 
 /** One of the launch bar's equal cells. */

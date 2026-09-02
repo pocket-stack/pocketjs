@@ -7,7 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import { bootWorld } from "../hosts/sim/sim.ts";
 import type { HostState } from "../apps/pocket-remote/protocol.ts";
-import { keyboardKeys, TRACKPAD } from "../apps/pocket-remote/keyboard-layout.ts";
+import { CLICK_KEY, DPAD_KEYS, keyboardKeys, MENU_KEY, TRACKPAD } from "../apps/pocket-remote/keyboard-layout.ts";
 import {
   BALL_HOME,
   CC_BUTTON,
@@ -407,60 +407,98 @@ describe("pocket-remote in the sim", () => {
     expect(z("0xT1")).toBeGreaterThan(z("0xT2"));
   });
 
-  test("the ball is on the stage only: the deck's bottom half is the trackpad", async () => {
-    const { world, store, sent } = await connected();
+  test("the ball is on the stage only: the deck's own controls own that space", async () => {
+    const { world, store } = await connected();
     tap(world, MODE.x + MODE_HALF_W + 17, MODE.y + 11);
     expect(store.mode()).toBe("deck");
-    // A touch where the ball would be moves the pointer instead.
-    const ball = store.ball();
-    for (let i = 0; i < 6; i += 1) world.frame(0, undefined, [pack(ball.x + 22 + i * 5, ball.y + 22)]);
+    // A drag where the ball would be belongs to the deck: the ball itself
+    // does not move, because it is not on this screen.
+    const before = store.ball();
+    for (let i = 0; i < 8; i += 1) {
+      world.frame(0, undefined, [pack(before.x + 22, Math.round(before.y + 22 - i * 6))]);
+    }
     world.frame(0, undefined, []);
-    for (let i = 0; i < 4; i += 1) world.frame(0);
-    expect(store.sheet()).toBeNull();
-    expect(sent.some((line) => (line as { t: string }).t === "ptr")).toBe(true);
+    for (let i = 0; i < 6; i += 1) world.frame(0);
+    expect(store.ball()).toEqual(before);
+    expect(store.ballDragging()).toBe(false);
   });
 
-  test("the arrow compass sends one press on a flick and repeats when held", async () => {
+  test("the d-pad fires at once and repeats while held, with the modifier riding along", async () => {
     const { world, store, sent } = await connected();
     tap(world, MODE.x + MODE_HALF_W + 17, MODE.y + 11);
-    const compass = keyboardKeys("lower").find((k) => "pad" in k.def.act)!;
-    const from = { x: compass.x + compass.w / 2, y: compass.y + compass.h / 2 };
+    const right = DPAD_KEYS.r;
+    const at = { x: right.x + right.w / 2, y: right.y + right.h / 2 };
 
-    // A flick: press, slide right, release — exactly one Right.
-    world.frame(0, undefined, [pack(from.x, from.y)]);
-    expect(store.arrowFan()?.dir).toBeNull();
-    for (let i = 1; i <= 4; i += 1) world.frame(0, undefined, [pack(from.x + i * 8, from.y)]);
-    expect(store.arrowFan()?.dir).toBe("r");
-    // Nothing has been sent yet: sliding through a direction must not move
-    // the cursor.
-    expect(sent.filter((line) => (line as { t: string }).t === "key").length).toBe(0);
-    world.frame(0, undefined, []);
-    for (let i = 0; i < 4; i += 1) world.frame(0);
-    expect(store.arrowFan()).toBeNull();
+    // A tap: exactly one Right, on the press.
+    world.frame(0, undefined, [pack(at.x, at.y)]);
+    expect(store.dpad()?.dir).toBe("r");
     expect(sent.filter((line) => (line as { t: string }).t === "key")).toEqual([{ t: "key", k: "Right" }]);
-
-    // Held down: the first press lands after the hold, then it repeats.
-    sent.length = 0;
-    world.frame(0, undefined, [pack(from.x, from.y)]);
-    for (let i = 0; i < 70; i += 1) world.frame(0, undefined, [pack(from.x, from.y - 30)]);
-    const ups = sent.filter((line) => (line as { k?: string }).k === "Up");
-    expect(ups.length).toBeGreaterThan(3);
-    expect(ups.length).toBeLessThan(12);
     world.frame(0, undefined, []);
     for (let i = 0; i < 4; i += 1) world.frame(0);
-    // The release adds nothing to a hold that already repeated.
-    expect(sent.filter((line) => (line as { k?: string }).k === "Up").length).toBe(ups.length);
+    expect(store.dpad()).toBeNull();
+    expect(sent.filter((line) => (line as { t: string }).t === "key").length).toBe(1);
 
-    // A sticky modifier rides along: ctrl then the compass is ctrl+Left.
+    // Held: the first press, then repeats.
+    sent.length = 0;
+    const up = DPAD_KEYS.u;
+    for (let i = 0; i < 70; i += 1) world.frame(0, undefined, [pack(up.x + up.w / 2, up.y + up.h / 2)]);
+    const ups = sent.filter((line) => (line as { k?: string }).k === "Up");
+    expect(ups.length).toBeGreaterThan(4);
+    expect(ups.length).toBeLessThan(14);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 4; i += 1) world.frame(0);
+
+    // A sticky modifier rides along: ctrl then left is ctrl+Left.
     sent.length = 0;
     const ctrl = keyboardKeys("lower").find((k) => k.def.label === "ctrl")!;
     tap(world, ctrl.x + ctrl.w / 2, ctrl.y + ctrl.h / 2, 5);
-    world.frame(0, undefined, [pack(from.x, from.y)]);
-    for (let i = 1; i <= 4; i += 1) world.frame(0, undefined, [pack(from.x - i * 8, from.y)]);
-    world.frame(0, undefined, []);
-    for (let i = 0; i < 4; i += 1) world.frame(0);
+    const left = DPAD_KEYS.l;
+    tap(world, left.x + left.w / 2, left.y + left.h / 2, 5);
     expect(sent).toContainEqual({ t: "key", k: "Left", mods: ["ctrl"] });
     expect(store.kbMods()).toEqual([]);
+  });
+
+  test("the deck's menu key opens the sheet, and ctrl reaches the pointer", async () => {
+    const { world, store, sent } = await connected();
+    tap(world, MODE.x + MODE_HALF_W + 17, MODE.y + 11);
+    expect(store.mode()).toBe("deck");
+
+    // ctrl then a tap on the pad: the click carries the modifier, because a
+    // virtual pointer cannot hold one itself.
+    const ctrl = keyboardKeys("lower").find((k) => k.def.label === "ctrl")!;
+    tap(world, ctrl.x + ctrl.w / 2, ctrl.y + ctrl.h / 2, 5);
+    expect(store.kbMods()).toEqual(["ctrl"]);
+    tap(world, TRACKPAD.x + 60, TRACKPAD.y + 50, 6);
+    expect(sent).toContainEqual({ t: "click", b: "l", mods: ["ctrl"] });
+    expect(store.kbMods()).toEqual([]);
+
+    // The click key holds the button down: the other finger drags a
+    // selection, and lifting the key ends it.
+    sent.length = 0;
+    world.frame(0, undefined, [pack(CLICK_KEY.x + 30, CLICK_KEY.y + 20)]);
+    for (let i = 0; i < 6; i += 1) world.frame(0, undefined, [pack(CLICK_KEY.x + 30, CLICK_KEY.y + 20)]);
+    expect(store.clickHeld()).toBe(true);
+    expect(sent).toContainEqual({ t: "drag", on: 1 });
+    // A second finger on the pad moves the pointer while the button is down.
+    for (let i = 1; i <= 8; i += 1) {
+      world.frame(0, undefined, [
+        pack(CLICK_KEY.x + 30, CLICK_KEY.y + 20),
+        pack(TRACKPAD.x + 40 + i * 8, TRACKPAD.y + 40, 1),
+      ]);
+    }
+    expect(sent.some((line) => (line as { t: string }).t === "ptr")).toBe(true);
+    // Lifting the pad finger must not click while the button is held.
+    world.frame(0, undefined, [pack(CLICK_KEY.x + 30, CLICK_KEY.y + 20)]);
+    for (let i = 0; i < 3; i += 1) world.frame(0);
+    expect(sent.filter((line) => (line as { t: string }).t === "click").length).toBe(0);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 4; i += 1) world.frame(0);
+    expect(store.clickHeld()).toBe(false);
+    expect(sent).toContainEqual({ t: "drag", on: 0 });
+
+    // The menu key opens Omarchy's sheet from the deck.
+    tap(world, MENU_KEY.x + 30, MENU_KEY.y + 20);
+    expect(store.sheet()?.at).toBe("root");
   });
 
   test("a hello that is still pending shows the approval screen", async () => {

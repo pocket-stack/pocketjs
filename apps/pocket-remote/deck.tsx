@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/deck.tsx — the deck: the laptop's C surface on the
-// iPod. Five compact rows of keys over a trackpad, so typing and pointing
-// need no mode of their own. Keys go straight to the desktop (wtype) as they
-// are pressed; nothing is buffered on the device, so what the desktop shows
-// is the truth. A pressed key rises and brightens — no character bubble: on
-// a keyboard this compact it covered the row above, and on the top row it
-// had to open downwards, which read as a different key lighting up.
+// iPod. Five rows of keys, and under them the band a laptop uses the same
+// way — Omarchy's menu key and the click button on the left rest, the
+// trackpad in the middle, a d-pad cross on the right rest.
+//
+// Keys go straight to the desktop (wtype) as they are pressed; nothing is
+// buffered on the device, so what the desktop shows is the truth. A pressed
+// key rises and brightens; the hit regions tile the keyboard and correct for
+// where a finger actually lands (keyboard-layout.ts).
 //
 // Chords two ways: sticky modifiers (tap ctrl, alt or super, then the key;
-// the modifier arms, paints itself, drops after one key) and hold-and-slide
-// variants (hold a letter and ^X ⌥X fan out above it; hold a digit for its
-// F-key). SUPER is there because Omarchy's own grammar lives on it.
+// it arms, paints itself, drops after one key) and hold-and-slide variants
+// (hold a letter and ^X ⌥X fan out above it; hold a digit for its F-key).
+// The modifiers reach the pointer too: ctrl then a click is a ctrl-click,
+// and ctrl with the click key held is a ctrl-drag.
 //
-// The trackpad is a relative pointer: one finger moves, tap clicks, two
-// fingers scroll, a two-finger tap is the right button, and a hold picks
-// something up — the button stays down until the finger lifts.
+// The click key is the drag-select the pad could not model: hold it with one
+// thumb and the laptop's left button stays down, so the other finger's
+// travel on the pad drags a selection — a laptop's own two-handed gesture.
 
 import { createEffect, createSignal, Index, Show } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
@@ -24,23 +27,22 @@ import { GLYPH } from "./glyphs.ts";
 import type { GestureHandlers } from "./handlers.ts";
 import { Icon } from "./icons.tsx";
 import {
-  ARROW_CHIP_H,
-  ARROW_CHIP_W,
-  arrowDirection,
-  arrowFanRects,
   chipAt,
   chipRects,
+  CLICK_KEY,
+  deckTargetAt,
   DIRECTION_GLYPH,
   type Direction4,
-  keyAt,
+  DPAD_KEYS,
   keyboardKeys,
   type KeyAction,
   type KeyDef,
   type KeyRect,
   keyToLine,
+  MENU_KEY,
   TRACKPAD,
 } from "./keyboard-layout.ts";
-import { pointerGain, type Rect, SCROLL_GAIN, stagger, within } from "./layout.ts";
+import { pointerGain, type Rect, SCROLL_GAIN, stagger } from "./layout.ts";
 import type { RemoteStore } from "./store.ts";
 import { themed } from "./theme.ts";
 
@@ -99,9 +101,6 @@ function Key(p: { store: RemoteStore; key: KeyRect }) {
           {p.key.def.label}
         </Text>
       </Show>
-      <Show when={p.key.def.variants}>
-        <View class="absolute left-[3] top-[3] w-[3] h-[3] rounded-[1] bg-[#565f89]" ref={themed("fgDimFill")} />
-      </Show>
       <View
         class="absolute left-0 top-0 w-full h-full rounded-[7] bg-[#c0caf566]"
         ref={(node) => {
@@ -138,53 +137,6 @@ function Chip(p: { store: RemoteStore; rect: Rect; label: string; i: number; cou
   );
 }
 
-/**
- * The arrow compass, drawn while its key is held: four chips in a diamond
- * over the key, the armed one filled. A legend, not a set of targets — the
- * direction comes from the slide, so a finger never has to reach a chip.
- */
-function ArrowFan(p: { store: RemoteStore }) {
-  const fan = () => p.store.arrowFan()!;
-  const rects = () => arrowFanRects(fan().key);
-  const dirs: Direction4[] = ["u", "l", "r", "d"];
-  return (
-    <>
-      <Index each={dirs}>
-        {(dir) => {
-          const armed = () => fan().dir === dir();
-          const r = () => rects()[dir()];
-          let root: NodeMirror | null = null;
-          createEffect(() => {
-            if (!root) return;
-            jump(root, "insetL", r().x);
-            jump(root, "insetT", r().y);
-            jump(root, "scale", armed() ? 1.1 : 1);
-            jump(root, "opacity", armed() ? 1 : 0.85);
-          });
-          return (
-            <View
-              class={
-                armed()
-                  ? "absolute w-[34] h-[28] rounded-[9] bg-[#7aa2f7] items-center justify-center"
-                  : "absolute w-[34] h-[28] rounded-[9] bg-[#c0caf5] items-center justify-center"
-              }
-              style={{ width: ARROW_CHIP_W, height: ARROW_CHIP_H }}
-              ref={(node) => {
-                root = node;
-                themed(() => (armed() ? "accentFill" : "fgFill"))(node);
-              }}
-            >
-              <Text class="text-base font-bold text-[#13141c]" ref={themed("textOnAccent")}>
-                {DIRECTION_GLYPH[dir()]}
-              </Text>
-            </View>
-          );
-        }}
-      </Index>
-    </>
-  );
-}
-
 function Keyboard(p: { store: RemoteStore }) {
   const keys = () => keyboardKeys(p.store.kbLayer());
   return (
@@ -202,8 +154,92 @@ function Keyboard(p: { store: RemoteStore }) {
 }
 
 // ---------------------------------------------------------------------------
-// trackpad
+// the band: menu, click, trackpad, d-pad
 // ---------------------------------------------------------------------------
+
+function MenuButton(p: { store: RemoteStore }) {
+  return (
+    <View
+      class="absolute rounded-[10] bg-[#1a1b26] border border-[#414868] items-center justify-center"
+      style={{ insetL: MENU_KEY.x, insetT: MENU_KEY.y, width: MENU_KEY.w, height: MENU_KEY.h }}
+      ref={(node) => {
+        themed("surface")(node);
+        themed("borderMuted")(node);
+      }}
+    >
+      <Icon glyph={GLYPH.menu} tone="fg" size="2xl" />
+      <View class={p.store.pressed() === "deck:menu" ? "absolute left-0 top-0 w-full h-full rounded-[10] bg-[#ffffff22]" : "hidden"} />
+    </View>
+  );
+}
+
+/**
+ * The click button: a tap is a click, and holding it keeps the laptop's left
+ * button down so the other finger's travel on the pad drags a selection.
+ *
+ * Held, it fills with the accent rather than tinting: a rounded node with a
+ * coloured border is drawn by filling the whole rounded box with the BORDER
+ * colour and insetting the background over it (engine draw.rs), so a
+ * translucent fill inside a border shows the border's colour through it.
+ */
+function ClickButton(p: { store: RemoteStore }) {
+  const held = () => p.store.clickHeld();
+  return (
+    <View
+      class={
+        held()
+          ? "absolute rounded-[10] bg-[#7aa2f7] items-center justify-center"
+          : "absolute rounded-[10] bg-[#1a1b26] border border-[#414868] items-center justify-center"
+      }
+      style={{ insetL: CLICK_KEY.x, insetT: CLICK_KEY.y, width: CLICK_KEY.w, height: CLICK_KEY.h }}
+      ref={(node) => {
+        themed(() => (held() ? "accentFill" : "surface"))(node);
+        themed(() => (held() ? "accentFill" : "borderMuted"))(node);
+      }}
+    >
+      <Text
+        class={held() ? "text-xs font-bold text-[#13141c]" : "text-xs text-[#a9b1d6]"}
+        ref={themed(() => (held() ? "textOnAccent" : "text"))}
+      >
+        {held() ? "held" : "click"}
+      </Text>
+      <View class={p.store.pressed() === "deck:click" ? "absolute left-0 top-0 w-full h-full rounded-[10] bg-[#ffffff22]" : "hidden"} />
+    </View>
+  );
+}
+
+function DpadCross(p: { store: RemoteStore }) {
+  const dirs: Direction4[] = ["u", "l", "r", "d"];
+  return (
+    <Index each={dirs}>
+      {(dir) => {
+        const r = DPAD_KEYS[dir()];
+        const down = () => p.store.dpad()?.dir === dir();
+        return (
+          <View
+            class={
+              down()
+                ? "absolute rounded-[8] bg-[#7aa2f7] items-center justify-center"
+                : "absolute rounded-[8] bg-[#1a1b26] border border-[#414868] items-center justify-center"
+            }
+            style={{ insetL: r.x, insetT: r.y, width: r.w, height: r.h }}
+            ref={(node) => {
+              themed(() => (down() ? "accentFill" : "surface"))(node);
+              themed(() => (down() ? "accentFill" : "borderMuted"))(node);
+            }}
+          >
+            <Text
+              class={down() ? "text-base font-bold text-[#13141c]" : "text-base text-[#a9b1d6]"}
+              ref={themed(() => (down() ? "textOnAccent" : "text"))}
+            >
+              {DIRECTION_GLYPH[dir()]}
+            </Text>
+          </View>
+        );
+      }}
+    </Index>
+  );
+}
 
 function Trackpad(p: { store: RemoteStore }) {
   const target = () => {
@@ -212,10 +248,17 @@ function Trackpad(p: { store: RemoteStore }) {
     const prefix = mods.length ? `${mods.join(" + ")} + ` : "";
     return c ? `${prefix}${c}` : `${prefix}no focused window`;
   };
+  const hint = () =>
+    p.store.clickHeld()
+      ? "held · slide to select"
+      : p.store.pressed() === "pad:drag"
+        ? "dragging · lift to drop"
+        : "tap · two fingers scroll";
+  const lit = () => p.store.clickHeld() || p.store.pressed() === "pad:drag";
   return (
     <View
       class={
-        p.store.pressed() === "pad:drag"
+        lit()
           ? "absolute rounded-[10] bg-[#1f2335] border border-[#7aa2f7]"
           : p.store.pressed() === "pad"
             ? "absolute rounded-[10] bg-[#1f2335] border border-[#565f89]"
@@ -224,35 +267,22 @@ function Trackpad(p: { store: RemoteStore }) {
       style={{ insetL: TRACKPAD.x, insetT: TRACKPAD.y, width: TRACKPAD.w, height: TRACKPAD.h }}
       ref={(node) => {
         themed("surface")(node);
-        themed(() => (p.store.pressed() === "pad:drag" ? "borderAccent" : "borderMuted"))(node);
+        themed(() => (lit() ? "borderAccent" : "borderMuted"))(node);
       }}
     >
-      {/* The caption stands down while the compass's legend is up: the pad
-          is the only empty place on the deck and they were sharing it. */}
-      <Show
-        when={!p.store.arrowFan()}
-        fallback={
-          <View class="absolute left-[10] top-0 w-[300] h-[100] items-center">
-            <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
-              slide a direction · hold to repeat
-            </Text>
-          </View>
-        }
-      >
-        <View class="absolute left-[10] top-[6] w-[20] h-[20] items-center justify-center">
-          <Icon glyph={GLYPH.trackpad} tone="dim" size="base" />
-        </View>
-        <View class="absolute left-[34] top-[6] w-[200] h-[20] items-center overflow-hidden">
-          <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
-            {target()}
-          </Text>
-        </View>
-        <View class="absolute right-[10] top-[6] w-[240] h-[20] items-center justify-end">
-          <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
-            {p.store.pressed() === "pad:drag" ? "dragging · lift to drop" : "tap · two fingers scroll · hold to drag"}
-          </Text>
-        </View>
-      </Show>
+      <View class="absolute left-[8] top-[5] w-[20] h-[20] items-center justify-center">
+        <Icon glyph={GLYPH.trackpad} tone="dim" size="base" />
+      </View>
+      <View class="absolute left-[32] top-[5] w-[100] h-[20] items-center overflow-hidden">
+        <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
+          {target()}
+        </Text>
+      </View>
+      <View class="absolute right-[8] top-[5] w-[144] h-[20] items-center justify-end">
+        <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
+          {hint()}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -262,12 +292,10 @@ export function Deck(p: { store: RemoteStore }) {
     <View class="absolute left-0 top-[28] w-[480] h-[292] bg-[#13141c] overflow-hidden" ref={themed("surfaceDark")}>
       <View class="absolute w-[480] h-[320]" style={{ insetL: 0, insetT: -28 }}>
         <Keyboard store={p.store} />
+        <MenuButton store={p.store} />
+        <ClickButton store={p.store} />
         <Trackpad store={p.store} />
-        {/* after the pad: the compass's legend is drawn over it, and paint
-            order among absolute siblings is document order */}
-        <Show when={p.store.arrowFan()}>
-          <ArrowFan store={p.store} />
-        </Show>
+        <DpadCross store={p.store} />
       </View>
     </View>
   );
@@ -285,12 +313,14 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
   // for the rest of its life: scroll while they move, the right button if
   // they lift without moving.
   const pads = new Map<number, { moved: boolean }>();
-  /** The compass key is down: this contact steers rather than types. */
-  let steering = false;
   let twoFinger = false;
   let twoFingerMoved = false;
   let leader: number | null = null;
   let dragging = false;
+  /** Contacts that own one of the band's buttons. */
+  let clicker: number | null = null;
+  let steering: { id: number; dir: Direction4 } | null = null;
+  let menuing: number | null = null;
 
   const send = (act: KeyAction) => {
     const mods = store.kbMods();
@@ -304,7 +334,6 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
 
   const press = (key: KeyRect) => {
     const act = key.def.act;
-    if ("pad" in act) return; // the compass acts on its own slide
     if ("layer" in act) {
       store.setKbLayer(act.layer);
       return;
@@ -319,36 +348,47 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
     if ("ch" in act && store.kbLayer() === "upper") store.setKbLayer("lower");
   };
 
-  const onPad = (x: number, y: number) => within(x, y, TRACKPAD);
-
   return {
     onDown: (c) => {
       holding = false;
-      if (onPad(c.x, c.y)) {
-        setDown(null);
-        pads.set(c.id, { moved: false });
-        if (pads.size >= 2) {
-          twoFinger = true;
-          twoFingerMoved = false;
-        } else {
-          leader = c.id;
-        }
-        store.pressDown(dragging ? "pad:drag" : "pad");
-        return;
-      }
-      const key = keyAt(store.kbLayer(), c.x, c.y);
-      setDown(key);
-      store.pressDown(key ? `key:${key.row}:${key.col}` : null);
-      if (key && "pad" in key.def.act) {
-        steering = true;
-        store.openArrows({ x: key.x, y: key.y, w: key.w, h: key.h });
+      const target = deckTargetAt(store.kbLayer(), c.x, c.y);
+      setDown(null);
+      switch (target.kind) {
+        case "pad":
+          pads.set(c.id, { moved: false });
+          if (pads.size >= 2) {
+            twoFinger = true;
+            twoFingerMoved = false;
+          } else {
+            leader = c.id;
+          }
+          store.pressDown(dragging ? "pad:drag" : "pad");
+          return;
+        case "menu":
+          menuing = c.id;
+          store.pressDown("deck:menu");
+          return;
+        case "click":
+          // The button goes down with the finger: a tap is a click, and a
+          // hold leaves it down for the other finger to drag with.
+          clicker = c.id;
+          store.pressDown("deck:click");
+          store.dragButton(true);
+          return;
+        case "dpad":
+          steering = { id: c.id, dir: target.dir };
+          store.pressDown(`dpad:${target.dir}`);
+          store.dpadDown(target.dir);
+          return;
+        case "key":
+          setDown(target.key);
+          store.pressDown(`key:${target.key.row}:${target.key.col}`);
+          return;
+        default:
+          store.pressDown(null);
       }
     },
     onMove: (c) => {
-      if (steering) {
-        store.armArrow(arrowDirection(c.dx, c.dy));
-        return;
-      }
       const pad = pads.get(c.id);
       if (pad) {
         if (c.fdx === 0 && c.fdy === 0) return;
@@ -371,10 +411,12 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
       store.keyHover(chipAt(key, f.variants.length, c.x, c.y));
     },
     onTap: (c) => {
-      if (steering) return; // the compass has already answered on release
-      if (pads.has(c.id)) {
-        // The tap resolves at the last finger's up (below); a two-finger
-        // tap must not also click twice.
+      // The pad, the click key and the d-pad all answer on release.
+      if (pads.has(c.id) || clicker === c.id || steering?.id === c.id) return;
+      if (menuing === c.id) {
+        menuing = null;
+        store.pressRelease();
+        store.openSheet();
         return;
       }
       const key = down();
@@ -383,10 +425,10 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
       setDown(null);
     },
     onLongPress: (c) => {
-      if (steering) return; // holding the compass is how it repeats
+      if (clicker === c.id || steering?.id === c.id || menuing === c.id) return;
       const pad = pads.get(c.id);
       if (pad) {
-        if (twoFinger || pad.moved || dragging) return;
+        if (twoFinger || pad.moved || dragging || store.clickHeld()) return;
         dragging = true;
         store.dragButton(true);
         store.pressDown("pad:drag");
@@ -399,11 +441,24 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
       store.openKeyFly({ key: { x: key.x, y: key.y, w: key.w, h: key.h }, variants: key.def.variants, hot: null });
     },
     onPanStart: (c) => {
-      if (pads.has(c.id) || holding || steering) return;
+      if (pads.has(c.id) || holding || clicker === c.id || steering?.id === c.id) return;
       store.pressDown(null);
       setDown(null);
+      menuing = null;
     },
     onUp: (c) => {
+      if (clicker === c.id) {
+        clicker = null;
+        store.dragButton(false);
+        store.pressRelease();
+        return;
+      }
+      if (steering?.id === c.id) {
+        steering = null;
+        store.dpadUp();
+        store.pressRelease();
+        return;
+      }
       const pad = pads.get(c.id);
       if (pad) {
         pads.delete(c.id);
@@ -413,7 +468,9 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
             twoFinger = false;
           } else if (dragging) {
             store.dragButton(false);
-          } else if (!pad.moved && c.frames < 20) {
+          } else if (!pad.moved && c.frames < 20 && !store.clickHeld()) {
+            // With the click key's button already down, a tap on the pad
+            // would be a second press rather than a click.
             store.click("l");
           }
           dragging = false;
@@ -422,13 +479,6 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
         } else if (c.id === leader) {
           leader = pads.keys().next().value ?? null;
         }
-        return;
-      }
-      if (steering) {
-        store.releaseArrows();
-        steering = false;
-        setDown(null);
-        store.pressRelease();
         return;
       }
       if (holding) {
@@ -442,10 +492,15 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
       store.pressRelease();
     },
     onCancel: (c) => {
-      if (steering) {
-        store.closeArrows();
-        steering = false;
+      if (clicker === c.id) {
+        clicker = null;
+        store.dragButton(false);
       }
+      if (steering?.id === c.id) {
+        steering = null;
+        store.dpadUp();
+      }
+      menuing = null;
       if (pads.delete(c.id) && pads.size === 0) {
         if (dragging) store.dragButton(false);
         dragging = false;

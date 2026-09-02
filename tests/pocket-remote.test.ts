@@ -51,21 +51,24 @@ import {
   wtypeArgs,
 } from "../apps/pocket-remote/host/omarchy.ts";
 import {
-  chipAt,
-  chipRects,
-  ARROW_CHIP_H,
-  ARROW_CHIP_W,
-  ARROW_DEAD_ZONE,
   ARROW_HOLD_FRAMES,
   ARROW_REPEAT_FRAMES,
-  arrowDirection,
-  arrowFanRects,
+  BAND,
+  chipAt,
+  chipRects,
+  CLICK_KEY,
+  deckTargetAt,
   DIRECTION_KEYSYM,
+  DPAD,
+  DPAD_KEYS,
+  dpadAt,
   KEYBOARD,
   keyAt,
   keyboardKeys,
   keysymFor,
   keyToLine,
+  MENU_KEY,
+  TOUCH_BIAS_Y,
   TRACKPAD,
 } from "../apps/pocket-remote/keyboard-layout.ts";
 import {
@@ -121,7 +124,9 @@ import {
   tabAt,
   TILE_GRIP,
   tileGripHit,
+  TILE_GRIP_MIN,
   tileGripRect,
+  tileGripTarget,
   TILE_POPUP_ROWS,
   tileRect,
   trackDelta,
@@ -802,16 +807,24 @@ describe("pocket-remote design system", () => {
     expect(cleanTitle("evan@x1nano:~", "foot")).toBe("evan@x1nano:~");
   });
 
-  test("a tile's resize corner sits inside it and only on tiles big enough", () => {
+  test("a tile's resize corner is small ink with a large target", () => {
     const tile = { x: 100, y: 100, w: 120, h: 90 };
     const grip = tileGripRect(tile);
     expect(grip.x + grip.w).toBe(tile.x + tile.w);
     expect(grip.y + grip.h).toBe(tile.y + tile.h);
     expect(grip.w).toBe(TILE_GRIP);
+    // The thing a finger has to hit is much bigger than the mark, and
+    // reaches a little past the tile's own edge.
+    const target = tileGripTarget(tile);
+    expect(Math.min(target.w, target.h)).toBeGreaterThanOrEqual(34);
+    expect(target.x).toBeLessThan(grip.x);
+    expect(target.x + target.w).toBeGreaterThan(tile.x + tile.w);
     expect(tileGripHit(tile.x + tile.w - 4, tile.y + tile.h - 4, tile)).toBe(true);
+    expect(tileGripHit(tile.x + tile.w - 28, tile.y + tile.h - 28, tile)).toBe(true);
+    expect(tileGripHit(tile.x + tile.w + 3, tile.y + tile.h + 3, tile)).toBe(true);
     expect(tileGripHit(tile.x + 10, tile.y + 10, tile)).toBe(false);
     // Too small to carry one: the whole face stays focus and hold.
-    expect(tileGripHit(104, 104, { x: 100, y: 100, w: 40, h: 40 })).toBe(false);
+    expect(tileGripHit(160, 160, { x: 100, y: 100, w: TILE_GRIP_MIN - 1, h: 200 })).toBe(false);
   });
 
   test("the zIndex prop id the tiles write matches the contract", () => {
@@ -821,7 +834,7 @@ describe("pocket-remote design system", () => {
 });
 
 describe("pocket-remote deck", () => {
-  test("every layer fits over the trackpad and no two keys overlap", () => {
+  test("every layer fits above the band and no two keys overlap", () => {
     for (const layer of ["lower", "upper", "sym"] as const) {
       const keys = keyboardKeys(layer);
       expect(keys.length).toBeGreaterThan(40);
@@ -829,7 +842,7 @@ describe("pocket-remote deck", () => {
         expect(key.x).toBeGreaterThanOrEqual(0);
         expect(key.x + key.w).toBeLessThanOrEqual(SCREEN_W);
         expect(key.y).toBeGreaterThanOrEqual(KEYBOARD.y);
-        expect(key.y + key.h).toBeLessThanOrEqual(TRACKPAD.y);
+        expect(key.y + key.h).toBeLessThanOrEqual(BAND.y);
       }
       for (let i = 0; i < keys.length; i += 1) {
         for (let j = i + 1; j < keys.length; j += 1) {
@@ -846,12 +859,15 @@ describe("pocket-remote deck", () => {
       // Omarchy's grammar lives on SUPER, so the deck carries it.
       expect(labels).toContain("super");
       expect(labels).toContain("return");
-      // One arrow key, not four: the compass.
-      expect(labels.filter((label) => label === "arrows").length).toBe(1);
+      // The arrows live on the d-pad in the band, not among the keys.
       expect(labels).not.toContain("←");
+      expect(labels).not.toContain("arrows");
+      // A terminal's two punctuation keys are on the bottom row.
+      expect(labels).toContain("-");
+      expect(labels).toContain("/");
     }
     expect(TRACKPAD.y + TRACKPAD.h).toBeLessThanOrEqual(SCREEN_H);
-    expect(TRACKPAD.h).toBeGreaterThanOrEqual(96);
+    expect(TRACKPAD.h).toBeGreaterThanOrEqual(80);
     const lower = keyboardKeys("lower").map((k) => k.def.label);
     expect(lower).toContain(",");
     expect(lower).toContain(".");
@@ -863,48 +879,80 @@ describe("pocket-remote deck", () => {
     expect(keyAt("lower", 240, TRACKPAD.y + 10)).toBeNull();
   });
 
-  test("the arrow compass is one wide key whose legend stays on screen", () => {
-    const compass = keyboardKeys("lower").find((k) => "pad" in k.def.act)!;
-    expect(compass.def.glyph).toBeTruthy();
-    // Wider than a letter and in the bottom row, where a thumb sits.
-    expect(compass.w).toBeGreaterThan(60);
-    expect(compass.row).toBe(4);
-    expect(compass.x + compass.w).toBeLessThanOrEqual(SCREEN_W);
-    const fan = arrowFanRects(compass);
-    for (const dir of ["u", "d", "l", "r"] as const) {
-      const r = fan[dir];
-      expect(r.w).toBe(ARROW_CHIP_W);
-      expect(r.h).toBe(ARROW_CHIP_H);
-      // The legend lives over the trackpad: the deck's one empty place.
-      expect(r.x).toBeGreaterThanOrEqual(TRACKPAD.x);
-      expect(r.x + r.w).toBeLessThanOrEqual(TRACKPAD.x + TRACKPAD.w);
-      expect(r.y).toBeGreaterThanOrEqual(TRACKPAD.y);
-      expect(r.y + r.h).toBeLessThanOrEqual(TRACKPAD.y + TRACKPAD.h);
+  test("the band under the keyboard is a laptop's: menu, click, pad, d-pad", () => {
+    // Nothing overlaps, and the pad does not run edge to edge.
+    expect(MENU_KEY.x).toBeGreaterThan(0);
+    expect(MENU_KEY.y).toBe(BAND.y);
+    expect(CLICK_KEY.y).toBeGreaterThan(MENU_KEY.y + MENU_KEY.h);
+    expect(CLICK_KEY.y + CLICK_KEY.h).toBeLessThanOrEqual(BAND.y + BAND.h);
+    expect(TRACKPAD.x).toBeGreaterThan(MENU_KEY.x + MENU_KEY.w);
+    expect(DPAD.x).toBeGreaterThan(TRACKPAD.x + TRACKPAD.w);
+    expect(DPAD.x + DPAD.w).toBeLessThanOrEqual(SCREEN_W);
+    expect(BAND.y).toBeGreaterThanOrEqual(KEYBOARD.y + KEYBOARD.h);
+    expect(BAND.y + BAND.h).toBeLessThanOrEqual(SCREEN_H);
+    // Both rest buttons and every d-pad key clear the minimum target.
+    for (const r of [MENU_KEY, CLICK_KEY, DPAD_KEYS.u, DPAD_KEYS.d, DPAD_KEYS.l, DPAD_KEYS.r]) {
+      expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(28);
     }
-    // A diamond: up above down, left left of right, sharing centres.
-    expect(fan.u.y).toBeLessThan(fan.d.y);
-    expect(fan.l.x).toBeLessThan(fan.r.x);
-    expect(fan.u.x).toBe(fan.d.x);
-    expect(fan.l.y).toBe(fan.r.y);
-    // A key near the right edge still gets a legend inside the pad.
-    const atEdge = arrowFanRects({ x: SCREEN_W - 40, y: 200, w: 40, h: 32 });
-    expect(atEdge.r.x + atEdge.r.w).toBeLessThanOrEqual(TRACKPAD.x + TRACKPAD.w);
-  });
-
-  test("the slide picks the direction, and a resting finger picks none", () => {
-    expect(arrowDirection(0, 0)).toBeNull();
-    expect(arrowDirection(ARROW_DEAD_ZONE - 1, ARROW_DEAD_ZONE - 1)).toBeNull();
-    expect(arrowDirection(30, 4)).toBe("r");
-    expect(arrowDirection(-30, 4)).toBe("l");
-    expect(arrowDirection(4, 30)).toBe("d");
-    expect(arrowDirection(4, -30)).toBe("u");
-    // The dominant axis wins a diagonal.
-    expect(arrowDirection(40, 30)).toBe("r");
-    expect(arrowDirection(20, 40)).toBe("d");
-    expect(DIRECTION_KEYSYM).toEqual({ u: "Up", d: "Down", l: "Left", r: "Right" });
+    // A cross: up over down, left beside right, sharing the middle.
+    expect(DPAD_KEYS.u.x).toBe(DPAD_KEYS.d.x);
+    expect(DPAD_KEYS.u.y).toBeLessThan(DPAD_KEYS.d.y);
+    expect(DPAD_KEYS.l.y).toBe(DPAD_KEYS.r.y);
+    expect(DPAD_KEYS.l.x).toBeLessThan(DPAD_KEYS.u.x);
+    expect(DPAD_KEYS.r.x).toBeGreaterThan(DPAD_KEYS.u.x);
+    for (const dir of ["u", "d", "l", "r"] as const) {
+      const r = DPAD_KEYS[dir];
+      expect(dpadAt(r.x + 2, r.y + 2)).toBe(dir);
+      expect(r.x).toBeGreaterThanOrEqual(DPAD.x - 4);
+      expect(r.x + r.w).toBeLessThanOrEqual(DPAD.x + DPAD.w + 4);
+      expect(r.y).toBeGreaterThanOrEqual(BAND.y - 4);
+      expect(r.y + r.h).toBeLessThanOrEqual(BAND.y + BAND.h + 4);
+    }
+    expect(dpadAt(TRACKPAD.x + 10, TRACKPAD.y + 10)).toBeNull();
+    // One target for every touch on the deck.
+    expect(deckTargetAt("lower", MENU_KEY.x + 10, MENU_KEY.y + 10)).toEqual({ kind: "menu" });
+    expect(deckTargetAt("lower", CLICK_KEY.x + 10, CLICK_KEY.y + 10)).toEqual({ kind: "click" });
+    expect(deckTargetAt("lower", TRACKPAD.x + 40, TRACKPAD.y + 40)).toEqual({ kind: "pad" });
+    expect(deckTargetAt("lower", DPAD_KEYS.l.x + 4, DPAD_KEYS.l.y + 4)).toEqual({ kind: "dpad", dir: "l" });
+    const g = keyboardKeys("lower").find((k) => k.def.label === "g")!;
+    expect(deckTargetAt("lower", g.x + 4, g.y + 4)).toMatchObject({ kind: "key" });
+    // The arrows are the d-pad's now: no arrow keys among the keys.
+    expect(keyboardKeys("lower").map((k) => k.def.label)).not.toContain("←");
     // A repeat is a walking pace: each one is a key press on the laptop.
     expect(ARROW_HOLD_FRAMES).toBeGreaterThan(15);
     expect(60 / ARROW_REPEAT_FRAMES).toBeLessThan(12);
+    expect(DIRECTION_KEYSYM).toEqual({ u: "Up", d: "Down", l: "Left", r: "Right" });
+  });
+
+  test("the keyboard's hit regions tile it, and correct for where a finger lands", () => {
+    const keys = keyboardKeys("lower");
+    const g = keys.find((k) => k.def.label === "g")!;
+    const h = keys.find((k) => k.def.label === "h")!;
+    // Inside a key, obviously.
+    expect(keyAt("lower", g.x + 4, g.y + 4)).toBe(g);
+    // In the gap between two keys: the nearer one, not nothing. (The exact
+    // middle is a tie the iteration order breaks; a pixel either way is
+    // what a finger produces.)
+    expect(keyAt("lower", g.x + g.w + 2, g.y + 15)).toBe(g);
+    expect(keyAt("lower", h.x - 2, h.y + 15)).toBe(h);
+    // In the gap between two ROWS: whichever row is nearer, never null.
+    const below = keys.find((k) => k.def.label === "b")!;
+    const rowGapY = g.y + g.h + 2;
+    expect(keyAt("lower", g.x + 4, rowGapY)).not.toBeNull();
+    expect(keyAt("lower", below.x + 4, below.y - 2)).not.toBeNull();
+    // Every point over the keyboard's own rows resolves to a key.
+    for (let y = KEYBOARD.y + 6; y < KEYBOARD.y + KEYBOARD.h - 2; y += 5) {
+      for (let x = 20; x < SCREEN_W - 20; x += 7) {
+        expect(keyAt("lower", x, y)).not.toBeNull();
+      }
+    }
+    // The bias is downward: a touch that low still lands on the key above,
+    // and one at a key's very top edge belongs to that key.
+    const bias = keyAt("lower", g.x + g.w / 2, g.y + g.h + TOUCH_BIAS_Y - 1);
+    expect(bias).toBe(g);
+    expect(TOUCH_BIAS_Y).toBeGreaterThan(0);
+    // Far from the keyboard: nothing.
+    expect(keyAt("lower", 240, BAND.y + 40)).toBeNull();
   });
 
   test("keys become wire lines: text plain, keysyms under modifiers", () => {
@@ -939,6 +987,24 @@ describe("pocket-remote deck", () => {
     // The top row's chips open below it.
     expect(chipRects(one, 2)[0]!.y).toBeGreaterThan(one.y);
     expect(chipRects(x, 2)[0]!.y).toBeLessThan(x.y);
+  });
+
+  test("keys are drawn with a visible gap while their targets stay large", () => {
+    const keys = keyboardKeys("lower");
+    const row = keys.filter((k) => k.row === 2).sort((a, b) => a.x - b.x);
+    // Six pixels of ink between neighbours, up from four.
+    for (let i = 1; i < row.length; i += 1) {
+      expect(row[i]!.x - (row[i - 1]!.x + row[i - 1]!.w)).toBeGreaterThanOrEqual(6);
+    }
+    // And six between rows.
+    const above = keys.find((k) => k.row === 1)!;
+    expect(row[0]!.y - (above.y + above.h)).toBeGreaterThanOrEqual(6);
+    // The gaps are ink, not dead space: the row's own band resolves
+    // everywhere, including the seams.
+    for (const key of row) {
+      expect(keyAt("lower", key.x - 3, key.y + key.h / 2)).not.toBeNull();
+      expect(keyAt("lower", key.x + key.w + 3, key.y + key.h / 2)).not.toBeNull();
+    }
   });
 });
 

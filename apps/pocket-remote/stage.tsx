@@ -38,6 +38,7 @@ const LAUNCH_GLYPH: Record<string, string> = {
 
 function Tile(p: { store: RemoteStore; slot: TileSlot }) {
   const s = p.slot;
+  const sizing = () => p.store.resizing() === s.a;
   const dragged = () => p.store.drag()?.a === s.a;
   const over = () => p.store.drag()?.over === s.a;
   const held = () => p.store.popup()?.a === s.a;
@@ -52,7 +53,9 @@ function Tile(p: { store: RemoteStore; slot: TileSlot }) {
     >
       <View class="absolute left-0 top-0 w-full h-full" ref={themed("surfaceMutedDim")} />
       <View
-        class={s.focused() ? "absolute left-0 top-0 w-full h-full rounded-[4] border-2 border-[#7aa2f7]" : "hidden"}
+        class={
+          sizing() || s.focused() ? "absolute left-0 top-0 w-full h-full rounded-[4] border-2 border-[#7aa2f7]" : "hidden"
+        }
         ref={themed("borderAccent")}
       />
       <Text
@@ -71,13 +74,26 @@ function Tile(p: { store: RemoteStore; slot: TileSlot }) {
           <Icon glyph={GLYPH.float} tone="dim" size="sm" />
         </View>
       </Show>
-      {/* the resize corner: three steps, the way a window's own grip reads */}
+      {/* The resize corner: two steps of an L, lit while it is being
+          dragged and while a finger is on its (much larger) target. */}
       <Show when={s.grip()}>
-        <View class="absolute right-[3] bottom-[3] w-[14] h-[14]">
-          <View class="absolute right-0 bottom-0 w-[14] h-[2] bg-[#565f89]" ref={themed("fgDimFill")} />
-          <View class="absolute right-0 bottom-0 w-[2] h-[14] bg-[#565f89]" ref={themed("fgDimFill")} />
-          <View class="absolute right-[5] bottom-[5] w-[9] h-[2] bg-[#565f8999]" ref={themed("fgDimFill")} />
-          <View class="absolute right-[5] bottom-[5] w-[2] h-[9] bg-[#565f8999]" ref={themed("fgDimFill")} />
+        <View class="absolute right-[2] bottom-[2] w-[16] h-[16]">
+          <View
+            class={sizing() ? "absolute right-0 bottom-0 w-[16] h-[3] bg-[#7aa2f7]" : "absolute right-0 bottom-0 w-[16] h-[3] bg-[#565f89]"}
+            ref={themed(() => (sizing() ? "accentFill" : "fgDimFill"))}
+          />
+          <View
+            class={sizing() ? "absolute right-0 bottom-0 w-[3] h-[16] bg-[#7aa2f7]" : "absolute right-0 bottom-0 w-[3] h-[16] bg-[#565f89]"}
+            ref={themed(() => (sizing() ? "accentFill" : "fgDimFill"))}
+          />
+          <View
+            class={sizing() ? "absolute right-[6] bottom-[6] w-[10] h-[3] bg-[#7aa2f7]" : "absolute right-[6] bottom-[6] w-[10] h-[3] bg-[#565f89]"}
+            ref={themed(() => (sizing() ? "accentFill" : "fgDimFill"))}
+          />
+          <View
+            class={sizing() ? "absolute right-[6] bottom-[6] w-[3] h-[10] bg-[#7aa2f7]" : "absolute right-[6] bottom-[6] w-[3] h-[10] bg-[#565f89]"}
+            ref={themed(() => (sizing() ? "accentFill" : "fgDimFill"))}
+          />
         </View>
       </Show>
       <View
@@ -86,6 +102,8 @@ function Tile(p: { store: RemoteStore; slot: TileSlot }) {
             ? "absolute left-0 top-0 w-full h-full bg-[#7aa2f766]"
             : over()
               ? "absolute left-0 top-0 w-full h-full bg-[#9ece6a55]"
+              : sizing()
+              ? "absolute left-0 top-0 w-full h-full bg-[#7aa2f733]"
               : held() || p.store.pressed() === `tile:${s.a}`
                 ? "absolute left-0 top-0 w-full h-full bg-[#ffffff1a]"
                 : "hidden"

@@ -266,6 +266,31 @@ export function typeText(text: string, log: Log): void {
   runDetached(["wtype", "--", clipped], log);
 }
 
+/**
+ * Hold modifiers for `ms`, so a pointer click can happen inside them: a
+ * virtual pointer carries no modifier state of its own, and wtype's own
+ * process is the only thing on the machine that can keep one down (`-M`
+ * presses, `-s` sleeps, `-m` releases). Returns false for a modifier that
+ * is not allowed.
+ */
+export function holdModifiers(mods: readonly string[], ms: number, log: Log): boolean {
+  const unique = [...new Set(mods)];
+  if (unique.length === 0) return false;
+  if (unique.some((m) => !MODIFIERS.has(m))) return false;
+  const hold = Math.max(50, Math.min(2000, Math.round(ms)));
+  runDetached(
+    [
+      "wtype",
+      ...unique.flatMap((m) => ["-M", m]),
+      "-s",
+      String(hold),
+      ...unique.slice().reverse().flatMap((m) => ["-m", m]),
+    ],
+    log,
+  );
+  return true;
+}
+
 export function pressKey(key: string, log: Log, mods: readonly string[] = []): boolean {
   const args = wtypeArgs(key, mods);
   if (!args) return false;

@@ -88,10 +88,11 @@ after a day the strokes are made without looking.
   **Chords two ways**: sticky modifiers (tap ctrl, then the key; ctrl arms,
   paints itself, drops after one key) and hold-and-slide variants (hold `x`
   → `^X` `⌥X`, hold `1` → `F1` `^1`; release on the key itself types it
-  plain). The **trackpad** is a relative pointer with acceleration: one
-  finger moves, a tap clicks, two fingers scroll, a two-finger tap is the
-  right button, a hold picks something up and the button stays down until
-  the finger lifts.
+  plain). **The modifiers reach the pointer too**: ctrl then a tap is a
+  ctrl-click, and ctrl with the click button held is a ctrl-drag. The
+  **trackpad** is a relative pointer with acceleration: one finger moves, a
+  tap clicks, two fingers scroll, a two-finger tap is the right button, a
+  hold picks something up.
 - **The ball.** Omarchy's menu (SUPER+SPACE) has a handle that floats over
   everything and lives on a side edge. **Tap it and the menu opens as a
   sheet** in the middle of the screen: the same rows in the same order with
