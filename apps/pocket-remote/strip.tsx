@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// apps/pocket-remote/strip.tsx — the top strip: one tab per workspace, the
-// active layout's name, the mode switch (stage | deck) and the control
-// centre's button. Tap a tab to go there, hold one to bring the focused
-// window along. Tap the control centre to open it sticky; hold it and slide
-// down onto a slider to adjust and let go.
+// apps/pocket-remote/strip.tsx — the top strip: the workspace tabs (a FIXED
+// 1..N, because Omarchy binds those numbers whether or not Hyprland is
+// keeping a workspace alive), the mode switch centred on the bar, the active
+// layout's name, and the control centre's button at the end.
+//
+// Tap a tab to go there, hold one to bring the focused window along. Tap the
+// control centre to open it sticky; hold it and slide down onto a slider to
+// adjust and let go.
 
 import { Index } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
@@ -23,14 +26,14 @@ export function Strip(p: { store: RemoteStore }) {
     <View class="absolute left-0 top-0 w-[480] h-[28] bg-[#13141c]" ref={themed("surfaceDark")}>
       <Index each={tabs()}>
         {(tab) => (
-          <View class="absolute top-[2] w-[28] h-[24] items-center justify-center" style={{ insetL: tab().x - STRIP.x }}>
+          <View class="absolute top-[2] w-[24] h-[24] items-center justify-center" style={{ insetL: tab().x - STRIP.x }}>
             <View
               class={
                 tab().id === active()
-                  ? "absolute left-[2] top-0 w-[24] h-[24] rounded-[6] bg-[#7aa2f7]"
+                  ? "absolute left-[1] top-0 w-[22] h-[24] rounded-[6] bg-[#7aa2f7]"
                   : tab().n > 0
-                    ? "absolute left-[2] top-0 w-[24] h-[24] rounded-[6] bg-[#414868]"
-                    : "absolute left-[2] top-0 w-[24] h-[24] rounded-[6] bg-[#1a1b26]"
+                    ? "absolute left-[1] top-0 w-[22] h-[24] rounded-[6] bg-[#414868]"
+                    : "absolute left-[1] top-0 w-[22] h-[24] rounded-[6] bg-[#1a1b26]"
               }
               ref={themed(() => (tab().id === active() ? "accentFill" : tab().n > 0 ? "surfaceMuted" : "surface"))}
             />
@@ -49,9 +52,9 @@ export function Strip(p: { store: RemoteStore }) {
             <View
               class={
                 p.store.pressed() === `tab:${tab().id}`
-                  ? "absolute left-[2] top-0 w-[24] h-[24] rounded-[6] bg-[#ffffff33]"
+                  ? "absolute left-[1] top-0 w-[22] h-[24] rounded-[6] bg-[#ffffff33]"
                   : p.store.drag()?.overWs === tab().id
-                    ? "absolute left-[2] top-0 w-[24] h-[24] rounded-[6] bg-[#9ece6a66]"
+                    ? "absolute left-[1] top-0 w-[22] h-[24] rounded-[6] bg-[#9ece6a66]"
                     : "hidden"
               }
             />

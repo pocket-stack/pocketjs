@@ -11,6 +11,7 @@ import { keyboardKeys, TRACKPAD } from "../apps/pocket-remote/keyboard-layout.ts
 import {
   BALL_HOME,
   CC_BUTTON,
+  launchCellRect,
   MODE,
   MODE_HALF_W,
   SHEET_LIST,
@@ -147,7 +148,8 @@ describe("pocket-remote in the sim", () => {
     expect(shown).toContain("foot");
     expect(shown).toContain("chromium");
     expect(shown).toContain("dwindle");
-    expect(store.tabs().map((t) => t.id)).toEqual([1, 2]);
+    // Tabs are the fixed set Omarchy binds, not the two Hyprland reports.
+    expect(store.tabs().map((t) => t.id)).toEqual([1, 2, 3, 4, 5]);
 
     // The tile pool settled: geometry landed inside the stage.
     for (const slot of store.slots) {
@@ -162,8 +164,10 @@ describe("pocket-remote in the sim", () => {
     tap(world, x, 14);
     expect(store.state()?.active).toBe(2);
     expect(store.slots.filter((slot) => slot.a !== null).length).toBe(0);
-    expect(texts(world.getTree()).join(" ")).toContain("empty workspace");
-    expect(texts(world.getTree()).join(" ")).toContain("Terminal");
+    const onEmpty = texts(world.getTree()).join(" ");
+    expect(onEmpty).toContain("empty workspace");
+    // The launch bar is fixed: it was already there with the windows up.
+    expect(onEmpty).toContain("Terminal");
 
     // Render a frame: the panel is 480x320 logical.
     const pixels = world.render();
@@ -282,6 +286,17 @@ describe("pocket-remote in the sim", () => {
     expect(sent).toContainEqual({ t: "win", op: "float", a: "0x55f90e41dd40" });
   });
 
+  test("the launch bar starts an app from anywhere on the stage", async () => {
+    const { world, store, sent } = await connected();
+    expect(texts(world.getTree()).join(" ")).toContain("Browser");
+    const cell = launchCellRect(1, 3);
+    tap(world, cell.x + cell.w / 2, cell.y + cell.h / 2);
+    expect(sent).toContainEqual({ t: "act", id: "browser" });
+    // The bar belongs to the stage: the deck's bottom half is the trackpad.
+    tap(world, MODE.x + MODE_HALF_W + 17, MODE.y + 11);
+    expect(texts(world.getTree()).join(" ")).not.toContain("Files");
+  });
+
   test("the sheet is one column, scrolls, and lists the machine's applications", async () => {
     const { world, store, sent } = await connected();
     store.applyLine({ t: "apps", seq: 0, more: 1, a: [{ i: "foot", n: "Foot" }, { i: "chromium", n: "Chromium" }] });
@@ -294,6 +309,21 @@ describe("pocket-remote in the sim", () => {
     // One column: every row shares an x and steps by one row height.
     expect(sheetRowRect(1).x).toBe(sheetRowRect(0).x);
     expect(sheetRowRect(1).y - sheetRowRect(0).y).toBe(sheetRowRect(0).h);
+    // A finger that lands to fling must not flash a row's highlight; one
+    // that stays put does highlight. (A release on a row navigates, so the
+    // sheet is reopened at the root afterwards.)
+    const onRow = { x: SHEET_LIST.x + 100, y: SHEET_LIST.y + 150 };
+    world.frame(0, undefined, [pack(onRow.x, onRow.y)]);
+    world.frame(0, undefined, [pack(onRow.x, onRow.y)]);
+    expect(store.sheet()!.hot).toBeNull();
+    for (let i = 0; i < 12; i += 1) world.frame(0, undefined, [pack(onRow.x, onRow.y)]);
+    expect(store.sheet()!.hot).toBe(3);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 12; i += 1) world.frame(0);
+    store.openSheet();
+    for (let i = 0; i < 12; i += 1) world.frame(0);
+    expect(store.sheet()!.hot).toBeNull();
+
     // Ten rows do not fit: a fling scrolls the list.
     const listMid = { x: SHEET_LIST.x + 100, y: SHEET_LIST.y + 150 };
     world.frame(0, undefined, [pack(listMid.x, listMid.y)]);

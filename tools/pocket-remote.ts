@@ -417,10 +417,11 @@ async function shots(outDir: string): Promise<void> {
   shot("deck-variants");
   frames(1);
 
-  // back to the stage, then the empty workspace three
+  // back to the stage, then an empty workspace: the launch bar is fixed, so
+  // there is nothing on the stage but the hint.
   tap(MODE.x + 17, MODE.y + 11);
   frames(10);
-  tap(6 + TAB_W * 2 + TAB_W / 2, 14);
+  tap(6 + TAB_W * 4 + TAB_W / 2, 14);
   frames(30);
   shot("empty");
   console.log(`wrote ${outDir}`);

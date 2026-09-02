@@ -236,6 +236,8 @@ export interface Media {
 }
 
 const TOAST_FRAMES = 150;
+/** Frames a finger must stay on a row before it is highlighted. */
+const SHEET_PRESS_FRAMES = 7;
 /** Frames between level sends while a slider is being dragged. */
 const LEVEL_SEND_EVERY = 3;
 /** Frames after a slider release during which host echoes are ignored. */
@@ -307,6 +309,10 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   const [cc, setCc] = createSignal<Cc | null>(null);
   const [ccT, setCcT] = createSignal(0);
   const [sheet, setSheet] = createSignal<Sheet | null>(null);
+  /** A finger on a row, not yet a highlight: a list's press has to wait long
+   *  enough to know the finger is not starting a scroll (the highlight
+   *  flashed under every finger that landed to fling). */
+  const [armed, setArmed] = createSignal<{ row: number; at: number } | null>(null);
   const [sheetT, setSheetT] = createSignal(0);
   /** Restarted on every route change: the list's own entrance. */
   const [sheetListT, setSheetListT] = createSignal(0);
@@ -701,13 +707,18 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   };
 
   const openSheet = () => {
+    setArmed(null);
     setSheet({ at: MENU_ROOT, trail: [], hot: null });
     setSheetT(0);
     setSheetListT(1);
     sheetScroller.scrollTo(0, { immediate: true });
   };
-  const closeSheet = () => setSheet(null);
+  const closeSheet = () => {
+    setArmed(null);
+    setSheet(null);
+  };
   const sheetGo = (at: string, trail: string[]) => {
+    setArmed(null);
     setSheet({ at, trail, hot: null });
     setSheetListT(0);
     sheetScroller.stop();
@@ -730,6 +741,21 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   const sheetHover = (hot: number | null) => {
     const s = sheet();
     if (s && s.hot !== hot) setSheet({ ...s, hot });
+  };
+  /** A finger landed on a row: highlight it, but only if it is still there
+   *  SHEET_PRESS_FRAMES later. */
+  const sheetArm = (row: number | null) => {
+    if (row === null) {
+      setArmed(null);
+      sheetHover(null);
+      return;
+    }
+    if (sheet()?.hot !== null && sheet()?.hot !== undefined) {
+      sheetHover(row); // already showing: follow the finger
+      return;
+    }
+    const a = armed();
+    setArmed({ row, at: a ? a.at : frameCount });
   };
   /** A tapped row: a submenu opens here, the applications provider opens as
    *  a list here, anything else runs on the laptop and the sheet goes away. */
@@ -927,6 +953,14 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
       if (c.mode === "hold" && c.row === null && c.until > 0 && frameCount >= c.until) setCc(null);
     }
     if (sheet()) {
+      const a = armed();
+      if (a) {
+        if (frameCount - a.at >= SHEET_PRESS_FRAMES) {
+          setArmed(null);
+          sheetHover(a.row);
+        }
+        moved = true;
+      }
       if (sheetT() < 1) {
         setSheetT(easeProgress(sheetT()));
         moved = true;
@@ -1041,6 +1075,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     sheetPush,
     sheetBack,
     sheetHover,
+    sheetArm,
     sheetTap,
     keyFly,
     flyT,

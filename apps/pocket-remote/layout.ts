@@ -29,14 +29,23 @@ export type Mode = "stage" | "deck";
 
 /** The workspace strip across the top. */
 export const STRIP: Rect = { x: 0, y: 0, w: SCREEN_W, h: 28 };
-export const TAB_W = 28;
+export const TAB_W = 24;
 export const TAB_X0 = 6;
-export const TAB_MAX = 10;
-/** The active workspace's layout name; tapping toggles it (SUPER+L). */
-export const BADGE: Rect = { x: 296, y: 4, w: 62, h: 20 };
-/** The mode switch: two halves, stage and deck. */
-export const MODE: Rect = { x: 366, y: 3, w: 68, h: 22 };
+/**
+ * Workspaces are a FIXED set, not the ones that happen to exist: Omarchy
+ * binds SUPER+1..0, so those numbers are addressable whether or not
+ * Hyprland is currently keeping a workspace alive (it destroys an empty
+ * one, which left the strip showing "2 3" on a machine the user thinks of
+ * as having five desks). Five is the set in practice; the strip grows to
+ * whatever exists above that, up to what fits left of the mode switch.
+ */
+export const TAB_MIN = 5;
+export const TAB_MAX = 8;
+/** The mode switch: two halves, stage and deck. Centred on the bar. */
+export const MODE: Rect = { x: (SCREEN_W - 68) / 2, y: 3, w: 68, h: 22 };
 export const MODE_HALF_W = 34;
+/** The active workspace's layout name; tapping toggles it (SUPER+L). */
+export const BADGE: Rect = { x: 326, y: 4, w: 62, h: 20 };
 /** The control centre button at the strip's right end. */
 export const CC_BUTTON: Rect = { x: 440, y: 2, w: 34, h: 24 };
 
@@ -44,8 +53,19 @@ export const CC_BUTTON: Rect = { x: 440, y: 2, w: 34, h: 24 };
 // stage
 // ---------------------------------------------------------------------------
 
-/** Everything under the strip: the desktop miniature, or the deck. */
-export const STAGE: Rect = { x: 0, y: STRIP.h, w: SCREEN_W, h: SCREEN_H - STRIP.h };
+/**
+ * The launch bar across the bottom of the stage: terminal, browser, files.
+ * Fixed, because those three are what a remote is reached for and hunting
+ * for them in a menu is worse than the 32 px they cost — and with them here
+ * an empty workspace needs no launchers of its own. The deck has no bar: its
+ * bottom half is the trackpad.
+ */
+export const LAUNCH_BAR: Rect = { x: 0, y: SCREEN_H - 32, w: SCREEN_W, h: 32 };
+
+/** Everything between the strip and the launch bar: the desktop miniature.
+ *  The deck ignores the bar and runs to the bottom edge. */
+export const STAGE: Rect = { x: 0, y: STRIP.h, w: SCREEN_W, h: LAUNCH_BAR.y - STRIP.h };
+export const DECK_AREA: Rect = { x: 0, y: STRIP.h, w: SCREEN_W, h: SCREEN_H - STRIP.h };
 /** Horizontal travel on empty stage that switches workspace. */
 export const SWIPE_PX = 48;
 /** Tiles shorter than this drop their title line. */
@@ -53,20 +73,15 @@ export const TILE_TWO_LINES_H = 40;
 /** Fixed pool of tile slots (protocol WINDOWS_MAX). */
 export const TILE_SLOTS = 24;
 
-/** Launch chips on an empty workspace: the apps a remote is reached for. */
-export const LAUNCH_CHIP_W = 104;
-export const LAUNCH_CHIP_H = 36;
-export const LAUNCH_CHIP_GAP = 10;
-export const LAUNCH_Y = STAGE.y + 124;
-
-export function launchChipRect(i: number, count: number): Rect {
-  const total = count * LAUNCH_CHIP_W + (count - 1) * LAUNCH_CHIP_GAP;
-  const x0 = Math.round((SCREEN_W - total) / 2);
-  return { x: x0 + i * (LAUNCH_CHIP_W + LAUNCH_CHIP_GAP), y: LAUNCH_Y, w: LAUNCH_CHIP_W, h: LAUNCH_CHIP_H };
+/** One of the launch bar's equal cells. */
+export function launchCellRect(i: number, count: number): Rect {
+  const w = Math.floor(LAUNCH_BAR.w / count);
+  return { x: i * w, y: LAUNCH_BAR.y, w: i === count - 1 ? LAUNCH_BAR.w - i * w : w, h: LAUNCH_BAR.h };
 }
 
-export function launchChipAt(x: number, y: number, count: number): number | null {
-  for (let i = 0; i < count; i += 1) if (within(x, y, launchChipRect(i, count))) return i;
+export function launchCellAt(x: number, y: number, count: number): number | null {
+  if (!within(x, y, LAUNCH_BAR)) return null;
+  for (let i = 0; i < count; i += 1) if (within(x, y, launchCellRect(i, count))) return i;
   return null;
 }
 
@@ -77,10 +92,12 @@ export function launchChipAt(x: number, y: number, count: number): number | null
 export const BALL = 44;
 export const BALL_MARGIN = 6;
 export const BALL_Y_MIN = STRIP.h + 6;
-export const BALL_Y_MAX = SCREEN_H - BALL - 6;
+/** It never sits on the launch bar: those three targets are fixed and the
+ *  ball would cover one of them. */
+export const BALL_Y_MAX = LAUNCH_BAR.y - BALL - 4;
 /** Where it starts: the right edge, low, over the corner a window's tile
  *  least often needs. */
-export const BALL_HOME = { x: SCREEN_W - BALL - BALL_MARGIN, y: SCREEN_H - BALL - 16 };
+export const BALL_HOME = { x: SCREEN_W - BALL - BALL_MARGIN, y: BALL_Y_MAX };
 
 /** Released anywhere, the ball goes to the nearer side edge and keeps its
  *  height, clamped under the strip. */
@@ -362,24 +379,32 @@ export interface Tab {
 }
 
 /**
- * Workspaces on the strip: every ordinary workspace Hyprland has, the active
- * one even when empty, plus one more empty tab so there is always somewhere
- * new to go — the Omarchy bar's own rule. Capped at TAB_MAX.
+ * The strip's tabs: 1..N, contiguous, N at least TAB_MIN and at most
+ * TAB_MAX. Hyprland only reports the workspaces that exist — it destroys an
+ * empty one — so a list built from the snapshot alone shrank to whatever
+ * had windows. The numbers Omarchy binds are addressable regardless, and a
+ * tab for one that does not exist yet is exactly how you get there.
  */
 export function stripTabs(ws: readonly WsInfo[], active: number): Tab[] {
-  const ids = new Set<number>();
-  for (const w of ws) if (w.id > 0) ids.add(w.id);
-  if (active > 0) ids.add(active);
-  const sorted = [...ids].sort((a, b) => a - b);
-  const last = sorted.length ? sorted[sorted.length - 1]! : 0;
-  const lastN = ws.find((w) => w.id === last)?.n ?? 0;
-  // An empty tab trails the list unless the last workspace is already empty.
-  if ((last === 0 || lastN > 0) && last < TAB_MAX) sorted.push(last + 1);
-  return sorted.slice(0, TAB_MAX).map((id, i) => ({
-    id,
-    n: ws.find((w) => w.id === id)?.n ?? 0,
+  let last = TAB_MIN;
+  for (const w of ws) if (w.id > last && w.id <= TAB_MAX) last = w.id;
+  if (active > last) last = Math.min(active, TAB_MAX);
+  const tabs = Array.from({ length: last }, (_, i) => ({
+    id: i + 1,
+    n: ws.find((w) => w.id === i + 1)?.n ?? 0,
     x: STRIP.x + TAB_X0 + i * TAB_W,
   }));
+  // Omarchy binds ten workspaces but only TAB_MAX tabs fit beside the mode
+  // switch. Standing on one of the high ones, the last tab carries its
+  // number rather than leaving the strip with nothing lit.
+  if (active > TAB_MAX) {
+    tabs[tabs.length - 1] = {
+      id: active,
+      n: ws.find((w) => w.id === active)?.n ?? 0,
+      x: tabs[tabs.length - 1]!.x,
+    };
+  }
+  return tabs;
 }
 
 export function tabAt(x: number, tabs: readonly Tab[]): Tab | null {

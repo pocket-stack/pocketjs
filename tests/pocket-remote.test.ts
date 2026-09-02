@@ -68,8 +68,9 @@ import {
   ccRowAt,
   easeProgress,
   fitMonitor,
-  launchChipAt,
-  launchChipRect,
+  LAUNCH_BAR,
+  launchCellAt,
+  launchCellRect,
   MODE,
   placePopup,
   pointerGain,
@@ -92,6 +93,7 @@ import {
   stripTabs,
   swapDirection,
   TAB_MAX,
+  TAB_MIN,
   TAB_W,
   TAB_X0,
   tabAt,
@@ -226,14 +228,16 @@ describe("pocket-remote actions", () => {
 describe("pocket-remote layout", () => {
   const mon = { w: 1440, h: 900 };
 
-  test("the strip and the stage cover the screen; the strip's controls clear the tabs", () => {
+  test("the three bands cover the screen; the mode switch is centred and clears the tabs", () => {
     expect(STRIP.y).toBe(0);
     expect(STAGE.y).toBe(STRIP.h);
-    expect(STAGE.y + STAGE.h).toBe(SCREEN_H);
-    const tabsEnd = TAB_X0 + TAB_MAX * TAB_W;
-    expect(BADGE.x).toBeGreaterThanOrEqual(tabsEnd);
-    expect(BADGE.x + BADGE.w).toBeLessThanOrEqual(MODE.x);
-    expect(MODE.x + MODE.w).toBeLessThanOrEqual(CC_BUTTON.x);
+    expect(STAGE.y + STAGE.h).toBe(LAUNCH_BAR.y);
+    expect(LAUNCH_BAR.y + LAUNCH_BAR.h).toBe(SCREEN_H);
+    // Centred on the bar, and past the widest the tabs can grow.
+    expect(MODE.x).toBe(SCREEN_W - (MODE.x + MODE.w));
+    expect(TAB_X0 + TAB_MAX * TAB_W).toBeLessThanOrEqual(MODE.x);
+    expect(MODE.x + MODE.w).toBeLessThanOrEqual(BADGE.x);
+    expect(BADGE.x + BADGE.w).toBeLessThanOrEqual(CC_BUTTON.x);
     expect(CC_BUTTON.x + CC_BUTTON.w).toBeLessThanOrEqual(SCREEN_W);
     for (const r of [BADGE, MODE, CC_BUTTON]) expect(r.y + r.h).toBeLessThanOrEqual(STRIP.h);
   });
@@ -284,32 +288,48 @@ describe("pocket-remote layout", () => {
     expect(stageWindows(state).map((w) => w.a)).toEqual(["t", "f"]);
   });
 
-  test("the strip lists every workspace, the active one, and one empty tab after", () => {
-    const tabs = stripTabs([{ id: 1, n: 2 }, { id: 3, n: 1 }], 3);
-    expect(tabs.map((t) => t.id)).toEqual([1, 3, 4]);
-    expect(tabs[2]!.n).toBe(0);
-    expect(stripTabs([{ id: 1, n: 0 }], 1).map((t) => t.id)).toEqual([1]);
-    expect(stripTabs([], 5).map((t) => t.id)).toEqual([5]); // already empty: no trailing tab
-    expect(stripTabs(Array.from({ length: 12 }, (_, i) => ({ id: i + 1, n: 1 })), 1).length).toBe(TAB_MAX);
-    expect(tabAt(tabs[1]!.x + 3, tabs)!.id).toBe(3);
+  test("the strip's tabs are a fixed 1..N, whatever Hyprland currently keeps alive", () => {
+    // Hyprland destroys an empty workspace, so a snapshot can carry only 2
+    // and 3 on a machine whose desks are 1..5. The numbers Omarchy binds
+    // are addressable regardless.
+    const tabs = stripTabs([{ id: 2, n: 1 }, { id: 3, n: 2 }], 2);
+    expect(tabs.map((t) => t.id)).toEqual([1, 2, 3, 4, 5]);
+    expect(tabs.map((t) => t.n)).toEqual([0, 1, 2, 0, 0]);
+    expect(stripTabs([], 1).map((t) => t.id)).toEqual([1, 2, 3, 4, 5]);
+    // A workspace above the fixed set extends it, up to what fits.
+    expect(stripTabs([{ id: 7, n: 1 }], 1).map((t) => t.id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    // Ten are bound but eight fit: standing on 10, the last tab is 10.
+    const high = stripTabs([{ id: 10, n: 1 }], 10);
+    expect(high.length).toBe(TAB_MAX);
+    expect(high.map((t) => t.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 10]);
+    expect(high[TAB_MAX - 1]!.n).toBe(1);
+    expect(stripTabs([], 8).map((t) => t.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(tabAt(tabs[2]!.x + 3, tabs)!.id).toBe(3);
     expect(tabAt(0, tabs)).toBeNull();
+    expect(tabs[TAB_MIN - 1]!.x + TAB_W).toBeLessThanOrEqual(MODE.x);
   });
 
-  test("launch chips sit centred on the empty stage and hit-test", () => {
-    const rects = [0, 1, 2].map((i) => launchChipRect(i, 3));
-    expect(rects[0]!.x).toBeGreaterThan(0);
-    expect(rects[2]!.x + rects[2]!.w).toBeLessThan(SCREEN_W);
-    expect(SCREEN_W - (rects[2]!.x + rects[2]!.w)).toBeCloseTo(rects[0]!.x, -1);
-    expect(launchChipAt(rects[1]!.x + 10, rects[1]!.y + 10, 3)).toBe(1);
-    expect(launchChipAt(rects[1]!.x + 10, rects[1]!.y - 10, 3)).toBeNull();
+  test("the launch bar's three cells fill the width and hit-test", () => {
+    const rects = [0, 1, 2].map((i) => launchCellRect(i, 3));
+    expect(rects[0]!.x).toBe(0);
+    expect(rects[2]!.x + rects[2]!.w).toBe(SCREEN_W);
+    expect(rects[1]!.x).toBe(rects[0]!.w);
+    for (const r of rects) {
+      expect(r.y).toBe(LAUNCH_BAR.y);
+      expect(r.w).toBeGreaterThanOrEqual(120);
+    }
+    expect(launchCellAt(rects[1]!.x + 10, LAUNCH_BAR.y + 10, 3)).toBe(1);
+    expect(launchCellAt(rects[1]!.x + 10, LAUNCH_BAR.y - 10, 3)).toBeNull();
+    expect(launchCellAt(479, LAUNCH_BAR.y + 10, 3)).toBe(2);
   });
 
-  test("the ball snaps to the nearer edge, keeps its height, stays under the strip", () => {
+  test("the ball snaps to the nearer edge, keeps its height, stays off the strip and the launch bar", () => {
     expect(BALL_HOME.x + BALL).toBeLessThanOrEqual(SCREEN_W);
     expect(ballSnap(100, 150)).toEqual({ x: BALL_MARGIN, y: 150 });
     expect(ballSnap(300, 150)).toEqual({ x: SCREEN_W - BALL - BALL_MARGIN, y: 150 });
     expect(ballSnap(300, 0).y).toBe(BALL_Y_MIN);
     expect(ballSnap(300, 900).y).toBe(BALL_Y_MAX);
+    expect(BALL_Y_MAX + BALL).toBeLessThanOrEqual(LAUNCH_BAR.y);
     const ball = { x: 400, y: 200 };
     expect(ballHit(420, 220, ball)).toBe(true);
     expect(ballHit(398, 220, ball)).toBe(true); // 4 px of slack

@@ -177,7 +177,9 @@ export function MenuSheet(p: { store: RemoteStore }) {
 }
 
 /** The sheet owns every contact while it is up: rows answer a release, the
- *  list pans and flings, the header goes back or closes, outside closes. */
+ *  list pans and flings, the header goes back or closes, outside closes. A
+ *  row's highlight is ARMED on the down edge and only shown once the finger
+ *  has stayed put, so landing to fling no longer flashes a selection. */
 export function sheetHandlers(store: RemoteStore): GestureHandlers {
   type Down = { kind: "row"; i: number } | { kind: "back" } | { kind: "close" } | { kind: "list" } | { kind: "outside" } | { kind: "card" };
   let down: Down = { kind: "card" };
@@ -199,7 +201,7 @@ export function sheetHandlers(store: RemoteStore): GestureHandlers {
       if (within(c.x, c.y, SHEET_LIST)) {
         const i = rowUnder(c.x, c.y);
         down = i === null ? { kind: "list" } : { kind: "row", i };
-        store.sheetHover(i);
+        store.sheetArm(i);
         store.sheetScroller.stop();
         return;
       }
@@ -216,7 +218,7 @@ export function sheetHandlers(store: RemoteStore): GestureHandlers {
       if (!panning && down.kind === "row") {
         const i = rowUnder(c.x, c.y);
         if (i !== null) down = { kind: "row", i };
-        store.sheetHover(i);
+        store.sheetArm(i);
       }
     },
     onUp: (c) => {
@@ -230,7 +232,7 @@ export function sheetHandlers(store: RemoteStore): GestureHandlers {
       }
       const t = down;
       store.pressRelease();
-      store.sheetHover(null);
+      store.sheetArm(null);
       down = { kind: "card" };
       if (t.kind === "row") store.sheetTap(t.i);
       else if (t.kind === "back") store.sheetBack();
@@ -238,7 +240,7 @@ export function sheetHandlers(store: RemoteStore): GestureHandlers {
     },
     onPanStart: (c) => {
       store.pressRelease();
-      store.sheetHover(null);
+      store.sheetArm(null);
       if (down.kind === "row" || down.kind === "list") {
         panning = true;
         down = { kind: "list" };
@@ -253,7 +255,7 @@ export function sheetHandlers(store: RemoteStore): GestureHandlers {
       if (panning) store.sheetScroller.endDrag(0);
       panning = false;
       store.pressRelease();
-      store.sheetHover(null);
+      store.sheetArm(null);
       down = { kind: "card" };
     },
   };

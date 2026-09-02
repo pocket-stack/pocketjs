@@ -14,7 +14,7 @@ import { type ActionId, actionById, LAUNCHERS } from "./actions.ts";
 import { GLYPH } from "./glyphs.ts";
 import type { GestureHandlers } from "./handlers.ts";
 import { Icon } from "./icons.tsx";
-import { launchChipAt, launchChipRect, popupRowAt, STAGE, STRIP, SWIPE_PX, tabAt, within } from "./layout.ts";
+import { LAUNCH_BAR, launchCellAt, launchCellRect, popupRowAt, STAGE, STRIP, SWIPE_PX, tabAt, within } from "./layout.ts";
 import { PopupBox, type PopupRow } from "./popup.tsx";
 import type { RemoteStore, TileSlot } from "./store.ts";
 import { themed } from "./theme.ts";
@@ -75,45 +75,41 @@ function Tile(p: { store: RemoteStore; slot: TileSlot }) {
   );
 }
 
-function Launchers(p: { store: RemoteStore }) {
+/**
+ * The launch bar: terminal, browser, files, fixed across the bottom of the
+ * stage. Three equal cells, so the targets are wide even though the bar is
+ * short, and no hunting for the three things a remote is reached for.
+ */
+export function LaunchBar(p: { store: RemoteStore }) {
   return (
-    <>
-      <View class="absolute left-0 top-[92] w-[480] h-[20] items-center justify-center">
-        <Text class="text-sm text-[#565f89]" ref={themed("textDim")}>
-          empty workspace
-        </Text>
-      </View>
+    <View
+      class="absolute left-0 w-[480] h-[32] bg-[#13141c]"
+      style={{ insetT: LAUNCH_BAR.y }}
+      ref={themed("surfaceDark")}
+    >
       <Index each={LAUNCHERS}>
         {(id, i) => {
-          const r = launchChipRect(i, LAUNCHERS.length);
+          const r = launchCellRect(i, LAUNCHERS.length);
           return (
-            <View
-              class="absolute rounded-[10] bg-[#24283b] border border-[#414868]"
-              style={{ insetL: r.x, insetT: r.y - STAGE.y, width: r.w, height: r.h }}
-              ref={(node) => {
-                themed("surfaceMutedDim")(node);
-                themed("borderMuted")(node);
-              }}
-            >
-              <View class="absolute left-[8] top-[6] w-[24] h-[24] items-center justify-center">
+            <View class="absolute top-0 h-[32] items-center justify-center" style={{ insetL: r.x, width: r.w }}>
+              <View class="absolute left-[34] top-[4] w-[24] h-[24] items-center justify-center">
                 <Icon glyph={LAUNCH_GLYPH[id()] ?? GLYPH.launch} tone="fg" size="lg" />
               </View>
-              <View class="absolute left-[36] top-0 w-[62] h-[36] items-center">
+              <View class="absolute left-[62] top-0 w-[70] h-[32] items-center">
                 <Text class="text-sm text-[#c0caf5]" ref={themed("text")}>
                   {actionById(id())?.label ?? id()}
                 </Text>
               </View>
-              <View class={p.store.pressed() === `launch:${i}` ? "absolute left-0 top-0 w-full h-full rounded-[10] bg-[#ffffff22]" : "hidden"} />
+              <View
+                class={p.store.pressed() === `launch:${i}` ? "absolute left-[2] top-[2] h-[28] rounded-[8] bg-[#ffffff22]" : "hidden"}
+                style={{ width: r.w - 4 }}
+              />
+              <View class={i === 0 ? "hidden" : "absolute left-0 top-[6] w-[1] h-[20] bg-[#41486880]"} ref={themed("surfaceMutedDim")} />
             </View>
           );
         }}
       </Index>
-      <View class="absolute left-0 top-[178] w-[480] h-[16] items-center justify-center">
-        <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
-          swipe for the next workspace
-        </Text>
-      </View>
-    </>
+    </View>
   );
 }
 
@@ -131,9 +127,18 @@ export function Stage(p: { store: RemoteStore }) {
     return !!s && !s.win.some((w) => w.ws === s.active);
   };
   return (
-    <View class="absolute left-0 top-[28] w-[480] h-[292] bg-[#1a1b26] overflow-hidden" ref={themed("surface")}>
+    <View class="absolute left-0 top-[28] w-[480] h-[260] bg-[#1a1b26] overflow-hidden" ref={themed("surface")}>
       <Show when={empty()}>
-        <Launchers store={p.store} />
+        <View class="absolute left-0 top-[104] w-[480] h-[20] items-center justify-center">
+          <Text class="text-sm text-[#565f89]" ref={themed("textDim")}>
+            empty workspace
+          </Text>
+        </View>
+        <View class="absolute left-0 top-[128] w-[480] h-[16] items-center justify-center">
+          <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
+            swipe for the next · the bar below launches
+          </Text>
+        </View>
       </Show>
       {/* tiles are positioned in screen space; the stage origin is offset */}
       <View class="absolute w-[480] h-[320]" style={{ insetL: -STAGE.x, insetT: -STAGE.y }}>
@@ -172,14 +177,11 @@ export function TilePopup(p: { store: RemoteStore }) {
 type Target = { kind: "tile"; a: string } | { kind: "launch"; i: number } | { kind: "stage" } | { kind: "none" };
 
 function stageTarget(store: RemoteStore, x: number, y: number): Target {
+  const cell = launchCellAt(x, y, LAUNCHERS.length);
+  if (cell !== null) return { kind: "launch", i: cell };
   if (!within(x, y, STAGE)) return { kind: "none" };
   const a = store.windowAt(x, y);
   if (a) return { kind: "tile", a };
-  const s = store.state();
-  if (s && !s.win.some((w) => w.ws === s.active)) {
-    const i = launchChipAt(x, y, LAUNCHERS.length);
-    if (i !== null) return { kind: "launch", i };
-  }
   return { kind: "stage" };
 }
 

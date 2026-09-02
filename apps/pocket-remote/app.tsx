@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/app.tsx — Pocket Remote: an Omarchy companion for the
-// iPod touch. Landscape: the workspace strip on top with the mode switch and
-// the control centre; under it either the stage (a live miniature of the
-// desktop you can touch) or the deck (keyboard over trackpad); a ball on
-// one edge that opens Omarchy's menu as a sheet. The daemon on the Omarchy
+// iPod touch. Landscape: the workspace strip on top with the mode switch
+// centred and the control centre at its end; under it either the stage (a
+// live miniature of the desktop you can touch, over a fixed launch bar) or
+// the deck (keyboard over trackpad); a ball on one edge that opens
+// Omarchy's menu as a sheet. The daemon on the Omarchy
 // machine mirrors Hyprland into a snapshot and runs exactly the commands
 // the keyboard would. See README.md for the design.
 
@@ -17,7 +18,7 @@ import { Deck, deckHandlers } from "./deck.tsx";
 import type { GestureHandlers } from "./handlers.ts";
 import { ballHit, STRIP } from "./layout.ts";
 import { MenuSheet, sheetHandlers } from "./menu-sheet.tsx";
-import { popupHandlers, Stage, stageHandlers, TilePopup } from "./stage.tsx";
+import { LaunchBar, popupHandlers, Stage, stageHandlers, TilePopup } from "./stage.tsx";
 import { connectSvc, createRemoteStore, type Svc } from "./store.ts";
 import { Strip, stripHandlers } from "./strip.tsx";
 import { themed } from "./theme.ts";
@@ -92,6 +93,7 @@ export default function PocketRemote() {
         <Strip store={store} />
         <Show when={store.mode() === "stage"} fallback={<Deck store={store} />}>
           <Stage store={store} />
+          <LaunchBar store={store} />
         </Show>
         <TilePopup store={store} />
         <Toast store={store} />

@@ -33,17 +33,22 @@ against a scripted desktop; the panel is 480x320.
 | ![the deck](media/deck.png) | ![a key's bubble](media/deck-key.png) |
 | ![a held key's variants](media/deck-variants.png) | ![an empty workspace](media/empty.png) |
 
+The stage is 260 px between the strip and the launch bar; the deck runs to
+the bottom edge.
+
 ## The screen
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│ 1 2 3                         dwindle   [▦ | ⌨]   ☰            │  strip 28 px
+│ 1 2 3 4 5          [▦ | ⌨]          dwindle              ☰     │  strip 28 px
 ├────────────────────────────────────────────────────────────────┤
 │                                                                │
 │   stage: live miniature of the focused monitor                 │
-│          tiles = windows, accent border = focus       ┌──┐     │  292 px
+│          tiles = windows, accent border = focus       ┌──┐     │  260 px
 │   deck:  five rows of keys over a trackpad            │◎ │     │
 │                                                       └──┘     │
+├────────────────────────────────────────────────────────────────┤
+│   >_ Terminal        ◍ Browser         ▤ Files                 │  bar 32 px
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,12 +57,18 @@ finger (a tile's popup, the control centre's sliders) or picks something up
 (the ball, a floating window, a key's variants). Novices see the choices;
 after a day the strokes are made without looking.
 
-- **Strip.** One tab per workspace Hyprland has, the active one filled, plus
-  one empty tab so there is always somewhere new to go (the Omarchy bar's
-  rule). Tap switches; hold a tab to bring the focused window there and
-  follow it. The badge names the active workspace's layout and toggles it
-  (SUPER+L). The **mode switch** picks the stage or the deck. The last button
-  opens the **control centre**.
+- **Strip.** Workspace tabs on the left, the **mode switch** centred, the
+  layout badge and the **control centre**'s button at the end. The tabs are a
+  **fixed 1..N** (at least five, up to eight): Hyprland destroys an empty
+  workspace, so a list built from its snapshot shrank to whatever had windows
+  — while the numbers Omarchy binds (SUPER+1..0) stay addressable, and a tab
+  for a workspace that does not exist yet is how you get there. Tap switches;
+  hold a tab to bring the focused window along. The badge toggles the layout
+  (SUPER+L).
+- **Launch bar.** Terminal, Browser, Files, fixed across the bottom of the
+  stage in three wide cells. Those three are what a remote is reached for,
+  and with them here an empty workspace needs no launchers of its own. The
+  deck has no bar: its bottom half is the trackpad.
 - **Stage.** The focused monitor scaled to fit, every window a tile labelled
   by class and title, the focused one bordered in the accent, floating
   windows marked. **Tap focuses. Hold a tile** and a popup opens at the
@@ -67,8 +78,7 @@ after a day the strokes are made without looking.
   popup stays up for a tap. **Drag a floating window and it moves**, on the
   laptop, under the finger (Hyprland places it every third frame and on
   release). Drag a tiled window onto another to swap them, onto a tab to
-  move it there. Swipe empty stage to step workspaces; an empty workspace
-  offers Terminal, Browser and Files.
+  move it there. Swipe empty stage to step workspaces.
 - **Deck.** The laptop's C surface on the iPod: five compact rows of keys
   over a trackpad, so typing and pointing need no mode of their own. Keys go
   straight to the desktop (`wtype`) as they are pressed; a pressed key rises,
@@ -88,7 +98,9 @@ after a day the strokes are made without looking.
   the same glyphs, one column, scrolling — a menu reads as a list, and two
   columns of eleven-character labels made the eye jump. A submenu opens in
   place with its title and a back chevron; an action runs on the laptop and
-  the sheet goes away. **Apps lists the machine's own applications** (the
+  the sheet goes away. A row's highlight is **armed on the down edge and
+  shown only once the finger has stayed put**, so landing to fling no longer
+  flashes a selection. **Apps lists the machine's own applications** (the
   daemon reads the XDG desktop entries and pages them over; the row opens
   that list here rather than on the laptop). **Hold the ball and it comes
   along**; let go and it slides to the nearer edge at that height. It fades
