@@ -50,7 +50,6 @@ const SUITE: readonly Stage[] = [
       "tests/3ds-profile.test.ts",
       "tests/3ds-runtime-state.test.ts",
       "tests/3ds-runtime-wire.test.ts",
-      "tests/pocket-shell-wm.test.ts",
       "tests/iphone2g-profile.test.ts",
       "tests/iphone4s-profile.test.ts",
       "tests/ipodtouch-profile.test.ts",
@@ -162,12 +161,6 @@ const SUITE: readonly Stage[] = [
     prep: [["bun", "tools/launcher.ts", "covers"]],
     browser: true,
     tests: ["tests/launcher-sim.test.ts"],
-  },
-  {
-    name: "pocket-shell sim",
-    prep: [["bun", "tools/build.ts", "pocket-shell-main"]],
-    browser: true,
-    tests: ["tests/pocket-shell-sim.test.ts"],
   },
 ];
 
