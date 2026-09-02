@@ -1,8 +1,9 @@
 // apps/pocket-remote/store.ts — the remote's live state: the link to the
 // daemon, the mirrored desktop (workspaces, windows, levels, theme), the
-// tile slot pool that animates the stage, and the senders every touch target
-// calls. Everything the screen shows reads from here; nothing here knows
-// about pixels except the tile pool, which owns motion.
+// tile slot pool that animates the stage, the hold-and-slide flyouts, and
+// the senders every touch target calls. Everything the screen shows reads
+// from here; nothing here knows about pixels except the tile pool and the
+// flyout progress, which own motion.
 //
 // Reactivity is coarse on purpose: a snapshot replaces one signal, tiles
 // live in a fixed pool of per-slot signals so a frame in which one window
@@ -13,11 +14,13 @@ import { getOps } from "@pocketjs/framework";
 import { jump } from "@pocketjs/framework/animation";
 import type { NodeMirror } from "@pocketjs/framework/components";
 import { onFrame } from "@pocketjs/framework/lifecycle";
-import { type ActionId, actionById } from "./actions.ts";
+import { type ActionId, actionById, MENU_ROUTES } from "./actions.ts";
 import {
   approach,
+  CARD_LINGER_FRAMES,
   CLOSE_HOLD_SECONDS,
   clamp01,
+  easeProgress,
   fitMonitor,
   type Rect,
   stageWindows,
@@ -35,6 +38,7 @@ import {
   type HostLine,
   type HostState,
   type Layout,
+  type Modifier,
   parseLines,
   REMOTE_APP,
   REMOTE_PROTO,
@@ -141,18 +145,55 @@ export interface Closing {
   progress: number;
 }
 
-export interface RailDrag {
-  rail: "vol" | "bri";
-  /** Level when the finger went down. */
-  start: number;
+/**
+ * The levels card: brightness and volume, the control-centre control. Opened
+ * sticky by a tap on the dock (tap outside closes) or by hold-and-slide (the
+ * finger that opened it adjusts, release lingers then closes).
+ */
+export interface Card {
+  mode: "sticky" | "hold";
+  /** Row the sliding finger is on (hold mode) or dragging (sticky mode). */
+  row: 0 | 1 | null;
+  /** Finger x and level when the current row was entered — drags are relative. */
+  refX: number;
+  refLevel: number;
+  /** Frame after which a released hold card closes. */
+  until: number;
 }
+
+/** The Menu key's cascade: routes in column one, the hot route's leaves in
+ *  column two. `hot` / `leaf` are what is under the finger. */
+export interface MenuFly {
+  kind: "menu";
+  hot: number | null;
+  leaf: number | null;
+  /** Route whose leaves column two shows (sticks while the finger crosses). */
+  open: number | null;
+}
+
+/** A held key's modifier variants (ctrl+x, alt+x, F-keys). */
+export interface KeyVariant {
+  label: string;
+  k: string;
+  mods: Modifier[];
+}
+
+export interface KeyFly {
+  kind: "keyvar";
+  /** Screen-space rect of the held key. */
+  key: Rect;
+  variants: KeyVariant[];
+  hot: number | null;
+}
+
+export type Flyout = MenuFly | KeyFly;
 
 export type KbLayer = "lower" | "upper" | "sym";
 
 const TOAST_FRAMES = 150;
-/** Frames between level sends while a rail is being dragged. */
+/** Frames between level sends while a slider is being dragged. */
 const LEVEL_SEND_EVERY = 3;
-/** Frames after a rail release during which host echoes are ignored. */
+/** Frames after a slider release during which host echoes are ignored. */
 const LEVEL_ECHO_HOLD = 30;
 
 export type RemoteStore = ReturnType<typeof createRemoteStore>;
@@ -198,10 +239,17 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   const [pad, setPad] = createSignal<number | null>(null);
   const [kb, setKb] = createSignal(false);
   const [kbLayer, setKbLayer] = createSignal<KbLayer>("lower");
+  const [kbMods, setKbMods] = createSignal<Modifier[]>([]);
   const [pressed, setPressed] = createSignal<string | null>(null);
   const [drag, setDrag] = createSignal<Drag | null>(null);
   const [closing, setClosing] = createSignal<Closing | null>(null);
-  const [railDrag, setRailDrag] = createSignal<RailDrag | null>(null);
+  const [card, setCard] = createSignal<Card | null>(null);
+  const [flyout, setFlyout] = createSignal<Flyout | null>(null);
+  /** 0..1 progress of the open flyout (drives its entrance). */
+  const [flyT, setFlyT] = createSignal(0);
+  /** 0..1 progress of the menu's second column, restarted per route. */
+  const [flyT2, setFlyT2] = createSignal(0);
+  const [cardT, setCardT] = createSignal(0);
   const [toast, setToast] = createSignal("");
   const [frame, setFrame] = createSignal(0);
   let toastUntil = 0;
@@ -393,10 +441,74 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   };
   const media = (op: "play" | "next" | "prev") => send({ t: "media", op });
   const typeText = (text: string) => send({ t: "type", text });
-  const typeKey = (k: string) => send({ t: "key", k });
+  const typeKey = (k: string, mods: Modifier[] = []) => send(mods.length ? { t: "key", k, mods } : { t: "key", k });
   const chooseTheme = (name: string) => {
     send({ t: "theme", name });
     say(name);
+  };
+
+  // ---- card + flyouts --------------------------------------------------------------
+  const openCard = (mode: Card["mode"], row: 0 | 1 | null = null, refX = 0) => {
+    setCard({ mode, row, refX, refLevel: row === 0 ? bri() : row === 1 ? vol() : 0, until: 0 });
+    setCardT(0);
+  };
+  const closeCard = () => setCard(null);
+  /** Release a held card: linger, then close on its own. */
+  const cardReleased = () => {
+    const c = card();
+    if (!c) return;
+    if (c.mode === "hold") setCard({ ...c, row: null, until: frameCount + CARD_LINGER_FRAMES });
+    else setCard({ ...c, row: null });
+  };
+
+  const openFlyout = (fly: Flyout) => {
+    setFlyout(fly);
+    setFlyT(0);
+    setFlyT2(0);
+  };
+  const closeFlyout = () => setFlyout(null);
+
+  /** Menu cascade: move the finger. Column two follows the hot route and
+   *  restarts its entrance when the route changes. */
+  const menuHover = (hot: number | null, leaf: number | null) => {
+    const f = flyout();
+    if (!f || f.kind !== "menu") return;
+    let open = f.open;
+    if (hot !== null && hot !== f.open) {
+      open = hot;
+      setFlyT2(0);
+    }
+    if (hot !== f.hot || leaf !== f.leaf || open !== f.open) setFlyout({ kind: "menu", hot, leaf, open });
+  };
+
+  /** Menu cascade: release. A leaf runs; a route opens on the desktop. */
+  const menuRelease = () => {
+    const f = flyout();
+    if (!f || f.kind !== "menu") return;
+    closeFlyout();
+    if (f.leaf !== null && f.open !== null) {
+      const id = MENU_ROUTES[f.open]?.leaves[f.leaf];
+      if (id) act(id);
+      return;
+    }
+    if (f.hot !== null) {
+      const route = MENU_ROUTES[f.hot];
+      if (route) act(route.id);
+    }
+  };
+
+  const keyHover = (hot: number | null) => {
+    const f = flyout();
+    if (!f || f.kind !== "keyvar" || f.hot === hot) return;
+    setFlyout({ ...f, hot });
+  };
+
+  /** Key variants: release. Returns the chosen variant, or null for none. */
+  const keyRelease = (): KeyVariant | null => {
+    const f = flyout();
+    if (!f || f.kind !== "keyvar") return null;
+    closeFlyout();
+    return f.hot !== null ? (f.variants[f.hot] ?? null) : null;
   };
 
   // ---- reducer ---------------------------------------------------------------------
@@ -414,7 +526,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
         commit(line);
         break;
       case "levels":
-        if (frameCount >= levelEchoHoldUntil && !railDrag()) {
+        if (frameCount >= levelEchoHoldUntil && card()?.row == null) {
           setVol(clamp01(line.vol));
           setMute(line.mute === 1);
           setBri(clamp01(line.bri));
@@ -497,6 +609,25 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
       moved = true;
     }
 
+    if (flyout()) {
+      if (flyT() < 1) {
+        setFlyT(easeProgress(flyT()));
+        moved = true;
+      }
+      if (flyT2() < 1) {
+        setFlyT2(easeProgress(flyT2()));
+        moved = true;
+      }
+    }
+    const c = card();
+    if (c) {
+      if (cardT() < 1) {
+        setCardT(easeProgress(cardT()));
+        moved = true;
+      }
+      if (c.mode === "hold" && c.row === null && c.until > 0 && frameCount >= c.until) setCard(null);
+    }
+
     if (pressLinger > 0) {
       pressLinger -= 1;
       if (pressLinger === 0) setPressed(null);
@@ -548,6 +679,8 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     setKb,
     kbLayer,
     setKbLayer,
+    kbMods,
+    setKbMods,
     pressed,
     pressDown,
     pressRelease,
@@ -555,8 +688,21 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     setDrag,
     closing,
     setClosing,
-    railDrag,
-    setRailDrag,
+    card,
+    setCard,
+    openCard,
+    closeCard,
+    cardReleased,
+    cardT,
+    flyout,
+    openFlyout,
+    closeFlyout,
+    flyT,
+    flyT2,
+    menuHover,
+    menuRelease,
+    keyHover,
+    keyRelease,
     toast,
     say,
     frame,

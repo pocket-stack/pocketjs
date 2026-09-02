@@ -183,10 +183,15 @@ export interface ClientType {
   text: string;
 }
 
+export type Modifier = "ctrl" | "alt" | "shift" | "super";
+
 export interface ClientKey {
   t: "key";
-  /** An xkb keysym name: Return, BackSpace, Tab, Escape, space, Left... */
+  /** An xkb keysym name: Return, BackSpace, Tab, Escape, space, Left, a, 1,
+   *  F5... (host/omarchy.ts keeps the allow-list). */
   k: string;
+  /** Held around the key: ctrl+c is `{ k: "c", mods: ["ctrl"] }`. */
+  mods?: Modifier[];
 }
 
 export interface ClientTheme {

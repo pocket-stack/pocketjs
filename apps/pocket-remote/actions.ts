@@ -42,6 +42,11 @@ export type ActionId =
   // launch
   | "menu"
   | "apps"
+  | "menuStyle"
+  | "menuCapture"
+  | "menuToggle"
+  | "menuSystem"
+  | "menuLearn"
   | "terminal"
   | "browser"
   | "files"
@@ -112,6 +117,11 @@ export const ACTIONS: readonly ActionDef[] = [
   // -- launch (SUPER + ...) --------------------------------------------------
   { id: "menu", label: "Menu", group: "launch", run: omarchy("omarchy-menu", "toggle") },
   { id: "apps", label: "Apps", group: "launch", run: omarchy("omarchy-menu", "toggle", "apps") },
+  { id: "menuStyle", label: "Style menu", group: "launch", run: omarchy("omarchy-menu", "toggle", "style") },
+  { id: "menuCapture", label: "Capture menu", group: "launch", run: omarchy("omarchy-menu", "toggle", "capture") },
+  { id: "menuToggle", label: "Toggle menu", group: "launch", run: omarchy("omarchy-menu", "toggle", "toggle") },
+  { id: "menuSystem", label: "System menu", group: "launch", run: omarchy("omarchy-menu", "toggle", "system") },
+  { id: "menuLearn", label: "Learn menu", group: "launch", run: omarchy("omarchy-menu", "toggle", "learn") },
   { id: "terminal", label: "Terminal", group: "launch", run: omarchy("omarchy-launch-terminal") },
   { id: "browser", label: "Browser", group: "launch", run: omarchy("omarchy-launch-browser") },
   { id: "files", label: "Files", group: "launch", run: omarchy("omarchy-launch-nautilus") },
@@ -193,8 +203,29 @@ export function actionsOf(group: ActionGroup): ActionDef[] {
   return ACTIONS.filter((action) => action.group === group);
 }
 
-/** The dock: the nine things a remote is reached for, in reading order. The
- *  tenth slot opens the pad with everything else. */
+/**
+ * The Menu key's hold-and-slide flyout: Omarchy's root menu as routes
+ * (bottom = nearest the finger), each with the leaves the remote can run
+ * directly. Releasing on a route opens that route on the desktop; releasing
+ * on a leaf runs it. Leaves are capped at six so the column fits the stage.
+ */
+export interface MenuRoute {
+  id: ActionId;
+  label: string;
+  leaves: ActionId[];
+}
+
+export const MENU_ROUTES: readonly MenuRoute[] = [
+  { id: "apps", label: "Apps", leaves: ["terminal", "browser", "files", "editor", "emoji", "clipboard"] },
+  { id: "menuCapture", label: "Capture", leaves: ["screenshot", "record", "recordStop", "ocr", "color", "qr"] },
+  { id: "menuToggle", label: "Toggle", leaves: ["nightlight", "awake", "bar", "silence", "gaps", "transparency"] },
+  { id: "menuStyle", label: "Style", leaves: ["themePicker", "bgNext"] },
+  { id: "menuSystem", label: "System", leaves: ["lock", "screensaver", "dismiss"] },
+  { id: "menuLearn", label: "Learn", leaves: ["keybindings"] },
+];
+
+/** The dock: the things a remote is reached for, in reading order. Slots
+ *  eight to ten are the levels card, the keyboard and the pad. */
 export const DOCK: readonly ActionId[] = [
   "menu",
   "terminal",

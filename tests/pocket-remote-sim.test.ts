@@ -7,7 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import { bootWorld } from "../hosts/sim/sim.ts";
 import type { HostState } from "../apps/pocket-remote/protocol.ts";
-import { STAGE, STRIP, TAB_W } from "../apps/pocket-remote/layout.ts";
+import { STAGE, TAB_W } from "../apps/pocket-remote/layout.ts";
 import type { RemoteStore } from "../apps/pocket-remote/store.ts";
 
 const HZ = 60;
@@ -89,8 +89,8 @@ describe("pocket-remote in the sim", () => {
     }
 
     // Tap workspace tab 2 on the strip: optimistic switch, tiles of ws 1 fade.
-    const x = STRIP.x + TAB_W + TAB_W / 2;
-    const y = 16;
+    const x = store.tabs()[1]!.x + TAB_W / 2;
+    const y = 14;
     world.frame(0, undefined, [pack(x, y)]);
     world.frame(0, undefined, [pack(x, y)]);
     world.frame(0, undefined, []);

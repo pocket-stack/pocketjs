@@ -1,7 +1,8 @@
 // apps/pocket-remote/layout.ts — the screen's fixed geometry and the pure
-// arithmetic behind it: where the rails, strip, stage and dock sit on the
-// 480x320 landscape panel, how a monitor is fitted into the stage, how a
-// finger on a rail becomes a level. No Solid here so tests can run it bare.
+// arithmetic behind it: where the strip, stage and dock sit on the 480x320
+// landscape panel, how a monitor is fitted into the stage, where the levels
+// card and the menu flyout open, how a finger on a slider becomes a level.
+// No Solid here so tests can run it bare.
 
 import type { Direction, HostState, WinInfo, WsInfo } from "./protocol.ts";
 
@@ -15,38 +16,28 @@ export interface Rect {
   h: number;
 }
 
-/** Left rail = display brightness, right rail = output volume. */
-export const RAIL_W = 40;
-export const RAIL_LEFT: Rect = { x: 0, y: 0, w: RAIL_W, h: SCREEN_H };
-export const RAIL_RIGHT: Rect = { x: SCREEN_W - RAIL_W, y: 0, w: RAIL_W, h: SCREEN_H };
-/** The rail's track: the part of its height a drag maps onto 0..1. */
-export const RAIL_TRACK_TOP = 44;
-export const RAIL_TRACK_BOTTOM = 300;
-export const RAIL_TRACK_H = RAIL_TRACK_BOTTOM - RAIL_TRACK_TOP;
-/** Icon cap at the top of a rail (mute / nightlight). */
-export const RAIL_CAP_H = 36;
-
-/** The workspace strip across the top of the centre column. */
-export const STRIP: Rect = { x: RAIL_W, y: 0, w: SCREEN_W - 2 * RAIL_W, h: 32 };
+/** The workspace strip across the top. */
+export const STRIP: Rect = { x: 0, y: 0, w: SCREEN_W, h: 28 };
 export const TAB_W = 28;
+export const TAB_X0 = 6;
 export const TAB_MAX = 10;
 /** Media transport cluster at the strip's right end. */
 export const MEDIA_W = 30;
-export const MEDIA_X = STRIP.x + STRIP.w - 3 * MEDIA_W - 4;
+export const MEDIA_X = SCREEN_W - 3 * MEDIA_W - 6;
 /** Layout badge sits left of the media cluster. */
-export const BADGE_W = 56;
-export const BADGE_X = MEDIA_X - BADGE_W - 6;
+export const BADGE_W = 60;
+export const BADGE_X = MEDIA_X - BADGE_W - 8;
 
 /** The stage: the live miniature of the focused monitor. */
-export const STAGE: Rect = { x: RAIL_W, y: STRIP.h, w: SCREEN_W - 2 * RAIL_W, h: 228 };
+export const STAGE: Rect = { x: 0, y: STRIP.h, w: SCREEN_W, h: 240 };
 
-/** The dock across the bottom of the centre column. */
-export const DOCK: Rect = { x: RAIL_W, y: STAGE.y + STAGE.h, w: SCREEN_W - 2 * RAIL_W, h: SCREEN_H - STAGE.y - STAGE.h };
-export const DOCK_SLOTS = 9;
-export const DOCK_SLOT_W = 44;
-export const DOCK_X0 = DOCK.x + Math.floor((DOCK.w - DOCK_SLOTS * DOCK_SLOT_W) / 2);
+/** The dock across the bottom: eleven slots of 43 px. */
+export const DOCK: Rect = { x: 0, y: STAGE.y + STAGE.h, w: SCREEN_W, h: SCREEN_H - STAGE.y - STAGE.h };
+export const DOCK_SLOTS = 11;
+export const DOCK_SLOT_W = 43;
+export const DOCK_X0 = Math.floor((SCREEN_W - DOCK_SLOTS * DOCK_SLOT_W) / 2);
 
-/** Seconds a tile must be held before it closes; the ring fills over this. */
+/** Seconds a tile must be held before it closes; the bar fills over this. */
 export const CLOSE_HOLD_SECONDS = 0.6;
 /** Horizontal travel on empty stage that switches workspace. */
 export const SWIPE_PX = 48;
@@ -54,6 +45,91 @@ export const SWIPE_PX = 48;
 export const TILE_TWO_LINES_H = 40;
 /** Fixed pool of tile slots (protocol WINDOWS_MAX). */
 export const TILE_SLOTS = 24;
+
+// ---------------------------------------------------------------------------
+// levels card (brightness + volume, the control-centre control)
+// ---------------------------------------------------------------------------
+
+export const CARD: Rect = { x: 100, y: 92, w: 280, h: 132 };
+/** Row tops inside the card (brightness, volume). */
+export const CARD_ROW_Y = [14, 72] as const;
+export const CARD_ROW_H = 44;
+/** The toggle icon at the row's left (nightlight / mute). */
+export const CARD_ICON_X = 12;
+export const CARD_ICON_W = 36;
+/** The slider track. */
+export const CARD_TRACK_X = 60;
+export const CARD_TRACK_W = 172;
+export const CARD_TRACK_H = 12;
+/** Frames the card lingers after a hold-and-slide release. */
+export const CARD_LINGER_FRAMES = 70;
+
+export type CardHit = { kind: "icon"; row: 0 | 1 } | { kind: "track"; row: 0 | 1 } | { kind: "card" } | null;
+
+/** What is under a point on the levels card. */
+export function cardHit(x: number, y: number, card: Rect = CARD): CardHit {
+  if (!within(x, y, card)) return null;
+  const ly = y - card.y;
+  const lx = x - card.x;
+  for (const row of [0, 1] as const) {
+    const top = CARD_ROW_Y[row] - 4;
+    if (ly < top || ly >= top + CARD_ROW_H + 8) continue;
+    if (lx >= CARD_ICON_X && lx < CARD_ICON_X + CARD_ICON_W) return { kind: "icon", row };
+    if (lx >= CARD_TRACK_X - 8) return { kind: "track", row };
+  }
+  return { kind: "card" };
+}
+
+/** Which row a finger height selects while sliding across the card. */
+export function cardRowAt(y: number, card: Rect = CARD): 0 | 1 {
+  const mid = card.y + (CARD_ROW_Y[0] + CARD_ROW_Y[1] + CARD_ROW_H) / 2;
+  return y < mid ? 0 : 1;
+}
+
+/** A horizontal drag of `dx` px changes a level by this (full track = 0..1). */
+export function trackDelta(dx: number): number {
+  return dx / CARD_TRACK_W;
+}
+
+/** Fill width for a level, in track px. */
+export function trackFill(level: number): number {
+  return Math.round(clamp01(level) * CARD_TRACK_W);
+}
+
+// ---------------------------------------------------------------------------
+// menu flyout (hold Menu, slide, release)
+// ---------------------------------------------------------------------------
+
+export const FLY_ITEM_H = 34;
+export const FLY_GAP = 4;
+/** Column one: routes. Bottom-anchored just above the dock. */
+export const FLY_X = 8;
+export const FLY_W = 120;
+export const FLY_BOTTOM = DOCK.y - 6;
+/** Column two: the hot route's leaves. */
+export const FLY2_X = FLY_X + FLY_W + 8;
+export const FLY2_W = 156;
+export const FLY_MAX_ROWS = 6;
+
+/** Top of item `i` in a bottom-anchored column of `count` items (i = 0 is
+ *  nearest the dock). */
+export function flyItemY(i: number): number {
+  return FLY_BOTTOM - (i + 1) * FLY_ITEM_H - i * FLY_GAP;
+}
+
+/** Item index under a point in a bottom-anchored column, or null. */
+export function flyItemAt(x: number, y: number, colX: number, colW: number, count: number): number | null {
+  if (x < colX - 6 || x >= colX + colW + 6) return null;
+  for (let i = 0; i < count; i += 1) {
+    const top = flyItemY(i);
+    if (y >= top - FLY_GAP / 2 && y < top + FLY_ITEM_H + FLY_GAP / 2) return i;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
 
 export function within(x: number, y: number, r: Rect): boolean {
   return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
@@ -154,27 +230,13 @@ export function stripTabs(ws: readonly WsInfo[], active: number): Tab[] {
   return sorted.slice(0, TAB_MAX).map((id, i) => ({
     id,
     n: ws.find((w) => w.id === id)?.n ?? 0,
-    x: STRIP.x + i * TAB_W,
+    x: STRIP.x + TAB_X0 + i * TAB_W,
   }));
 }
 
 export function tabAt(x: number, tabs: readonly Tab[]): Tab | null {
   for (const tab of tabs) if (x >= tab.x && x < tab.x + TAB_W) return tab;
   return null;
-}
-
-// ---------------------------------------------------------------------------
-// rails
-// ---------------------------------------------------------------------------
-
-/** A vertical drag of `dy` px (down = positive) changes the level by this. */
-export function railDelta(dy: number): number {
-  return -dy / RAIL_TRACK_H;
-}
-
-/** Fill height for a level, in track px. */
-export function railFill(level: number): number {
-  return Math.round(clamp01(level) * RAIL_TRACK_H);
 }
 
 // ---------------------------------------------------------------------------
@@ -200,4 +262,17 @@ export const EASE = 0.35;
 export function approach(current: number, target: number): number {
   const next = current + (target - current) * EASE;
   return Math.abs(target - next) < 0.5 ? target : next;
+}
+
+/** Ease a 0..1 progress toward 1: fast start, soft landing. */
+export function easeProgress(t: number): number {
+  const next = t + (1 - t) * 0.28;
+  return next > 0.995 ? 1 : next;
+}
+
+/** Stagger: item `i` of `count` runs its own 0..1 inside the shared progress. */
+export function stagger(t: number, i: number, count: number, spread = 0.5): number {
+  const start = count <= 1 ? 0 : (i / (count - 1)) * spread;
+  const span = 1 - spread;
+  return clamp01((t - start) / span);
 }

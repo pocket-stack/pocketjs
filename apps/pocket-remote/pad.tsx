@@ -13,19 +13,19 @@ import { jump } from "@pocketjs/framework/animation";
 import { type ActionId, actionById, PAD_PAGES } from "./actions.ts";
 import type { GestureHandlers } from "./desk.tsx";
 import { Icon } from "./icons.tsx";
-import { RAIL_W, SCREEN_W, within } from "./layout.ts";
+import { SCREEN_W, within } from "./layout.ts";
 import type { RemoteStore } from "./store.ts";
 import { themed, themeTitle } from "./theme.ts";
 
-export const PAD_X = RAIL_W;
-export const PAD_W = SCREEN_W - 2 * RAIL_W;
+export const PAD_X = 0;
+export const PAD_W = SCREEN_W;
 const HEADER_H = 32;
-const TAB_W = 60;
+const TAB_W = 72;
 const CLOSE_W = PAD_W - PAD_PAGES.length * TAB_W;
 const GRID_TOP = HEADER_H + 8;
 const COLS = 4;
 const ROWS = 3;
-const CELL_W = 96;
+const CELL_W = 116;
 const CELL_H = 88;
 const CELL_GAP = 4;
 const GRID_X0 = PAD_X + Math.floor((PAD_W - COLS * CELL_W) / 2);
@@ -151,14 +151,14 @@ export function Pad(p: { store: RemoteStore }) {
   const page = () => p.store.pad() ?? 0;
   const items = () => cells(p.store, page());
   return (
-    <View class="absolute left-[40] top-0 w-[400] h-[320] bg-[#1a1b26]" ref={themed("surface")}>
+    <View class="absolute left-0 top-0 w-[480] h-[320] bg-[#1a1b26]" ref={themed("surface")}>
       {/* header: page tabs + close */}
-      <View class="absolute left-0 top-0 w-[400] h-[32] bg-[#13141c]" ref={themed("surfaceDark")}>
+      <View class="absolute left-0 top-0 w-[480] h-[32] bg-[#13141c]" ref={themed("surfaceDark")}>
         <Index each={PAD_PAGES}>
           {(def, i) => (
-            <View class="absolute top-0 w-[60] h-[32] items-center justify-center" style={{ insetL: i * TAB_W }}>
+            <View class="absolute top-0 w-[72] h-[32] items-center justify-center" style={{ insetL: i * TAB_W }}>
               <View
-                class={page() === i ? "absolute left-[4] top-[26] w-[52] h-[3] rounded-[2] bg-[#7aa2f7]" : "hidden"}
+                class={page() === i ? "absolute left-[6] top-[26] w-[60] h-[3] rounded-[2] bg-[#7aa2f7]" : "hidden"}
                 ref={themed("accentFill")}
               />
               <Text
@@ -169,7 +169,7 @@ export function Pad(p: { store: RemoteStore }) {
               </Text>
               <View
                 class={
-                  p.store.pressed() === `padtab:${i}` ? "absolute left-0 top-0 w-[60] h-[32] bg-[#ffffff22]" : "hidden"
+                  p.store.pressed() === `padtab:${i}` ? "absolute left-0 top-0 w-[72] h-[32] bg-[#ffffff22]" : "hidden"
                 }
               />
             </View>

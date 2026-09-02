@@ -228,8 +228,32 @@ export function setThemeByName(name: string, list: string[], log: Log): boolean 
 // typing
 // ---------------------------------------------------------------------------
 
-/** Keysyms the remote may send (xkb names wtype understands). */
-export const ALLOWED_KEYS = new Set(["Return", "BackSpace", "Tab", "Escape", "space", "Left", "Right", "Up", "Down"]);
+/** Keysyms the remote may send: xkb names wtype understands. Letters,
+ *  digits and a few punctuation names carry modifiers (ctrl+c, alt+.). */
+export const ALLOWED_KEYS: ReadonlySet<string> = new Set([
+  "Return", "BackSpace", "Tab", "ISO_Left_Tab", "Escape", "space", "Delete", "Insert",
+  "Left", "Right", "Up", "Down", "Home", "End", "Page_Up", "Page_Down",
+  ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`),
+  ..."abcdefghijklmnopqrstuvwxyz0123456789".split(""),
+  "minus", "equal", "bracketleft", "bracketright", "semicolon", "apostrophe", "grave",
+  "backslash", "comma", "period", "slash",
+]);
+
+const MODIFIERS: ReadonlySet<string> = new Set(["ctrl", "alt", "shift", "super"]);
+
+/** wtype argv for one key with modifiers held around it: press mods, key,
+ *  release mods in reverse. Null when the key or a modifier is not allowed. */
+export function wtypeArgs(key: string, mods: readonly string[] = []): string[] | null {
+  if (!ALLOWED_KEYS.has(key)) return null;
+  if (mods.some((m) => !MODIFIERS.has(m))) return null;
+  const unique = [...new Set(mods)];
+  return [
+    ...unique.flatMap((m) => ["-M", m]),
+    "-k",
+    key,
+    ...unique.slice().reverse().flatMap((m) => ["-m", m]),
+  ];
+}
 
 export function typeText(text: string, log: Log): void {
   // wtype types its argument literally; cap it so a runaway line cannot
@@ -239,8 +263,9 @@ export function typeText(text: string, log: Log): void {
   runDetached(["wtype", "--", clipped], log);
 }
 
-export function pressKey(key: string, log: Log): boolean {
-  if (!ALLOWED_KEYS.has(key)) return false;
-  runDetached(["wtype", "-k", key], log);
+export function pressKey(key: string, log: Log, mods: readonly string[] = []): boolean {
+  const args = wtypeArgs(key, mods);
+  if (!args) return false;
+  runDetached(["wtype", ...args], log);
   return true;
 }

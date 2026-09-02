@@ -375,9 +375,13 @@ async function handle(conn: Conn, line: ClientLine): Promise<void> {
     case "type":
       if (typeof line.text === "string") typeText(line.text, log);
       return;
-    case "key":
-      if (typeof line.k === "string" && !pressKey(line.k, log)) log(`${conn.address}: key ${line.k} not allowed`);
+    case "key": {
+      const mods: string[] = Array.isArray(line.mods) ? (line.mods as unknown[]).filter((m): m is string => typeof m === "string") : [];
+      if (typeof line.k === "string" && !pressKey(line.k, log, mods)) {
+        log(`${conn.address}: key ${line.k}${mods.length ? `+${mods.join("+")}` : ""} not allowed`);
+      }
       return;
+    }
     case "theme":
       if (typeof line.name === "string" && setThemeByName(line.name, theme.list, log)) {
         setTimeout(refreshTheme, 1500);

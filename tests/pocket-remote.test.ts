@@ -10,25 +10,42 @@ import {
   WIRE_PORT,
   WIRE_VERSION,
 } from "../contracts/spec/spec.ts";
-import { ACTIONS, actionById, actionsOf, DOCK, PAD_PAGES } from "../apps/pocket-remote/actions.ts";
+import { ACTIONS, actionById, actionsOf, DOCK, MENU_ROUTES, PAD_PAGES } from "../apps/pocket-remote/actions.ts";
 import * as wire from "../apps/pocket-remote/host/wire.ts";
 import { buildState, luaWindow, luaWorkspace, parseEvent, type HyprClient, type HyprMonitor, type HyprWorkspace } from "../apps/pocket-remote/host/hypr.ts";
-import { paletteFrom, parseBrightnessctl, parseColorsToml, parsePactlVolume } from "../apps/pocket-remote/host/omarchy.ts";
+import { paletteFrom, parseBrightnessctl, parseColorsToml, parsePactlVolume, wtypeArgs } from "../apps/pocket-remote/host/omarchy.ts";
+import { chipAt, chipRects, keyAt, keyboardKeys, keysymFor, keyToLine } from "../apps/pocket-remote/keyboard-layout.ts";
 import {
   approach,
+  CARD,
+  CARD_TRACK_W,
+  cardHit,
+  cardRowAt,
+  DOCK as DOCK_RECT,
   DOCK_SLOTS,
+  DOCK_SLOT_W,
   DOCK_X0,
   dockSlotAt,
+  dockSlotX,
+  easeProgress,
   fitMonitor,
-  railDelta,
-  railFill,
-  RAIL_TRACK_H,
+  FLY_BOTTOM,
+  FLY_W,
+  FLY_X,
+  flyItemAt,
+  flyItemY,
+  SCREEN_H,
+  SCREEN_W,
   STAGE,
   stageWindows,
+  stagger,
+  STRIP,
   stripTabs,
   swapDirection,
   tabAt,
   tileRect,
+  trackDelta,
+  trackFill,
   windowAt,
 } from "../apps/pocket-remote/layout.ts";
 import { clipTitle, parseLines, TITLE_MAX, WINDOWS_MAX, type HostState } from "../apps/pocket-remote/protocol.ts";
@@ -137,6 +154,17 @@ describe("pocket-remote actions", () => {
     for (const page of PAD_PAGES) for (const id of page.actions) expect(actionById(id)).toBeDefined();
     expect(ACTIONS.filter((a) => a.hold).map((a) => a.id).sort()).toEqual(["close", "closeAll", "suspend"]);
     expect(actionById("nope")).toBeUndefined();
+    // The menu cascade: every route and leaf is a real action, no leaf takes
+    // a hold (a slide-and-release cannot express one), six leaves at most.
+    for (const route of MENU_ROUTES) {
+      expect(actionById(route.id)?.group).toBe("launch");
+      expect(route.leaves.length).toBeLessThanOrEqual(6);
+      for (const leaf of route.leaves) {
+        const def = actionById(leaf);
+        expect(def).toBeDefined();
+        expect(def!.hold).toBeUndefined();
+      }
+    }
   });
 
   test("actions run the command Omarchy binds, never a shell string", () => {
@@ -221,18 +249,57 @@ describe("pocket-remote layout", () => {
     expect(tabAt(tabs[0]!.x - 1, tabs)).toBeNull();
   });
 
-  test("rails: a full-track drag spans the whole range, up raises", () => {
-    expect(railDelta(-RAIL_TRACK_H)).toBeCloseTo(1);
-    expect(railDelta(RAIL_TRACK_H / 2)).toBeCloseTo(-0.5);
-    expect(railFill(0.4)).toBe(Math.round(0.4 * RAIL_TRACK_H));
-    expect(railFill(2)).toBe(RAIL_TRACK_H);
-  });
-
-  test("dock slots tile the centre column", () => {
+  test("the three bands cover the screen exactly and the dock fits eleven slots", () => {
+    expect(STRIP.y).toBe(0);
+    expect(STAGE.y).toBe(STRIP.h);
+    expect(DOCK_RECT.y).toBe(STAGE.y + STAGE.h);
+    expect(DOCK_RECT.y + DOCK_RECT.h).toBe(SCREEN_H);
+    expect(DOCK_SLOTS).toBe(11);
+    expect(dockSlotX(DOCK_SLOTS - 1) + DOCK_SLOT_W).toBeLessThanOrEqual(SCREEN_W);
     expect(dockSlotAt(DOCK_X0 - 1)).toBeNull();
     expect(dockSlotAt(DOCK_X0)).toBe(0);
-    expect(dockSlotAt(DOCK_X0 + 44 * (DOCK_SLOTS - 1) + 43)).toBe(DOCK_SLOTS - 1);
-    expect(dockSlotAt(DOCK_X0 + 44 * DOCK_SLOTS)).toBeNull();
+    expect(dockSlotAt(dockSlotX(DOCK_SLOTS - 1) + DOCK_SLOT_W - 1)).toBe(DOCK_SLOTS - 1);
+    expect(dockSlotAt(dockSlotX(DOCK_SLOTS))).toBeNull();
+  });
+
+  test("levels card: rows, tracks and toggles hit-test; drags are relative", () => {
+    expect(cardHit(CARD.x - 1, CARD.y + 20)).toBeNull();
+    expect(cardHit(CARD.x + 20, CARD.y + 30)).toEqual({ kind: "icon", row: 0 });
+    expect(cardHit(CARD.x + 150, CARD.y + 30)).toEqual({ kind: "track", row: 0 });
+    expect(cardHit(CARD.x + 150, CARD.y + 90)).toEqual({ kind: "track", row: 1 });
+    expect(cardHit(CARD.x + 20, CARD.y + 90)).toEqual({ kind: "icon", row: 1 });
+    expect(cardHit(CARD.x + 150, CARD.y + 125)).toEqual({ kind: "card" });
+    expect(cardRowAt(CARD.y + 20)).toBe(0);
+    expect(cardRowAt(CARD.y + 100)).toBe(1);
+    expect(trackDelta(CARD_TRACK_W)).toBeCloseTo(1);
+    expect(trackDelta(-CARD_TRACK_W / 4)).toBeCloseTo(-0.25);
+    expect(trackFill(0.4)).toBe(Math.round(0.4 * CARD_TRACK_W));
+    expect(trackFill(2)).toBe(CARD_TRACK_W);
+  });
+
+  test("menu cascade: six routes stack up from the dock and stay under the strip", () => {
+    const top = flyItemY(MENU_ROUTES.length - 1);
+    expect(top).toBeGreaterThanOrEqual(STRIP.h);
+    expect(flyItemY(0) + 34).toBeLessThanOrEqual(FLY_BOTTOM);
+    expect(flyItemAt(FLY_X + 10, flyItemY(0) + 10, FLY_X, FLY_W, MENU_ROUTES.length)).toBe(0);
+    expect(flyItemAt(FLY_X + 10, flyItemY(3) + 10, FLY_X, FLY_W, MENU_ROUTES.length)).toBe(3);
+    expect(flyItemAt(FLY_X + FLY_W + 40, flyItemY(0) + 10, FLY_X, FLY_W, MENU_ROUTES.length)).toBeNull();
+    expect(flyItemAt(FLY_X + 10, 5, FLY_X, FLY_W, MENU_ROUTES.length)).toBeNull();
+  });
+
+  test("entrance progress eases to one and staggers by index", () => {
+    let t = 0;
+    let frames = 0;
+    while (t < 1 && frames < 60) {
+      t = easeProgress(t);
+      frames += 1;
+    }
+    expect(t).toBe(1);
+    expect(frames).toBeLessThan(30);
+    expect(stagger(0, 0, 6)).toBe(0);
+    expect(stagger(1, 5, 6)).toBe(1);
+    expect(stagger(0.5, 0, 6)).toBe(1);
+    expect(stagger(0.5, 5, 6)).toBe(0);
   });
 
   test("approach eases and snaps within half a pixel", () => {
@@ -367,5 +434,76 @@ describe("pocket-remote omarchy readers", () => {
     expect(isThemeColors({ ...palette, accent: "blue" })).toBe(false);
     expect(themeTitle("tokyo-night")).toBe("Tokyo Night");
     expect(themeTitle("osaka-jade")).toBe("Osaka Jade");
+  });
+});
+
+describe("pocket-remote keyboard", () => {
+  test("every layer fits the 480x320 screen and no two keys overlap", () => {
+    for (const layer of ["lower", "upper", "sym"] as const) {
+      const keys = keyboardKeys(layer);
+      expect(keys.length).toBeGreaterThan(40);
+      for (const key of keys) {
+        expect(key.x).toBeGreaterThanOrEqual(0);
+        expect(key.y).toBeGreaterThanOrEqual(28);
+        expect(key.x + key.w).toBeLessThanOrEqual(SCREEN_W);
+        expect(key.y + key.h).toBeLessThanOrEqual(SCREEN_H);
+      }
+      for (let i = 0; i < keys.length; i += 1) {
+        for (let j = i + 1; j < keys.length; j += 1) {
+          const a = keys[i]!;
+          const b = keys[j]!;
+          const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          expect(overlap).toBe(false);
+        }
+      }
+    }
+    const q = keyboardKeys("lower").find((k) => k.def.label === "q")!;
+    expect(keyAt("lower", q.x + 5, q.y + 5)?.def.label).toBe("q");
+    expect(keyAt("lower", 2, 2)).toBeNull();
+  });
+
+  test("keys become wire lines: text plain, keysyms under modifiers", () => {
+    expect(keyToLine({ ch: "a" }, [])).toEqual({ t: "type", text: "a" });
+    expect(keyToLine({ ch: "c" }, ["ctrl"])).toEqual({ t: "key", k: "c", mods: ["ctrl"] });
+    expect(keyToLine({ ch: "." }, ["alt"])).toEqual({ t: "key", k: "period", mods: ["alt"] });
+    expect(keyToLine({ ch: "€" }, ["ctrl"])).toBeNull();
+    expect(keyToLine({ key: "Tab" }, [])).toEqual({ t: "key", k: "Tab" });
+    expect(keyToLine({ key: "Tab" }, ["ctrl"])).toEqual({ t: "key", k: "Tab", mods: ["ctrl"] });
+    expect(keyToLine({ layer: "sym" }, [])).toBeNull();
+    expect(keysymFor("x")).toBe("x");
+    expect(keysymFor("/")).toBe("slash");
+    expect(keysymFor("é")).toBeNull();
+  });
+
+  test("held letters and digits offer variants as chips inside the screen", () => {
+    const x = keyboardKeys("lower").find((k) => k.def.label === "x")!;
+    expect(x.def.variants?.map((v) => v.label)).toEqual(["^X", "⌥X"]);
+    const chips = chipRects(x, 2);
+    expect(chips.length).toBe(2);
+    for (const chip of chips) {
+      expect(chip.x).toBeGreaterThanOrEqual(0);
+      expect(chip.x + chip.w).toBeLessThanOrEqual(SCREEN_W);
+      expect(chip.y).toBeGreaterThanOrEqual(0);
+    }
+    expect(chips[0]!.y).toBeLessThan(x.y); // above the key
+    expect(chipAt(x, 2, chips[1]!.x + 10, chips[1]!.y + 10)).toBe(1);
+    expect(chipAt(x, 2, x.x, x.y + 10)).toBeNull();
+    const one = keyboardKeys("lower").find((k) => k.def.label === "1")!;
+    expect(one.def.variants?.map((v) => v.k)).toEqual(["F1", "1"]);
+    expect(chipRects(one, 2)[0]!.y).toBeGreaterThan(one.y); // top row: below
+    const zero = keyboardKeys("lower").find((k) => k.def.label === "0")!;
+    expect(zero.def.variants?.[0]?.k).toBe("F10");
+  });
+});
+
+describe("pocket-remote wtype chords", () => {
+  test("modifiers wrap the key and only allowed keysyms pass", () => {
+    expect(wtypeArgs("c", ["ctrl"])).toEqual(["-M", "ctrl", "-k", "c", "-m", "ctrl"]);
+    expect(wtypeArgs("Tab", ["ctrl", "shift"])).toEqual(["-M", "ctrl", "-M", "shift", "-k", "Tab", "-m", "shift", "-m", "ctrl"]);
+    expect(wtypeArgs("F5")).toEqual(["-k", "F5"]);
+    expect(wtypeArgs("period", ["alt"])).toEqual(["-M", "alt", "-k", "period", "-m", "alt"]);
+    expect(wtypeArgs("rm -rf", [])).toBeNull();
+    expect(wtypeArgs("c", ["hyper"])).toBeNull();
+    expect(wtypeArgs("", [])).toBeNull();
   });
 });

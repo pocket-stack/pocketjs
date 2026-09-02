@@ -111,6 +111,8 @@ export type IconName =
   | "sun"
   | "speaker"
   | "mute"
+  | "levels"
+  | "hide"
   | "close";
 
 export function Icon(p: { name: IconName; tone: Tone }) {
@@ -261,10 +263,12 @@ export function Icon(p: { name: IconName; tone: Tone }) {
         </>
       );
     case "speaker":
+      // A horn in three steps, then two sound bars.
       return (
         <>
-          <Bar tone={p.tone} x={3} y={9} w={5} h={6} />
-          <Bar tone={p.tone} x={7} y={6} w={5} h={12} rot={45} />
+          <Bar tone={p.tone} x={2} y={9} w={4} h={6} />
+          <Bar tone={p.tone} x={6} y={7} w={3} h={10} />
+          <Bar tone={p.tone} x={9} y={5} w={3} h={14} />
           <Bar tone={p.tone} x={15} y={9} w={2} h={6} />
           <Bar tone={p.tone} x={19} y={6} w={2} h={12} />
         </>
@@ -272,10 +276,29 @@ export function Icon(p: { name: IconName; tone: Tone }) {
     case "mute":
       return (
         <>
-          <Bar tone={p.tone} x={3} y={9} w={5} h={6} />
-          <Bar tone={p.tone} x={7} y={6} w={5} h={12} rot={45} />
+          <Bar tone={p.tone} x={2} y={9} w={4} h={6} />
+          <Bar tone={p.tone} x={6} y={7} w={3} h={10} />
+          <Bar tone={p.tone} x={9} y={5} w={3} h={14} />
           <Bar tone={p.tone} x={14} y={11} w={8} h={2} rot={45} />
           <Bar tone={p.tone} x={14} y={11} w={8} h={2} rot={315} />
+        </>
+      );
+    case "levels":
+      // Two sliders with their knobs, the control-centre glyph.
+      return (
+        <>
+          <Bar tone={p.tone} x={3} y={8} w={18} h={2} />
+          <Bar tone={p.tone} x={13} y={5} w={4} h={8} round />
+          <Bar tone={p.tone} x={3} y={16} w={18} h={2} />
+          <Bar tone={p.tone} x={7} y={13} w={4} h={8} round />
+        </>
+      );
+    case "hide":
+      // A chevron pointing down: put the keyboard away.
+      return (
+        <>
+          <Bar tone={p.tone} x={5} y={11} w={8} h={2} rot={45} />
+          <Bar tone={p.tone} x={11} y={11} w={8} h={2} rot={315} />
         </>
       );
     case "close":
