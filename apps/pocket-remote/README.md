@@ -31,7 +31,7 @@ against a scripted desktop; the panel is 480x320.
 | ![the control centre](media/control-centre.png) | ![Omarchy's menu as a sheet](media/menu-root.png) |
 | ![the Trigger submenu](media/menu-trigger.png) | ![the machine's applications](media/menu-apps.png) |
 | ![the deck](media/deck.png) | ![a held key's variants](media/deck-variants.png) |
-| ![an empty workspace](media/empty.png) | ![the connect screen](media/connect.png) |
+| ![the arrow compass](media/deck-arrows.png) | ![an empty workspace](media/empty.png) |
 
 The stage is 260 px between the strip and the launch bar; the deck runs to
 the bottom edge.
@@ -159,11 +159,11 @@ a centred icon sat visibly right of centre.
 
 **Geometry through the mirror, not the style object.** A `style` object is
 evaluated once, and Solid's `Show` keeps one instance while the value behind
-it changes — so anything whose position follows live state (the key bubble
-over the pressed key, a popup that re-records itself as the highlight moves,
-a key whose row gains a column on the symbol layer) writes `insetL`/`insetT`
-with `jump()` from an effect. The bubble parked on the first letter typed
-until it did.
+it changes — so anything whose position follows live state (a popup that
+re-records itself as the highlight moves, a compass chip that arms, a key
+whose row gains a column on the symbol layer) writes `insetL`/`insetT` with
+`jump()` from an effect. The key preview bubble this replaced parked itself
+on the first letter typed until it did.
 
 **A release is the commit, not the tap.** `onUp` arrives before `onTap` for
 one release, so a handler that clears its highlight in `onUp` leaves `onTap`
@@ -295,8 +295,8 @@ touches in the view's rotated space.
   workspace, the ball opens the sheet, a submenu opens in place, the sheet
   scrolls and lists the machine's applications, holding a tile opens its
   popup and the same finger picks a row, the control centre opens and mutes,
-  the deck types a chord, the key bubble follows the key, and the trackpad
-  moves the pointer. (No tree probe while a finger is down: the probe
+  the deck types a chord, the arrow compass flicks once and repeats when
+  held, and the trackpad moves the pointer. (No tree probe while a finger is down: the probe
   advances the world by one touchless frame and would end the hold.)
 - `bun tools/pocket-remote.ts client 127.0.0.1:8623 --for 4` — a scripted
   device against a live daemon.

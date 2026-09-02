@@ -6,17 +6,22 @@
 // handles; tests import this file bare (bun test cannot load the app's .tsx
 // through the Solid transform).
 //
-// The arrows are a laptop's cluster, not two keys parked at the end of the
-// letters: ← then ↑ over ↓ in one column, then →, at the bottom right where
-// a hand expects them. A stacked pair shares its column, each key half the
-// row's height.
+// The arrows are ONE key. Four keys sharing the width of two were each too
+// small to hit on a 480 px panel, so pressing the arrow key fans a compass
+// out above it and the SLIDE picks the direction — no aiming, and holding a
+// direction repeats it, which is what an arrow key is for. Vector, not
+// target: the legend shows what is armed, the finger does not have to reach
+// it.
 //
 // SUPER is a sticky modifier like ctrl and alt, so Omarchy's own bindings
 // are reachable from the deck: super then space opens its menu on the
 // laptop, super then 1..9 switches workspace.
 
+import { GLYPH } from "./glyphs.ts";
 import { type Rect, SCREEN_H, SCREEN_W, STRIP } from "./layout.ts";
 import type { Modifier } from "./protocol.ts";
+
+const ARROWS_GLYPH = GLYPH.arrows;
 
 export type KbLayer = "lower" | "upper" | "sym";
 
@@ -32,9 +37,6 @@ export const ROWS_TOP = STRIP.h + 4;
 export const ROW_PITCH = 36;
 export const KEY_H = 32;
 export const ROW_COUNT = 5;
-/** Half-height keys (the stacked arrow pair) with a gap between them. */
-export const HALF_GAP = 2;
-export const HALF_H = (KEY_H - HALF_GAP) / 2;
 /** Letter rows: ten columns of 44 px. The top row: twelve of 40. */
 const UNIT = 44;
 const TOP_UNIT = 40;
@@ -43,11 +45,19 @@ export const KEYBOARD: Rect = { x: 0, y: STRIP.h, w: SCREEN_W, h: ROWS_TOP - STR
 /** The trackpad fills what the keyboard leaves. */
 export const TRACKPAD: Rect = { x: 4, y: KEYBOARD.y + KEYBOARD.h, w: SCREEN_W - 8, h: SCREEN_H - 4 - (KEYBOARD.y + KEYBOARD.h) };
 
+/** The four directions the compass key can send. */
+export type Direction4 = "u" | "d" | "l" | "r";
+
+export const DIRECTION_KEYSYM: Record<Direction4, string> = { u: "Up", d: "Down", l: "Left", r: "Right" };
+export const DIRECTION_GLYPH: Record<Direction4, string> = { u: "↑", d: "↓", l: "←", r: "→" };
+
 export type KeyAction =
   | { ch: string }
   | { key: string }
   | { layer: KbLayer }
-  | { mod: Modifier };
+  | { mod: Modifier }
+  /** The arrow compass: press, slide a direction, hold to repeat. */
+  | { pad: true };
 
 export interface KeyDef {
   label: string;
@@ -57,9 +67,8 @@ export interface KeyDef {
   dark?: boolean;
   /** Hold-and-slide variants (letters and digits). */
   variants?: KeyVariant[];
-  /** Half-height, sharing a column with its partner: "top" comes first and
-   *  does not advance the row, "bottom" sits under it and does. */
-  stack?: "top" | "bottom";
+  /** Drawn as a glyph rather than as its label's text. */
+  glyph?: string;
 }
 
 /** Keysym names for the characters that need one (wtype -k). */
@@ -111,11 +120,8 @@ const bottomRow = (layer: KbLayer): KeyDef[] => [
   { label: "alt", w: 1, act: { mod: "alt" }, dark: true },
   { label: "super", w: 1, act: { mod: "super" }, dark: true },
   { label: "tab", w: 1, act: { key: "Tab" }, dark: true },
-  { label: "space", w: 3, act: { key: "space" } },
-  { label: "←", w: 0.75, act: { key: "Left" }, dark: true },
-  { label: "↑", w: 0.75, act: { key: "Up" }, dark: true, stack: "top" },
-  { label: "↓", w: 0.75, act: { key: "Down" }, dark: true, stack: "bottom" },
-  { label: "→", w: 0.75, act: { key: "Right" }, dark: true },
+  { label: "space", w: 3.75, act: { key: "space" } },
+  { label: "arrows", w: 1.5, act: { pad: true }, dark: true, glyph: ARROWS_GLYPH },
 ];
 
 const ROWS: Record<KbLayer, KeyDef[][]> = {
@@ -164,25 +170,15 @@ export interface KeyRect extends Rect {
 }
 
 function layoutRow(row: KeyDef[], r: number, unit: number): KeyRect[] {
-  const total = row.reduce((sum, key) => sum + (key.stack === "top" ? 0 : key.w), 0);
+  const total = row.reduce((sum, key) => sum + key.w, 0);
   let x = Math.round((SCREEN_W - total * unit) / 2);
   const y = ROWS_TOP + r * ROW_PITCH;
-  const out: KeyRect[] = [];
-  row.forEach((def, c) => {
+  return row.map((def, c) => {
     const w = Math.round(def.w * unit);
-    if (def.stack === "top") {
-      out.push({ x: x + 2, y, w: w - 4, h: HALF_H, def, row: r, col: c });
-      return; // its partner shares the column
-    }
-    if (def.stack === "bottom") {
-      out.push({ x: x + 2, y: y + HALF_H + HALF_GAP, w: w - 4, h: HALF_H, def, row: r, col: c });
-      x += w;
-      return;
-    }
-    out.push({ x: x + 2, y, w: w - 4, h: KEY_H, def, row: r, col: c });
+    const rect = { x: x + 2, y, w: w - 4, h: KEY_H, def, row: r, col: c };
     x += w;
+    return rect;
   });
-  return out;
 }
 
 function layoutKeys(layer: KbLayer): KeyRect[] {
@@ -199,17 +195,60 @@ export function keyboardKeys(layer: KbLayer): readonly KeyRect[] {
   return LAYOUTS[layer];
 }
 
-/**
- * The key under a point. The gaps between keys belong to their nearer
- * neighbour so a finger never falls between two — except vertically inside
- * a stacked pair, where the gap is the boundary between up and down.
- */
+/** The key under a point, with the gaps between keys belonging to their
+ *  nearer neighbour so a finger never falls between two. */
 export function keyAt(layer: KbLayer, x: number, y: number): KeyRect | null {
   for (const key of LAYOUTS[layer]) {
-    const slackY = key.def.stack ? 0 : 2;
-    if (x >= key.x - 2 && x < key.x + key.w + 2 && y >= key.y - slackY && y < key.y + key.h + slackY) return key;
+    if (x >= key.x - 2 && x < key.x + key.w + 2 && y >= key.y - 2 && y < key.y + key.h + 2) return key;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// the arrow compass
+// ---------------------------------------------------------------------------
+
+/** Travel before a slide counts as a direction. Below it, nothing is armed
+ *  and a release sends nothing. */
+export const ARROW_DEAD_ZONE = 14;
+export const ARROW_CHIP_W = 38;
+export const ARROW_CHIP_H = 30;
+const ARROW_CHIP_GAP = 4;
+/** Frames a direction must be held before it starts repeating, and the
+ *  frames between repeats after that. Each repeat is one key press on the
+ *  laptop, so the rate is a walking pace rather than a keyboard's. */
+export const ARROW_HOLD_FRAMES = 22;
+export const ARROW_REPEAT_FRAMES = 8;
+
+/**
+ * The compass's four chips as a diamond, drawn over the TRACKPAD rather than
+ * over the keys: the pad is the one empty place on the deck, so the legend
+ * covers nothing that matters and sits right under the thumb holding the
+ * key. It is a legend — the finger picks by direction, not by touching one —
+ * so only its association with the key matters, and that comes from being
+ * under it.
+ */
+export function arrowFanRects(key: Rect, pad: Rect = TRACKPAD): Record<Direction4, Rect> {
+  const spanW = 3 * ARROW_CHIP_W + 2 * ARROW_CHIP_GAP;
+  const stepX = ARROW_CHIP_W + ARROW_CHIP_GAP;
+  const stepY = ARROW_CHIP_H + ARROW_CHIP_GAP;
+  const cx = Math.max(pad.x + 4 + spanW / 2, Math.min(pad.x + pad.w - 4 - spanW / 2, key.x + key.w / 2));
+  const cy = pad.y + pad.h / 2;
+  const at = (dx: number, dy: number): Rect => ({
+    x: Math.round(cx - ARROW_CHIP_W / 2 + dx * stepX),
+    y: Math.round(cy - ARROW_CHIP_H / 2 + dy * stepY),
+    w: ARROW_CHIP_W,
+    h: ARROW_CHIP_H,
+  });
+  return { u: at(0, -1), d: at(0, 1), l: at(-1, 0), r: at(1, 0) };
+}
+
+/** The direction a slide has chosen: the dominant axis once it is past the
+ *  dead zone, or null while the finger has barely moved. */
+export function arrowDirection(dx: number, dy: number): Direction4 | null {
+  if (Math.abs(dx) < ARROW_DEAD_ZONE && Math.abs(dy) < ARROW_DEAD_ZONE) return null;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? "r" : "l";
+  return dy > 0 ? "d" : "u";
 }
 
 /** Variant chip geometry: above the key, or below it for the top row. */
@@ -244,5 +283,5 @@ export function keyToLine(
     return k ? { t: "key", k, mods } : null;
   }
   if ("key" in act) return mods.length ? { t: "key", k: act.key, mods } : { t: "key", k: act.key };
-  return null;
+  return null; // a layer switch, a modifier and the compass send nothing here
 }

@@ -20,7 +20,14 @@ import { createScroller, type Scroller } from "@pocketjs/framework/kinetics";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { type ActionId, actionById } from "./actions.ts";
 import { windowLabels } from "./names.ts";
-import type { KbLayer, KeyVariant } from "./keyboard-layout.ts";
+import {
+  ARROW_HOLD_FRAMES,
+  ARROW_REPEAT_FRAMES,
+  DIRECTION_KEYSYM,
+  type Direction4,
+  type KbLayer,
+  type KeyVariant,
+} from "./keyboard-layout.ts";
 import {
   approach,
   BALL,
@@ -236,6 +243,21 @@ export interface KeyFly {
   hot: number | null;
 }
 
+/**
+ * The arrow compass: the key is down, a direction may be armed by the slide,
+ * and holding one repeats it. `mods` is the sticky modifier state the press
+ * consumed, kept for the whole hold so a held ctrl+Left stays ctrl+Left.
+ */
+export interface ArrowFan {
+  key: Rect;
+  dir: Direction4 | null;
+  /** Frame the current direction was armed. */
+  at: number;
+  /** Presses already sent during this hold. */
+  fired: number;
+  mods: Modifier[];
+}
+
 export interface Wifi {
   on: boolean;
   ssid: string;
@@ -330,6 +352,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   /** Restarted on every route change: the list's own entrance. */
   const [sheetListT, setSheetListT] = createSignal(0);
   const [keyFly, setKeyFly] = createSignal<KeyFly | null>(null);
+  const [arrowFan, setArrowFan] = createSignal<ArrowFan | null>(null);
   const [flyT, setFlyT] = createSignal(0);
   const [toast, setToast] = createSignal("");
   const [frame, setFrame] = createSignal(0);
@@ -851,6 +874,29 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     else menuRun(row.id);
   };
 
+  /** The compass key went down: open the legend and take the sticky
+   *  modifiers with it, so ctrl+Left is one gesture. */
+  const openArrows = (key: Rect) => {
+    const mods = kbMods();
+    if (mods.length) setKbMods([]);
+    setArrowFan({ key, dir: null, at: frameCount, fired: 0, mods });
+  };
+  /** The slide picked a direction. Changing direction restarts the hold, and
+   *  nothing is sent on the way: sliding through a direction must not move
+   *  the cursor. */
+  const armArrow = (dir: Direction4 | null) => {
+    const fan = arrowFan();
+    if (!fan || fan.dir === dir) return;
+    setArrowFan({ ...fan, dir, at: frameCount, fired: 0 });
+  };
+  /** Released: a flick that never repeated sends its one press. */
+  const releaseArrows = () => {
+    const fan = arrowFan();
+    setArrowFan(null);
+    if (fan && fan.dir && fan.fired === 0) typeKey(DIRECTION_KEYSYM[fan.dir], fan.mods);
+  };
+  const closeArrows = () => setArrowFan(null);
+
   const openKeyFly = (fly: KeyFly) => {
     setKeyFly(fly);
     setFlyT(0);
@@ -1024,6 +1070,17 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
       setFlyT(easeProgress(flyT()));
       moved = true;
     }
+    const fan = arrowFan();
+    if (fan) {
+      if (fan.dir) {
+        const held = frameCount - fan.at;
+        if (held >= ARROW_HOLD_FRAMES && (held - ARROW_HOLD_FRAMES) % ARROW_REPEAT_FRAMES === 0) {
+          typeKey(DIRECTION_KEYSYM[fan.dir], fan.mods);
+          setArrowFan({ ...fan, fired: fan.fired + 1 });
+        }
+      }
+      moved = true;
+    }
     const c = cc();
     if (c) {
       if (ccT() < 1) {
@@ -1160,6 +1217,11 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     sheetArm,
     sheetTap,
     keyFly,
+    arrowFan,
+    openArrows,
+    armArrow,
+    releaseArrows,
+    closeArrows,
     flyT,
     openKeyFly,
     closeKeyFly,

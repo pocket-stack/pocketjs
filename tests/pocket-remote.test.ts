@@ -53,7 +53,14 @@ import {
 import {
   chipAt,
   chipRects,
-  HALF_H,
+  ARROW_CHIP_H,
+  ARROW_CHIP_W,
+  ARROW_DEAD_ZONE,
+  ARROW_HOLD_FRAMES,
+  ARROW_REPEAT_FRAMES,
+  arrowDirection,
+  arrowFanRects,
+  DIRECTION_KEYSYM,
   KEYBOARD,
   keyAt,
   keyboardKeys,
@@ -839,6 +846,9 @@ describe("pocket-remote deck", () => {
       // Omarchy's grammar lives on SUPER, so the deck carries it.
       expect(labels).toContain("super");
       expect(labels).toContain("return");
+      // One arrow key, not four: the compass.
+      expect(labels.filter((label) => label === "arrows").length).toBe(1);
+      expect(labels).not.toContain("←");
     }
     expect(TRACKPAD.y + TRACKPAD.h).toBeLessThanOrEqual(SCREEN_H);
     expect(TRACKPAD.h).toBeGreaterThanOrEqual(96);
@@ -853,26 +863,48 @@ describe("pocket-remote deck", () => {
     expect(keyAt("lower", 240, TRACKPAD.y + 10)).toBeNull();
   });
 
-  test("the arrows are a laptop's cluster: left, up over down, right", () => {
-    const keys = keyboardKeys("lower");
-    const left = keys.find((k) => k.def.label === "←")!;
-    const up = keys.find((k) => k.def.label === "↑")!;
-    const downKey = keys.find((k) => k.def.label === "↓")!;
-    const right = keys.find((k) => k.def.label === "→")!;
-    // All four in the bottom row, in reading order.
-    for (const key of [left, up, downKey, right]) expect(key.row).toBe(4);
-    expect(left.x).toBeLessThan(up.x);
-    expect(up.x).toBeLessThan(right.x);
-    // Up and down share a column, half height each.
-    expect(up.x).toBe(downKey.x);
-    expect(up.w).toBe(downKey.w);
-    expect(up.h).toBe(HALF_H);
-    expect(downKey.y).toBeGreaterThan(up.y + up.h);
-    expect(downKey.y + downKey.h).toBe(left.y + left.h);
-    // The pair's own gap picks a side rather than sticking to one key.
-    expect(keyAt("lower", up.x + 4, up.y + 2)).toBe(up);
-    expect(keyAt("lower", downKey.x + 4, downKey.y + 2)).toBe(downKey);
-    expect(keyAt("lower", left.x + 4, left.y + 4)).toBe(left);
+  test("the arrow compass is one wide key whose legend stays on screen", () => {
+    const compass = keyboardKeys("lower").find((k) => "pad" in k.def.act)!;
+    expect(compass.def.glyph).toBeTruthy();
+    // Wider than a letter and in the bottom row, where a thumb sits.
+    expect(compass.w).toBeGreaterThan(60);
+    expect(compass.row).toBe(4);
+    expect(compass.x + compass.w).toBeLessThanOrEqual(SCREEN_W);
+    const fan = arrowFanRects(compass);
+    for (const dir of ["u", "d", "l", "r"] as const) {
+      const r = fan[dir];
+      expect(r.w).toBe(ARROW_CHIP_W);
+      expect(r.h).toBe(ARROW_CHIP_H);
+      // The legend lives over the trackpad: the deck's one empty place.
+      expect(r.x).toBeGreaterThanOrEqual(TRACKPAD.x);
+      expect(r.x + r.w).toBeLessThanOrEqual(TRACKPAD.x + TRACKPAD.w);
+      expect(r.y).toBeGreaterThanOrEqual(TRACKPAD.y);
+      expect(r.y + r.h).toBeLessThanOrEqual(TRACKPAD.y + TRACKPAD.h);
+    }
+    // A diamond: up above down, left left of right, sharing centres.
+    expect(fan.u.y).toBeLessThan(fan.d.y);
+    expect(fan.l.x).toBeLessThan(fan.r.x);
+    expect(fan.u.x).toBe(fan.d.x);
+    expect(fan.l.y).toBe(fan.r.y);
+    // A key near the right edge still gets a legend inside the pad.
+    const atEdge = arrowFanRects({ x: SCREEN_W - 40, y: 200, w: 40, h: 32 });
+    expect(atEdge.r.x + atEdge.r.w).toBeLessThanOrEqual(TRACKPAD.x + TRACKPAD.w);
+  });
+
+  test("the slide picks the direction, and a resting finger picks none", () => {
+    expect(arrowDirection(0, 0)).toBeNull();
+    expect(arrowDirection(ARROW_DEAD_ZONE - 1, ARROW_DEAD_ZONE - 1)).toBeNull();
+    expect(arrowDirection(30, 4)).toBe("r");
+    expect(arrowDirection(-30, 4)).toBe("l");
+    expect(arrowDirection(4, 30)).toBe("d");
+    expect(arrowDirection(4, -30)).toBe("u");
+    // The dominant axis wins a diagonal.
+    expect(arrowDirection(40, 30)).toBe("r");
+    expect(arrowDirection(20, 40)).toBe("d");
+    expect(DIRECTION_KEYSYM).toEqual({ u: "Up", d: "Down", l: "Left", r: "Right" });
+    // A repeat is a walking pace: each one is a key press on the laptop.
+    expect(ARROW_HOLD_FRAMES).toBeGreaterThan(15);
+    expect(60 / ARROW_REPEAT_FRAMES).toBeLessThan(12);
   });
 
   test("keys become wire lines: text plain, keysyms under modifiers", () => {

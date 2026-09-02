@@ -24,8 +24,14 @@ import { GLYPH } from "./glyphs.ts";
 import type { GestureHandlers } from "./handlers.ts";
 import { Icon } from "./icons.tsx";
 import {
+  ARROW_CHIP_H,
+  ARROW_CHIP_W,
+  arrowDirection,
+  arrowFanRects,
   chipAt,
   chipRects,
+  DIRECTION_GLYPH,
+  type Direction4,
   keyAt,
   keyboardKeys,
   type KeyAction,
@@ -76,18 +82,23 @@ function Key(p: { store: RemoteStore; key: KeyRect }) {
         themed(() => (armed() ? "accentFill" : p.key.def.dark ? "surface" : "surfaceMuted"))(node);
       }}
     >
-      <Text
-        class={
-          armed()
-            ? "text-sm font-bold text-[#13141c]"
-            : p.key.def.dark
-              ? "text-xs text-[#a9b1d6]"
-              : "text-base text-[#c0caf5]"
-        }
-        ref={themed(() => (armed() ? "textOnAccent" : "text"))}
+      <Show
+        when={!p.key.def.glyph}
+        fallback={<Icon glyph={p.key.def.glyph ?? ""} tone={() => (armed() ? "onAccent" : "fg")} size="xl" />}
       >
-        {p.key.def.label}
-      </Text>
+        <Text
+          class={
+            armed()
+              ? "text-sm font-bold text-[#13141c]"
+              : p.key.def.dark
+                ? "text-xs text-[#a9b1d6]"
+                : "text-base text-[#c0caf5]"
+          }
+          ref={themed(() => (armed() ? "textOnAccent" : "text"))}
+        >
+          {p.key.def.label}
+        </Text>
+      </Show>
       <Show when={p.key.def.variants}>
         <View class="absolute left-[3] top-[3] w-[3] h-[3] rounded-[1] bg-[#565f89]" ref={themed("fgDimFill")} />
       </Show>
@@ -124,6 +135,53 @@ function Chip(p: { store: RemoteStore; rect: Rect; label: string; i: number; cou
         {p.label}
       </Text>
     </View>
+  );
+}
+
+/**
+ * The arrow compass, drawn while its key is held: four chips in a diamond
+ * over the key, the armed one filled. A legend, not a set of targets — the
+ * direction comes from the slide, so a finger never has to reach a chip.
+ */
+function ArrowFan(p: { store: RemoteStore }) {
+  const fan = () => p.store.arrowFan()!;
+  const rects = () => arrowFanRects(fan().key);
+  const dirs: Direction4[] = ["u", "l", "r", "d"];
+  return (
+    <>
+      <Index each={dirs}>
+        {(dir) => {
+          const armed = () => fan().dir === dir();
+          const r = () => rects()[dir()];
+          let root: NodeMirror | null = null;
+          createEffect(() => {
+            if (!root) return;
+            jump(root, "insetL", r().x);
+            jump(root, "insetT", r().y);
+            jump(root, "scale", armed() ? 1.1 : 1);
+            jump(root, "opacity", armed() ? 1 : 0.85);
+          });
+          return (
+            <View
+              class={
+                armed()
+                  ? "absolute w-[34] h-[28] rounded-[9] bg-[#7aa2f7] items-center justify-center"
+                  : "absolute w-[34] h-[28] rounded-[9] bg-[#c0caf5] items-center justify-center"
+              }
+              style={{ width: ARROW_CHIP_W, height: ARROW_CHIP_H }}
+              ref={(node) => {
+                root = node;
+                themed(() => (armed() ? "accentFill" : "fgFill"))(node);
+              }}
+            >
+              <Text class="text-base font-bold text-[#13141c]" ref={themed("textOnAccent")}>
+                {DIRECTION_GLYPH[dir()]}
+              </Text>
+            </View>
+          );
+        }}
+      </Index>
+    </>
   );
 }
 
@@ -169,19 +227,32 @@ function Trackpad(p: { store: RemoteStore }) {
         themed(() => (p.store.pressed() === "pad:drag" ? "borderAccent" : "borderMuted"))(node);
       }}
     >
-      <View class="absolute left-[10] top-[6] w-[20] h-[20] items-center justify-center">
-        <Icon glyph={GLYPH.trackpad} tone="dim" size="base" />
-      </View>
-      <View class="absolute left-[34] top-[6] w-[200] h-[20] items-center overflow-hidden">
-        <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
-          {target()}
-        </Text>
-      </View>
-      <View class="absolute right-[10] top-[6] w-[240] h-[20] items-center justify-end">
-        <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
-          {p.store.pressed() === "pad:drag" ? "dragging · lift to drop" : "tap · two fingers scroll · hold to drag"}
-        </Text>
-      </View>
+      {/* The caption stands down while the compass's legend is up: the pad
+          is the only empty place on the deck and they were sharing it. */}
+      <Show
+        when={!p.store.arrowFan()}
+        fallback={
+          <View class="absolute left-[10] top-0 w-[300] h-[100] items-center">
+            <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
+              slide a direction · hold to repeat
+            </Text>
+          </View>
+        }
+      >
+        <View class="absolute left-[10] top-[6] w-[20] h-[20] items-center justify-center">
+          <Icon glyph={GLYPH.trackpad} tone="dim" size="base" />
+        </View>
+        <View class="absolute left-[34] top-[6] w-[200] h-[20] items-center overflow-hidden">
+          <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
+            {target()}
+          </Text>
+        </View>
+        <View class="absolute right-[10] top-[6] w-[240] h-[20] items-center justify-end">
+          <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
+            {p.store.pressed() === "pad:drag" ? "dragging · lift to drop" : "tap · two fingers scroll · hold to drag"}
+          </Text>
+        </View>
+      </Show>
     </View>
   );
 }
@@ -192,6 +263,11 @@ export function Deck(p: { store: RemoteStore }) {
       <View class="absolute w-[480] h-[320]" style={{ insetL: 0, insetT: -28 }}>
         <Keyboard store={p.store} />
         <Trackpad store={p.store} />
+        {/* after the pad: the compass's legend is drawn over it, and paint
+            order among absolute siblings is document order */}
+        <Show when={p.store.arrowFan()}>
+          <ArrowFan store={p.store} />
+        </Show>
       </View>
     </View>
   );
@@ -209,6 +285,8 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
   // for the rest of its life: scroll while they move, the right button if
   // they lift without moving.
   const pads = new Map<number, { moved: boolean }>();
+  /** The compass key is down: this contact steers rather than types. */
+  let steering = false;
   let twoFinger = false;
   let twoFingerMoved = false;
   let leader: number | null = null;
@@ -226,6 +304,7 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
 
   const press = (key: KeyRect) => {
     const act = key.def.act;
+    if ("pad" in act) return; // the compass acts on its own slide
     if ("layer" in act) {
       store.setKbLayer(act.layer);
       return;
@@ -260,8 +339,16 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
       const key = keyAt(store.kbLayer(), c.x, c.y);
       setDown(key);
       store.pressDown(key ? `key:${key.row}:${key.col}` : null);
+      if (key && "pad" in key.def.act) {
+        steering = true;
+        store.openArrows({ x: key.x, y: key.y, w: key.w, h: key.h });
+      }
     },
     onMove: (c) => {
+      if (steering) {
+        store.armArrow(arrowDirection(c.dx, c.dy));
+        return;
+      }
       const pad = pads.get(c.id);
       if (pad) {
         if (c.fdx === 0 && c.fdy === 0) return;
@@ -284,6 +371,7 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
       store.keyHover(chipAt(key, f.variants.length, c.x, c.y));
     },
     onTap: (c) => {
+      if (steering) return; // the compass has already answered on release
       if (pads.has(c.id)) {
         // The tap resolves at the last finger's up (below); a two-finger
         // tap must not also click twice.
@@ -295,6 +383,7 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
       setDown(null);
     },
     onLongPress: (c) => {
+      if (steering) return; // holding the compass is how it repeats
       const pad = pads.get(c.id);
       if (pad) {
         if (twoFinger || pad.moved || dragging) return;
@@ -310,7 +399,7 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
       store.openKeyFly({ key: { x: key.x, y: key.y, w: key.w, h: key.h }, variants: key.def.variants, hot: null });
     },
     onPanStart: (c) => {
-      if (pads.has(c.id) || holding) return;
+      if (pads.has(c.id) || holding || steering) return;
       store.pressDown(null);
       setDown(null);
     },
@@ -335,6 +424,13 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
         }
         return;
       }
+      if (steering) {
+        store.releaseArrows();
+        steering = false;
+        setDown(null);
+        store.pressRelease();
+        return;
+      }
       if (holding) {
         const chosen = store.keyRelease();
         const key = down();
@@ -346,6 +442,10 @@ export function deckHandlers(store: RemoteStore): GestureHandlers {
       store.pressRelease();
     },
     onCancel: (c) => {
+      if (steering) {
+        store.closeArrows();
+        steering = false;
+      }
       if (pads.delete(c.id) && pads.size === 0) {
         if (dragging) store.dragButton(false);
         dragging = false;

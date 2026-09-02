@@ -420,6 +420,49 @@ describe("pocket-remote in the sim", () => {
     expect(sent.some((line) => (line as { t: string }).t === "ptr")).toBe(true);
   });
 
+  test("the arrow compass sends one press on a flick and repeats when held", async () => {
+    const { world, store, sent } = await connected();
+    tap(world, MODE.x + MODE_HALF_W + 17, MODE.y + 11);
+    const compass = keyboardKeys("lower").find((k) => "pad" in k.def.act)!;
+    const from = { x: compass.x + compass.w / 2, y: compass.y + compass.h / 2 };
+
+    // A flick: press, slide right, release — exactly one Right.
+    world.frame(0, undefined, [pack(from.x, from.y)]);
+    expect(store.arrowFan()?.dir).toBeNull();
+    for (let i = 1; i <= 4; i += 1) world.frame(0, undefined, [pack(from.x + i * 8, from.y)]);
+    expect(store.arrowFan()?.dir).toBe("r");
+    // Nothing has been sent yet: sliding through a direction must not move
+    // the cursor.
+    expect(sent.filter((line) => (line as { t: string }).t === "key").length).toBe(0);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 4; i += 1) world.frame(0);
+    expect(store.arrowFan()).toBeNull();
+    expect(sent.filter((line) => (line as { t: string }).t === "key")).toEqual([{ t: "key", k: "Right" }]);
+
+    // Held down: the first press lands after the hold, then it repeats.
+    sent.length = 0;
+    world.frame(0, undefined, [pack(from.x, from.y)]);
+    for (let i = 0; i < 70; i += 1) world.frame(0, undefined, [pack(from.x, from.y - 30)]);
+    const ups = sent.filter((line) => (line as { k?: string }).k === "Up");
+    expect(ups.length).toBeGreaterThan(3);
+    expect(ups.length).toBeLessThan(12);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 4; i += 1) world.frame(0);
+    // The release adds nothing to a hold that already repeated.
+    expect(sent.filter((line) => (line as { k?: string }).k === "Up").length).toBe(ups.length);
+
+    // A sticky modifier rides along: ctrl then the compass is ctrl+Left.
+    sent.length = 0;
+    const ctrl = keyboardKeys("lower").find((k) => k.def.label === "ctrl")!;
+    tap(world, ctrl.x + ctrl.w / 2, ctrl.y + ctrl.h / 2, 5);
+    world.frame(0, undefined, [pack(from.x, from.y)]);
+    for (let i = 1; i <= 4; i += 1) world.frame(0, undefined, [pack(from.x - i * 8, from.y)]);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 4; i += 1) world.frame(0);
+    expect(sent).toContainEqual({ t: "key", k: "Left", mods: ["ctrl"] });
+    expect(store.kbMods()).toEqual([]);
+  });
+
   test("a hello that is still pending shows the approval screen", async () => {
     const world = await bootWorld("pocket-remote-main", HZ, undefined, undefined, { width: 480, height: 320 });
     const store = (globalThis as { __pocketRemote?: RemoteStore }).__pocketRemote!;

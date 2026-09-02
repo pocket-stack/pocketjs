@@ -412,6 +412,16 @@ async function shots(outDir: string): Promise<void> {
   frames(12, [pack(f.x + f.w / 2, f.y + f.h / 2)]);
   shot("deck-variants");
   frames(1);
+  frames(10);
+  // the arrow compass, mid-slide
+  const compass = keyboardKeys("lower").find((k) => "pad" in k.def.act)!;
+  const cx = compass.x + compass.w / 2;
+  const cy = compass.y + compass.h / 2;
+  frames(2, [pack(cx, cy)]);
+  for (let i = 1; i <= 4; i += 1) frames(2, [pack(Math.round(cx - i * 8), cy)]);
+  shot("deck-arrows");
+  frames(1);
+  frames(10);
 
   // back to the stage, then an empty workspace: the launch bar is fixed, so
   // there is nothing on the stage but the hint.

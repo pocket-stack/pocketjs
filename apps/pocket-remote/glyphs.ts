@@ -81,6 +81,8 @@ export const GLYPH = {
   menu: "󰍜",
   /** U+F003B */
   apps: "󰀻",
+  /** U+F0041 */
+  arrows: "󰁁",
   /** U+F01C0 */
   cursor: "󰇀",
 } as const;
