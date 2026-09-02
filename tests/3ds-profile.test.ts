@@ -29,6 +29,7 @@ import {
   ciaTitleId,
   ciaUniqueId,
   parse3dsArguments,
+  runtimeSlot,
 } from "../tools/3ds.ts";
 
 /** A guest app declaring the top screen exactly: 400x240 logical, native. */
@@ -255,7 +256,11 @@ describe("private Nintendo 3DS build profile", () => {
     expect(input).toContain("held &= ~RUNTIME_RELOAD_KEYS");
     expect(input).toContain("RUNTIME_DEVMENU_KEYS");
     expect(input).toContain("held &= ~RUNTIME_DEVMENU_KEYS");
+    expect(input).toContain("RUNTIME_EXIT_KEYS");
+    expect(input).toContain("held &= ~RUNTIME_EXIT_KEYS");
+    expect(input).toContain("input_exit_requested");
     expect(input).toContain("input_devmenu_blocks_guest");
+    expect(main).toContain("if (input_exit_requested()) break");
   });
 
   test("keeps the development menu native and outside the guest capability surface", () => {
@@ -319,6 +324,17 @@ describe("private Nintendo 3DS build profile", () => {
     expect(makefile).not.toContain("POCKETJS_APP_PAK");
     expect(makefile).toContain(
       "$(BUILD)/vshader_shbin.s $(BUILD)/vshader_shbin.h &:",
+    );
+    expect(makefile).toContain("-DPOCKETJS_RUNTIME_SLOT='");
+  });
+
+  test("derives bounded, application-specific Runtime state slots", () => {
+    expect(runtimeSlot("dev.pocket-stack.3ds-demo")).toMatch(/^[0-9a-f]{16}$/);
+    expect(runtimeSlot("dev.pocket-stack.3ds-demo")).toBe(
+      runtimeSlot("dev.pocket-stack.3ds-demo"),
+    );
+    expect(runtimeSlot("dev.pocket-stack.3ds-demo")).not.toBe(
+      runtimeSlot("dev.pocket-stack.term"),
     );
   });
 

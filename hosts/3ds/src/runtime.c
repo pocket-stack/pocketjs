@@ -19,8 +19,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define PACKAGES_DIR POCKET_RUNTIME_ROOT "/packages"
-#define STATE_DIR POCKET_RUNTIME_ROOT "/state"
+#define PACKAGES_DIR POCKET_RUNTIME_APP_ROOT "/packages"
+#define STATE_DIR POCKET_RUNTIME_APP_ROOT "/state"
 #define MAX_PACKAGE_BYTES (24u * 1024u * 1024u)
 
 static void set_error(char *out, size_t length, const char *format, ...) {
@@ -99,6 +99,8 @@ bool runtime_storage_init(PocketRuntimeState *state, char *error, size_t error_l
   memset(state, 0, sizeof *state);
   if (!ensure_directory("sdmc:/pocketjs", error, error_length) ||
       !ensure_directory(POCKET_RUNTIME_ROOT, error, error_length) ||
+      !ensure_directory(POCKET_RUNTIME_APPS, error, error_length) ||
+      !ensure_directory(POCKET_RUNTIME_APP_ROOT, error, error_length) ||
       !ensure_directory(PACKAGES_DIR, error, error_length) ||
       !ensure_directory(STATE_DIR, error, error_length)) {
     return false;
@@ -360,8 +362,8 @@ bool runtime_commit(
 static void write_report(const char *name, const char *text) {
   char path[192];
   char temporary[192];
-  snprintf(path, sizeof path, POCKET_RUNTIME_ROOT "/%s", name);
-  snprintf(temporary, sizeof temporary, POCKET_RUNTIME_ROOT "/.%s.tmp", name);
+  snprintf(path, sizeof path, POCKET_RUNTIME_APP_ROOT "/%s", name);
+  snprintf(temporary, sizeof temporary, POCKET_RUNTIME_APP_ROOT "/.%s.tmp", name);
   FILE *file = fopen(temporary, "wb");
   if (file == NULL) return;
   fputs(text == NULL ? "" : text, file);
@@ -383,8 +385,9 @@ void runtime_write_status(
   snprintf(
     message,
     sizeof message,
-    "phase=%s\ngeneration=%lu\nactive=%016llx\nlast_good=%016llx\nrunning=%016llx\norigin=%s",
+    "phase=%s\nslot=%s\ngeneration=%lu\nactive=%016llx\nlast_good=%016llx\nrunning=%016llx\norigin=%s",
     phase == NULL ? "unknown" : phase,
+    POCKETJS_RUNTIME_SLOT,
     (unsigned long)(state == NULL ? 0 : state->generation),
     (unsigned long long)(state == NULL ? 0 : state->active_hash),
     (unsigned long long)(state == NULL ? 0 : state->last_good_hash),

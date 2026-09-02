@@ -19,6 +19,7 @@
 #   POCKETJS_CORE_LIB        libpocketjs_3ds_core.a
 #   POCKETJS_QUICKJS_DIR     directory holding quickjs.h and libquickjs.a
 #   POCKETJS_APP_POCKET      target-thinned guest package to embed as recovery
+#   POCKETJS_RUNTIME_SLOT    app-id-derived state directory below runtime/apps
 #   POCKETJS_BUILD_DIR       scratch for objects, the .shbin, the .elf, romfs
 #   POCKETJS_OUT_3DSX        the .3dsx to write
 #   POCKETJS_SMDH_TITLE      SMDH metadata
@@ -72,6 +73,7 @@ ARCH := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS := -Wall -Wextra -O2 -g -std=gnu11 -mword-relocations -ffunction-sections -fdata-sections \
   $(ARCH) -D__3DS__ -DJS_NO_NAN_BOXING \
   -DPOCKETJS_TARGET_ID='"$(POCKETJS_TARGET)"' \
+  -DPOCKETJS_RUNTIME_SLOT='"$(POCKETJS_RUNTIME_SLOT)"' \
   -DPOCKETJS_HOST_ABI=$(POCKETJS_HOST_ABI) \
   -DPOCKETJS_VIEW_W=$(POCKETJS_LOGICAL_WIDTH) \
   -DPOCKETJS_VIEW_H=$(POCKETJS_LOGICAL_HEIGHT) \

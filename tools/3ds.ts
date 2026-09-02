@@ -43,6 +43,7 @@
 //   POCKETJS_CORE_LIB      absolute path to libpocketjs_3ds_core.a
 //   POCKETJS_QUICKJS_DIR   directory holding quickjs.h and libquickjs.a
 //   POCKETJS_APP_POCKET    target-thinned recovery guest to embed
+//   POCKETJS_RUNTIME_SLOT  app-id-derived state directory below runtime/apps
 //   POCKETJS_BUILD_DIR     scratch directory for objects, .shbin and the .elf
 //   POCKETJS_OUT_3DSX      the .3dsx path to write
 //   POCKETJS_SMDH_TITLE    application title  (3dsxtool --smdh metadata)
@@ -698,6 +699,17 @@ export function ciaUniqueId(appId: string): string {
 }
 
 /**
+ * Stable SD-card namespace for one application's mutable 3DS Runtime state.
+ *
+ * The complete manifest id is the authority. A fixed-length SHA-256 prefix
+ * keeps every native path bounded while making unrelated HBL entries unable
+ * to recover or hot-load one another's package.
+ */
+export function runtimeSlot(appId: string): string {
+  return createHash("sha256").update(appId, "utf8").digest("hex").slice(0, 16);
+}
+
+/**
  * The full 64-bit title id as hex: category 0x00040000 (a CTR application),
  * then the unique id shifted up by the 8-bit variation, which is 0. It names
  * the directory the installed title lands in, on an SD card and in Azahar
@@ -867,6 +879,10 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
   const pocketOutput = join(args.packageDir, `${inputs.appOutput}.pocket`);
   writeFileSync(pocketOutput, guestPackage);
   console.log(`output: ${pocketOutput} (${guestPackage.length} bytes, ${TARGET_ID} abi ${plan.target.hostAbi})`);
+  const appRuntimeSlot = runtimeSlot(plan.app.id);
+  console.log(
+    `runtime: /pocketjs/runtime/apps/${appRuntimeSlot} (${plan.app.id})`,
+  );
   if (args.pocketOnly) return pocketOutput;
 
   const imageId = await preflightContainer();
@@ -935,6 +951,7 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
     POCKETJS_CORE_LIB: containerPathFor(coreLibrary, mounts),
     POCKETJS_QUICKJS_DIR: containerPathFor(quickJsDirectory, mounts),
     POCKETJS_APP_POCKET: containerPathFor(pocketOutput, mounts),
+    POCKETJS_RUNTIME_SLOT: appRuntimeSlot,
     POCKETJS_BUILD_DIR: containerPathFor(buildDirectory, mounts),
     POCKETJS_OUT_3DSX: containerPathFor(output, mounts),
     POCKETJS_SMDH_TITLE: plan.app.title,

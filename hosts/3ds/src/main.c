@@ -761,6 +761,7 @@ int main(void) {
     uint32_t touch = 0;
     size_t touch_count = scripted_touch(frame, &touch);
 #else
+    if (input_exit_requested()) break;
     devserver_poll();
     if (input_devmenu_toggle_requested()) devmenu_toggle();
     if (devmenu_visible() && input_devmenu_close_requested()) devmenu_hide();

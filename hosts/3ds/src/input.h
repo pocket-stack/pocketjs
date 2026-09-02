@@ -15,6 +15,8 @@ int32_t input_analog(void);
 bool input_reload_requested(void);
 /** Host-owned L+R+SELECT edge that toggles the native development menu. */
 bool input_devmenu_toggle_requested(void);
+/** Host-owned L+R+START edge that exits this .3dsx back to hbmenu. */
+bool input_exit_requested(void);
 /** B or START closes the visible menu; X asks the connected host for a shot. */
 bool input_devmenu_close_requested(void);
 bool input_devmenu_screenshot_requested(void);
