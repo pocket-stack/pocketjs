@@ -42,10 +42,13 @@ import {
 } from "../protocol.ts";
 import { hyprBatch, hyprDirectory, hyprDispatch, luaWindow, luaWorkspace, snapshot, STATE_EVENTS, watchEvents } from "./hypr.ts";
 import {
+  type AppEntry,
   evaluateMenuConditions,
+  launchApp,
   loadMenu,
   Pointer,
   pressKey,
+  readApps,
   readLevels,
   readMedia,
   readTheme,
@@ -213,6 +216,7 @@ let theme = readTheme();
 let monitorOrigin = { x: 0, y: 0 };
 let lastCc: HostLine | null = null;
 let lastMenu: { hide: string[]; check: string[] } | null = null;
+let lastApps: AppEntry[] = [];
 let menuEntries = loadMenu();
 let menuBusy = false;
 const pointer = new Pointer(undefined, log);
@@ -309,6 +313,34 @@ async function refreshMenu(): Promise<void> {
   }
 }
 
+/** The application list, paged: one line has to fit the device's 8 KiB poll
+ *  batch, and a hundred entries do not. */
+const APPS_PER_PAGE = 40;
+
+function appPages(apps: AppEntry[]): HostLine[] {
+  const pages: HostLine[] = [];
+  for (let at = 0; at < apps.length; at += APPS_PER_PAGE) {
+    const slice = apps.slice(at, at + APPS_PER_PAGE);
+    const page: HostLine = { t: "apps", seq: pages.length, a: slice };
+    if (at + APPS_PER_PAGE < apps.length) page.more = 1;
+    pages.push(page);
+  }
+  if (pages.length === 0) pages.push({ t: "apps", seq: 0, a: [] });
+  return pages;
+}
+
+function refreshApps(): void {
+  try {
+    const apps = readApps();
+    if (JSON.stringify(apps) === JSON.stringify(lastApps)) return;
+    lastApps = apps;
+    for (const page of appPages(apps)) broadcast(page);
+    log(`apps: ${apps.length} entries`);
+  } catch (error) {
+    log(`apps: ${(error as Error).message}`);
+  }
+}
+
 function refreshTheme(): void {
   const next = readTheme();
   if (JSON.stringify(next) === JSON.stringify(theme)) return;
@@ -327,6 +359,7 @@ function sendMirror(conn: Conn): void {
   if (lastState) sendLine(conn, lastState);
   if (lastCc) sendLine(conn, lastCc);
   if (lastMenu) sendLine(conn, { t: "menu", hide: lastMenu.hide, check: lastMenu.check });
+  for (const page of appPages(lastApps)) sendLine(conn, page);
 }
 
 // ---------------------------------------------------------------------------
@@ -486,6 +519,14 @@ async function handle(conn: Conn, line: ClientLine): Promise<void> {
       setWifi(line.on === 1, log);
       setTimeout(() => void refreshCc(), 1500);
       setTimeout(() => void refreshCc(), 5000);
+      return;
+    case "launch":
+      if (typeof line.app !== "string" || !launchApp(line.app, log)) {
+        log(`${conn.address}: bad launch ${JSON.stringify(line.app)}`);
+        return;
+      }
+      log(`launch: ${line.app}`);
+      scheduleSnapshot(500);
       return;
     case "menu":
       if (typeof line.id !== "string" || !runMenuEntry(menuEntries, line.id, log)) {
@@ -717,9 +758,11 @@ void refreshState();
 void refreshLevels(true);
 void refreshCc();
 void refreshMenu();
+refreshApps();
 setInterval(() => void refreshLevels(), 1000);
 setInterval(() => void refreshCc(), 3000);
 setInterval(() => void refreshMenu(), 30_000);
+setInterval(refreshApps, 60_000);
 if (!pointer.available()) log("pointer: helper not built; the trackpad will be inert until the next deploy");
 setInterval(() => scheduleSnapshot(), 5000); // belt and braces for missed events
 try {

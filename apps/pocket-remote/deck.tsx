@@ -42,14 +42,24 @@ import { themed } from "./theme.ts";
 // ---------------------------------------------------------------------------
 
 function Key(p: { store: RemoteStore; key: KeyRect }) {
-  const id = `key:${p.key.row}:${p.key.col}`;
+  const id = () => `key:${p.key.row}:${p.key.col}`;
   const armed = () => "mod" in p.key.def.act && p.store.kbMods().includes(p.key.def.act.mod);
   let root: NodeMirror | null = null;
   let glow: NodeMirror | null = null;
   createEffect(() => {
-    const depth = p.store.pressed() === id ? p.store.pressT() : 0;
+    const depth = p.store.pressed() === id() ? p.store.pressT() : 0;
     if (root) jump(root, "scale", 1 + 0.07 * depth);
     if (glow) jump(glow, "opacity", depth);
+  });
+  // Geometry through the mirror, not the style object: the layer switch
+  // changes a row's key count, so the slot Index reuses keeps its node and
+  // has to be re-placed.
+  createEffect(() => {
+    if (!root) return;
+    jump(root, "insetL", p.key.x);
+    jump(root, "insetT", p.key.y);
+    jump(root, "width", p.key.w);
+    jump(root, "height", p.key.h);
   });
   return (
     <View
@@ -60,7 +70,6 @@ function Key(p: { store: RemoteStore; key: KeyRect }) {
             ? "absolute rounded-[7] bg-[#1a1b26] items-center justify-center"
             : "absolute rounded-[7] bg-[#414868] items-center justify-center"
       }
-      style={{ insetL: p.key.x, insetT: p.key.y, width: p.key.w, height: p.key.h }}
       ref={(node) => {
         root = node;
         themed(() => (armed() ? "accentFill" : p.key.def.dark ? "surface" : "surfaceMuted"))(node);
@@ -92,10 +101,22 @@ function Key(p: { store: RemoteStore; key: KeyRect }) {
   );
 }
 
-/** The pressed character, large, above the key. */
-function Bubble(p: { store: RemoteStore; key: KeyRect }) {
-  const r = bubbleRect(p.key);
+/**
+ * The pressed character, large, above the key. One instance follows the
+ * pressed key: Show holds it while the key underneath changes, so its
+ * position has to be written through the mirror rather than read once into
+ * a style object — typing "hello" left the bubble parked on the h.
+ */
+function Bubble(p: { store: RemoteStore; key: () => KeyRect }) {
   let root: NodeMirror | null = null;
+  createEffect(() => {
+    if (!root) return;
+    const r = bubbleRect(p.key());
+    jump(root, "insetL", r.x);
+    jump(root, "insetT", r.y);
+    jump(root, "width", r.w);
+    jump(root, "height", r.h);
+  });
   createEffect(() => {
     if (!root) return;
     const depth = p.store.pressT();
@@ -106,14 +127,13 @@ function Bubble(p: { store: RemoteStore; key: KeyRect }) {
   return (
     <View
       class="absolute rounded-[9] bg-[#c0caf5] items-center justify-center"
-      style={{ insetL: r.x, insetT: r.y, width: r.w, height: r.h }}
       ref={(node) => {
         root = node;
         themed("fgFill")(node);
       }}
     >
       <Text class="text-2xl font-bold text-[#13141c]" ref={themed("textOnAccent")}>
-        {p.key.def.label}
+        {p.key().def.label}
       </Text>
     </View>
   );
@@ -163,7 +183,9 @@ function Keyboard(p: { store: RemoteStore }) {
           </Index>
         )}
       </Show>
-      <Show when={!p.store.keyFly() && pressedKey()}>{(key) => <Bubble store={p.store} key={key()} />}</Show>
+      <Show when={!p.store.keyFly() && pressedKey()}>
+        <Bubble store={p.store} key={() => pressedKey()!} />
+      </Show>
     </>
   );
 }
@@ -197,12 +219,12 @@ function Trackpad(p: { store: RemoteStore }) {
       <View class="absolute left-[10] top-[6] w-[20] h-[20] items-center justify-center">
         <Icon glyph={GLYPH.trackpad} tone="dim" size="base" />
       </View>
-      <View class="absolute left-[34] top-[6] w-[200] h-[20] items-start justify-center overflow-hidden">
+      <View class="absolute left-[34] top-[6] w-[200] h-[20] items-center overflow-hidden">
         <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
           {target()}
         </Text>
       </View>
-      <View class="absolute right-[10] top-[6] h-[20] justify-center">
+      <View class="absolute right-[10] top-[6] w-[240] h-[20] items-center justify-end">
         <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
           {p.store.pressed() === "pad:drag" ? "dragging · lift to drop" : "tap · two fingers scroll · hold to drag"}
         </Text>

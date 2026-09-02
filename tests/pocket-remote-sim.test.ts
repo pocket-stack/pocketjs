@@ -8,7 +8,17 @@ import { describe, expect, test } from "bun:test";
 import { bootWorld } from "../hosts/sim/sim.ts";
 import type { HostState } from "../apps/pocket-remote/protocol.ts";
 import { keyboardKeys, TRACKPAD } from "../apps/pocket-remote/keyboard-layout.ts";
-import { BALL_HOME, CC_BUTTON, MODE, MODE_HALF_W, SHEET_LIST, sheetRowRect, STAGE, TAB_W } from "../apps/pocket-remote/layout.ts";
+import {
+  BALL_HOME,
+  CC_BUTTON,
+  MODE,
+  MODE_HALF_W,
+  SHEET_LIST,
+  sheetRowRect,
+  STAGE,
+  TAB_W,
+  TILE_POPUP_ROWS,
+} from "../apps/pocket-remote/layout.ts";
 import type { RemoteStore } from "../apps/pocket-remote/store.ts";
 
 const HZ = 60;
@@ -64,12 +74,43 @@ async function connected(): Promise<{ world: Awaited<ReturnType<typeof bootWorld
   return { world, store, sent };
 }
 
-const tap = (world: Awaited<ReturnType<typeof bootWorld>>, x: number, y: number, settle = 20) => {
+type World = Awaited<ReturnType<typeof bootWorld>>;
+
+const tap = (world: World, x: number, y: number, settle = 20) => {
   world.frame(0, undefined, [pack(x, y)]);
   world.frame(0, undefined, [pack(x, y)]);
   world.frame(0, undefined, []);
   for (let i = 0; i < settle; i += 1) world.frame(0);
 };
+
+/** Hold at one point, slide to another, release — the remote's second verb. */
+const holdSlide = (world: World, from: { x: number; y: number }, to: { x: number; y: number }, settle = 20) => {
+  for (let i = 0; i < 30; i += 1) world.frame(0, undefined, [pack(from.x, from.y)]);
+  for (let i = 1; i <= 6; i += 1) {
+    world.frame(0, undefined, [
+      pack(Math.round(from.x + ((to.x - from.x) * i) / 6), Math.round(from.y + ((to.y - from.y) * i) / 6)),
+    ]);
+  }
+  world.frame(0, undefined, []);
+  for (let i = 0; i < settle; i += 1) world.frame(0);
+};
+
+/** The brightest run of pixels in a band, as a horizontal centre: the key
+ *  bubble is a light chip over dark keys, so this finds where it sits. */
+function brightCentre(pixels: Uint8Array, top: number, bottom: number): number | null {
+  let sum = 0;
+  let count = 0;
+  for (let y = top; y < bottom; y += 1) {
+    for (let x = 0; x < 480; x += 1) {
+      const at = (y * 480 + x) * 4;
+      if (pixels[at]! > 180 && pixels[at + 1]! > 180 && pixels[at + 2]! > 180) {
+        sum += x;
+        count += 1;
+      }
+    }
+  }
+  return count > 40 ? sum / count : null;
+}
 
 describe("pocket-remote in the sim", () => {
   test("connects, mirrors a snapshot into tiles, and switches workspace from the strip", async () => {
@@ -203,6 +244,99 @@ describe("pocket-remote in the sim", () => {
     // A tap on the trackpad clicks.
     tap(world, 200, y);
     expect(sent).toContainEqual({ t: "click", b: "l" });
+  });
+
+  test("holding a tile opens its popup and the same finger picks a row", async () => {
+    const { world, store, sent } = await connected();
+    const fit = store.fit()!;
+    // The right-hand window's tile, held in its middle.
+    const tile = store.slots.find((slot) => slot.a === "0x55f90e41dd40")!;
+    const from = { x: Math.round(tile.cur.x + tile.cur.w / 2), y: Math.round(tile.cur.y + tile.cur.h / 2) };
+    expect(fit.rect.w).toBeGreaterThan(0);
+    for (let i = 0; i < 30; i += 1) world.frame(0, undefined, [pack(from.x, from.y)]);
+    const popup = store.popup();
+    expect(popup?.a).toBe("0x55f90e41dd40");
+    expect(popup!.place.h).toBe(TILE_POPUP_ROWS * 36 + 8);
+    // No tree probe while a finger is down: the probe advances the world by
+    // one touchless frame, which would end the hold being tested.
+    // Slide onto the second row and release: one gesture, no second tap.
+    const row = { x: popup!.place.x + 40, y: popup!.place.y + 4 + 36 + 18 };
+    for (let i = 1; i <= 6; i += 1) {
+      world.frame(0, undefined, [pack(Math.round(from.x + ((row.x - from.x) * i) / 6), Math.round(from.y + ((row.y - from.y) * i) / 6))]);
+    }
+    expect(store.popup()?.hot).toBe(1);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 10; i += 1) world.frame(0);
+    expect(store.popup()).toBeNull();
+    expect(sent).toContainEqual({ t: "win", op: "full", a: "0x55f90e41dd40" });
+
+    // Lifting without sliding leaves the popup up, and a later tap acts.
+    for (let i = 0; i < 30; i += 1) world.frame(0, undefined, [pack(from.x, from.y)]);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 10; i += 1) world.frame(0);
+    expect(store.popup()).not.toBeNull();
+    expect(texts(world.getTree()).join(" ")).toContain("Full screen");
+    const place = store.popup()!.place;
+    tap(world, place.x + 40, place.y + 4 + 18);
+    expect(store.popup()).toBeNull();
+    expect(sent).toContainEqual({ t: "win", op: "float", a: "0x55f90e41dd40" });
+  });
+
+  test("the sheet is one column, scrolls, and lists the machine's applications", async () => {
+    const { world, store, sent } = await connected();
+    store.applyLine({ t: "apps", seq: 0, more: 1, a: [{ i: "foot", n: "Foot" }, { i: "chromium", n: "Chromium" }] });
+    store.applyLine({ t: "apps", seq: 1, a: [{ i: "org.gnome.Nautilus", n: "Files" }] });
+    expect(store.apps().length).toBe(3);
+
+    tap(world, BALL_HOME.x + 22, BALL_HOME.y + 22);
+    const root = store.sheetRows();
+    expect(root.length).toBe(10);
+    // One column: every row shares an x and steps by one row height.
+    expect(sheetRowRect(1).x).toBe(sheetRowRect(0).x);
+    expect(sheetRowRect(1).y - sheetRowRect(0).y).toBe(sheetRowRect(0).h);
+    // Ten rows do not fit: a fling scrolls the list.
+    const listMid = { x: SHEET_LIST.x + 100, y: SHEET_LIST.y + 150 };
+    world.frame(0, undefined, [pack(listMid.x, listMid.y)]);
+    for (let i = 1; i <= 8; i += 1) world.frame(0, undefined, [pack(listMid.x, listMid.y - i * 12)]);
+    world.frame(0, undefined, []);
+    for (let i = 0; i < 40; i += 1) world.frame(0);
+    expect(store.sheetScroller.offset()).toBeGreaterThan(20);
+    expect(store.sheet()).not.toBeNull();
+
+    // Apps opens on the device, not the laptop.
+    store.sheetScroller.scrollTo(0, { immediate: true });
+    world.frame(0);
+    const appsAt = store.sheetRows().findIndex((row) => row.id === "apps");
+    const r = sheetRowRect(appsAt);
+    tap(world, SHEET_LIST.x + r.x + 60, SHEET_LIST.y + r.y + 20);
+    expect(store.sheet()?.at).toBe("apps");
+    expect(store.sheetRows().map((row) => row.label)).toEqual(["Foot", "Chromium", "Files"]);
+    expect(texts(world.getTree()).join(" ")).toContain("Chromium");
+    // Tapping one launches it and closes the sheet.
+    const first = sheetRowRect(0);
+    tap(world, SHEET_LIST.x + first.x + 60, SHEET_LIST.y + first.y + 20);
+    expect(store.sheet()).toBeNull();
+    expect(sent).toContainEqual({ t: "launch", app: "foot" });
+  });
+
+  test("the key bubble follows the key being pressed", async () => {
+    const { world, store } = await connected();
+    tap(world, MODE.x + MODE_HALF_W + 17, MODE.y + 11);
+    expect(store.mode()).toBe("deck");
+    const centres: number[] = [];
+    for (const label of ["h", "e"]) {
+      const key = keyboardKeys("lower").find((k) => k.def.label === label)!;
+      for (let i = 0; i < 5; i += 1) world.frame(0, undefined, [pack(key.x + key.w / 2, key.y + key.h / 2)]);
+      const bubble = brightCentre(world.render(), key.y - 40, key.y);
+      expect(bubble).not.toBeNull();
+      expect(Math.abs(bubble! - (key.x + key.w / 2))).toBeLessThan(8);
+      centres.push(bubble!);
+      world.frame(0, undefined, []);
+      for (let i = 0; i < 14; i += 1) world.frame(0);
+    }
+    // It moved: one instance follows the pressed key rather than parking on
+    // the first one.
+    expect(Math.abs(centres[1]! - centres[0]!)).toBeGreaterThan(40);
   });
 
   test("a hello that is still pending shows the approval screen", async () => {

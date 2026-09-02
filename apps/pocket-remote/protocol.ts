@@ -157,7 +157,19 @@ export interface HostMenu {
   check: string[];
 }
 
-export type HostLine = HostHello | HostAuth | HostState | HostLevels | HostTheme | HostToast | HostCc | HostMenu;
+/** One page of the machine's application list (the menu's `apps` provider,
+ *  which the shell lists at open time and the device cannot know). A page
+ *  with `seq` 0 starts a new list; the last page has no `more`. Paged
+ *  because the whole list does not fit one poll batch. */
+export interface HostApps {
+  t: "apps";
+  seq: number;
+  more?: 1;
+  /** Desktop entry id (without `.desktop`) and display name. */
+  a: { i: string; n: string }[];
+}
+
+export type HostLine = HostHello | HostAuth | HostState | HostLevels | HostTheme | HostToast | HostCc | HostMenu | HostApps;
 
 // ---------------------------------------------------------------------------
 // device -> host
@@ -266,6 +278,12 @@ export interface ClientMenu {
   id: string;
 }
 
+/** Launch one application by desktop entry id, as listed by `apps`. */
+export interface ClientLaunch {
+  t: "launch";
+  app: string;
+}
+
 export type ClientLine =
   | ClientHello
   | ClientAction
@@ -281,7 +299,8 @@ export type ClientLine =
   | ClientScroll
   | ClientDrag
   | ClientWifi
-  | ClientMenu;
+  | ClientMenu
+  | ClientLaunch;
 
 /** Parse one wire batch (newline-separated JSON) into typed lines; malformed
  *  lines are skipped rather than allowed to wedge the reader. */

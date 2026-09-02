@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/menu-sheet.tsx — Omarchy's menu (SUPER + SPACE) as a
 // sheet in the middle of the screen: the same rows in the same order with
-// the same glyphs, two columns wide, scrolling. A submenu opens in place
-// with its title in the header and a back chevron; an action runs on the
-// laptop and the sheet goes away; a provider submenu (Apps, Fonts) is listed
-// by the shell at open time, so it opens on the laptop instead.
+// the same glyphs, one column, scrolling. A submenu opens in place with its
+// title in the header and a back chevron; an action runs on the laptop and
+// the sheet goes away. The `apps` provider is the exception the shell lists
+// at open time, so the daemon sends the machine's applications and that row
+// opens the list here; the other provider (Fonts) opens on the laptop.
+//
+// One column because a menu reads as a list: two columns of eleven-character
+// labels made the eye jump, and Omarchy's own menu is a single column.
 
 import { createEffect, Index, Show } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
@@ -13,20 +17,20 @@ import type { NodeMirror } from "@pocketjs/framework/components";
 import { GLYPH } from "./glyphs.ts";
 import type { GestureHandlers } from "./handlers.ts";
 import { Icon, type Tone } from "./icons.tsx";
-import { SHEET, SHEET_BACK, SHEET_CLOSE, SHEET_COL_W, SHEET_LIST, SHEET_ROW_H, sheetRowAt, sheetRowRect, within } from "./layout.ts";
+import {
+  SHEET,
+  SHEET_BACK,
+  SHEET_CLOSE,
+  SHEET_HEAD_H,
+  SHEET_LIST,
+  SHEET_RADIUS,
+  sheetRowAt,
+  sheetRowRect,
+  within,
+} from "./layout.ts";
 import { MENU_DOT_EMOJI, menuTitle } from "./menu-tree.ts";
-import type { MenuItem } from "./menu.ts";
-import type { RemoteStore } from "./store.ts";
+import { APPS_ROUTE, type RemoteStore, type SheetRow } from "./store.ts";
 import { themed } from "./theme.ts";
-
-function RowIcon(p: { item: MenuItem }) {
-  const dot = () => MENU_DOT_EMOJI[p.item.icon];
-  return (
-    <Show when={!dot()} fallback={<View class={dotClass(dot()!)} ref={themed(dot() === "ok" ? "okFillDot" : dot() === "warn" ? "warnFill" : "dangerFill")} />}>
-      <Icon glyph={p.item.icon || GLYPH.dot} tone={p.item.icon ? "fg" : "dim"} size="lg" />
-    </Show>
-  );
-}
 
 function dotClass(tone: "ok" | "warn" | "danger"): string {
   switch (tone) {
@@ -39,30 +43,46 @@ function dotClass(tone: "ok" | "warn" | "danger"): string {
   }
 }
 
-function Row(p: { store: RemoteStore; item: MenuItem; i: number }) {
-  const r = sheetRowRect(p.i);
+function RowIcon(p: { row: SheetRow }) {
+  const dot = () => MENU_DOT_EMOJI[p.row.icon];
+  return (
+    <Show
+      when={!dot()}
+      fallback={<View class={dotClass(dot()!)} ref={themed(dot() === "ok" ? "okFillDot" : dot() === "warn" ? "warnFill" : "dangerFill")} />}
+    >
+      <Icon
+        glyph={() => p.row.icon || (p.row.kind === "app" ? GLYPH.apps : GLYPH.dot)}
+        tone={() => (p.row.icon || p.row.kind === "app" ? "fg" : "dim")}
+        size="lg"
+      />
+    </Show>
+  );
+}
+
+function Row(p: { store: RemoteStore; row: SheetRow; i: number }) {
   const hot = () => p.store.sheet()?.hot === p.i;
-  const checked = () => p.store.menuChecked().has(p.item.id);
   const trailing = (): { glyph: string; tone: Tone } | null => {
-    if (checked()) return { glyph: GLYPH.check, tone: "accent" };
-    if (p.item.kind === "menu") return { glyph: GLYPH.chevronRight, tone: "dim" };
-    if (p.item.kind === "provider" || p.item.kind === "link") return { glyph: GLYPH.launch, tone: "dim" };
+    if (p.row.checked) return { glyph: GLYPH.check, tone: "accent" };
+    if (p.row.kind === "menu" || (p.row.kind === "provider" && p.row.id === APPS_ROUTE)) {
+      return { glyph: GLYPH.chevronRight, tone: "dim" };
+    }
+    if (p.row.kind === "provider" || p.row.kind === "link") return { glyph: GLYPH.launch, tone: "dim" };
     return null;
   };
   return (
-    <View class="absolute" style={{ insetL: r.x, insetT: r.y, width: r.w, height: r.h }}>
-      <View class={hot() ? "absolute left-0 top-[1] w-[198] h-[36] rounded-[8] bg-[#7aa2f733]" : "hidden"} ref={themed("accentTint")} />
-      <View class="absolute left-[8] top-[7] w-[24] h-[24] items-center justify-center">
-        <RowIcon item={p.item} />
+    <View class="absolute left-0 w-[328] h-[40]" style={{ insetT: sheetRowRect(p.i).y }}>
+      <View class={hot() ? "absolute left-0 top-[2] w-[328] h-[36] rounded-[8] bg-[#7aa2f733]" : "hidden"} ref={themed("accentTint")} />
+      <View class="absolute left-[8] top-[8] w-[24] h-[24] items-center justify-center">
+        <RowIcon row={p.row} />
       </View>
-      <View class="absolute left-[40] top-0 w-[134] h-[38] items-start justify-center overflow-hidden">
+      <View class="absolute left-[42] top-0 w-[252] h-[40] items-center overflow-hidden">
         <Text class="text-sm text-[#c0caf5]" ref={themed("text")}>
-          {p.item.label}
+          {p.row.label}
         </Text>
       </View>
       <Show when={trailing()}>
         {(t) => (
-          <View class="absolute left-[172] top-[7] w-[24] h-[24] items-center justify-center">
+          <View class="absolute left-[298] top-[8] w-[24] h-[24] items-center justify-center">
             <Icon glyph={() => t().glyph} tone={() => t().tone} size="base" />
           </View>
         )}
@@ -91,7 +111,7 @@ export function MenuSheet(p: { store: RemoteStore }) {
     jump(list, "translateY", -Math.round(p.store.sheetScroller.offset()));
   });
   const sheet = () => p.store.sheet();
-  const title = () => menuTitle(sheet()?.at ?? "root");
+  const title = () => (sheet()?.at === APPS_ROUTE ? "Apps" : menuTitle(sheet()?.at ?? "root"));
   const atRoot = () => (sheet()?.trail.length ?? 0) === 0;
   const rows = () => p.store.sheetRows();
   return (
@@ -112,36 +132,38 @@ export function MenuSheet(p: { store: RemoteStore }) {
           themed("borderMuted")(node);
         }}
       >
-        {/* header */}
-        <View class="absolute left-0 top-0 w-[420] h-[36] bg-[#13141c]" ref={themed("surfaceDark")}>
-          <View class="absolute left-[4] top-[2] w-[44] h-[32] items-center justify-center">
-            <Icon glyph={() => (atRoot() ? GLYPH.menu : GLYPH.chevronLeft)} tone={() => (atRoot() ? "dim" : "fg")} size="xl" />
-            <View class={p.store.pressed() === "sheet:back" ? "absolute left-0 top-0 w-[44] h-[32] rounded-[8] bg-[#ffffff22]" : "hidden"} />
-          </View>
-          <View class="absolute left-[48] top-0 w-[324] h-[36] items-center justify-center">
-            <Text class="text-sm font-bold text-[#c0caf5]" ref={themed("text")}>
-              {title()}
-            </Text>
-          </View>
-          <View class="absolute left-[372] top-[2] w-[44] h-[32] items-center justify-center">
-            <Icon glyph={GLYPH.close} tone="dim" size="xl" />
-            <View class={p.store.pressed() === "sheet:close" ? "absolute left-0 top-0 w-[44] h-[32] rounded-[8] bg-[#ffffff22]" : "hidden"} />
-          </View>
+        {/* Header. An overflow clip is a rectangular scissor, so a child
+            cannot inherit the card's rounded corners: the bar is a rounded
+            rect with its bottom half squared off by a plain one. */}
+        <View class="absolute left-0 top-0 w-[344] h-[36] rounded-[14] bg-[#13141c]" ref={themed("surfaceDark")} />
+        <View class="absolute left-0 w-[344] h-[22] bg-[#13141c]" style={{ insetT: SHEET_RADIUS }} ref={themed("surfaceDark")} />
+        <View class="absolute left-[4] top-[2] w-[44] h-[32] items-center justify-center">
+          <Icon glyph={() => (atRoot() ? GLYPH.menu : GLYPH.chevronLeft)} tone={() => (atRoot() ? "dim" : "fg")} size="xl" />
+          <View class={p.store.pressed() === "sheet:back" ? "absolute left-0 top-0 w-[44] h-[32] rounded-[8] bg-[#ffffff22]" : "hidden"} />
+        </View>
+        <View class="absolute left-[48] top-0 w-[248] h-[36] items-center justify-center">
+          <Text class="text-sm font-bold text-[#c0caf5]" ref={themed("text")}>
+            {title()}
+          </Text>
+        </View>
+        <View class="absolute left-[296] top-[2] w-[44] h-[32] items-center justify-center">
+          <Icon glyph={GLYPH.close} tone="dim" size="xl" />
+          <View class={p.store.pressed() === "sheet:close" ? "absolute left-0 top-0 w-[44] h-[32] rounded-[8] bg-[#ffffff22]" : "hidden"} />
         </View>
         {/* the list: a clip over a canvas the scroller moves */}
         <View
           class="absolute overflow-hidden"
-          style={{ insetL: SHEET_LIST.x - SHEET.x, insetT: SHEET_LIST.y - SHEET.y, width: SHEET_LIST.w, height: SHEET_LIST.h }}
+          style={{ insetL: SHEET_LIST.x - SHEET.x, insetT: SHEET_HEAD_H, width: SHEET_LIST.w, height: SHEET_LIST.h }}
         >
           <View
-            class="absolute left-0 top-0 w-[404] h-[320]"
+            class="absolute left-0 top-0 w-[328] h-[2000]"
             ref={(node) => {
               list = node;
             }}
           >
-            <Index each={rows()}>{(item, i) => <Row store={p.store} item={item()} i={i} />}</Index>
+            <Index each={rows()}>{(row, i) => <Row store={p.store} row={row()} i={i} />}</Index>
             <Show when={rows().length === 0}>
-              <View class="absolute left-0 top-[80] w-[404] h-[20] items-center justify-center">
+              <View class="absolute left-0 top-[80] w-[328] h-[20] items-center justify-center">
                 <Text class="text-sm text-[#565f89]" ref={themed("textDim")}>
                   nothing here on this machine
                 </Text>
@@ -154,14 +176,13 @@ export function MenuSheet(p: { store: RemoteStore }) {
   );
 }
 
-export { SHEET_COL_W, SHEET_ROW_H };
-
-/** The sheet owns every contact while it is up: rows answer taps, the list
- *  pans and flings, the header goes back or closes, outside closes. */
+/** The sheet owns every contact while it is up: rows answer a release, the
+ *  list pans and flings, the header goes back or closes, outside closes. */
 export function sheetHandlers(store: RemoteStore): GestureHandlers {
   type Down = { kind: "row"; i: number } | { kind: "back" } | { kind: "close" } | { kind: "list" } | { kind: "outside" } | { kind: "card" };
   let down: Down = { kind: "card" };
   let panning = false;
+  const rowUnder = (x: number, y: number): number | null => sheetRowAt(x, y, store.sheetRows().length, store.sheetScroller.offset());
   return {
     onDown: (c) => {
       panning = false;
@@ -176,7 +197,7 @@ export function sheetHandlers(store: RemoteStore): GestureHandlers {
         return;
       }
       if (within(c.x, c.y, SHEET_LIST)) {
-        const i = sheetRowAt(c.x, c.y, store.sheetRows().length, store.sheetScroller.offset());
+        const i = rowUnder(c.x, c.y);
         down = i === null ? { kind: "list" } : { kind: "row", i };
         store.sheetHover(i);
         store.sheetScroller.stop();
@@ -189,10 +210,28 @@ export function sheetHandlers(store: RemoteStore): GestureHandlers {
       }
       down = { kind: "card" };
     },
-    onTap: () => {
+    onMove: (c) => {
+      // A finger sliding between rows without panning moves the highlight,
+      // so a hold-and-release lands where the eye is.
+      if (!panning && down.kind === "row") {
+        const i = rowUnder(c.x, c.y);
+        if (i !== null) down = { kind: "row", i };
+        store.sheetHover(i);
+      }
+    },
+    onUp: (c) => {
+      // onUp precedes onTap for one release, so the row runs here: reading
+      // the highlight in onTap would see it already cleared.
+      if (panning) {
+        store.sheetScroller.endDrag(-c.vy);
+        panning = false;
+        store.pressRelease();
+        return;
+      }
       const t = down;
       store.pressRelease();
       store.sheetHover(null);
+      down = { kind: "card" };
       if (t.kind === "row") store.sheetTap(t.i);
       else if (t.kind === "back") store.sheetBack();
       else if (t.kind === "close") store.closeSheet();
@@ -202,6 +241,7 @@ export function sheetHandlers(store: RemoteStore): GestureHandlers {
       store.sheetHover(null);
       if (down.kind === "row" || down.kind === "list") {
         panning = true;
+        down = { kind: "list" };
         store.sheetScroller.beginDrag();
         store.sheetScroller.drag(-c.fdy);
       }
@@ -209,17 +249,12 @@ export function sheetHandlers(store: RemoteStore): GestureHandlers {
     onPanMove: (c) => {
       if (panning) store.sheetScroller.drag(-c.fdy);
     },
-    onUp: (c) => {
-      if (panning) store.sheetScroller.endDrag(-c.vy);
-      panning = false;
-      store.pressRelease();
-      store.sheetHover(null);
-    },
     onCancel: () => {
       if (panning) store.sheetScroller.endDrag(0);
       panning = false;
       store.pressRelease();
       store.sheetHover(null);
+      down = { kind: "card" };
     },
   };
 }

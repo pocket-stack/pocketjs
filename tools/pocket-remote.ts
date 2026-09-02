@@ -302,6 +302,10 @@ async function shots(outDir: string): Promise<void> {
   const { bootWorld } = await import("../hosts/sim/sim.ts");
   const { encodePNG } = await import("../tests/png.ts");
   const { STAGE, TAB_W, CC_BUTTON, MODE, MODE_HALF_W, SHEET_LIST, sheetRowRect, BALL_HOME } = await import("../apps/pocket-remote/layout.ts");
+  const APPS = [
+    "Chromium", "Files", "Foot", "GIMP", "Ghostty", "Localsend", "Neovim", "Nautilus",
+    "Signal", "Spotify", "Steam", "Text Editor", "Thunderbird", "Zed",
+  ].map((name) => ({ i: name.toLowerCase().replace(/ /g, "-"), n: name }));
   const { keyboardKeys } = await import("../apps/pocket-remote/keyboard-layout.ts");
   type Store = import("../apps/pocket-remote/store.ts").RemoteStore;
   const { mkdirSync } = await import("node:fs");
@@ -337,6 +341,7 @@ async function shots(outDir: string): Promise<void> {
     media: { st: "playing", title: "Blue in Green", artist: "Miles Davis" },
   });
   store.applyLine({ t: "menu", hide: ["system.hibernate", "trigger.capture.screenrecord.stop"], check: ["setup.default.terminal.foot", "update.channel.stable"] });
+  store.applyLine({ t: "apps", seq: 0, a: APPS });
   store.applyLine({
     t: "state",
     mon: { w: 1440, h: 900 },
@@ -373,18 +378,28 @@ async function shots(outDir: string): Promise<void> {
   tap(40, 300);
   frames(10);
 
-  // the menu sheet: root, then Trigger
+  // the menu sheet: root, a submenu, the applications list
+  const tapRow = (id: string) => {
+    const at = store.sheetRows().findIndex((row) => row.id === id);
+    if (at < 0) throw new Error(`no sheet row ${id} (have ${store.sheetRows().map((r) => r.id).join(", ")})`);
+    const r = sheetRowRect(at);
+    tap(SHEET_LIST.x + r.x + 60, SHEET_LIST.y + r.y + 20 - store.sheetScroller.offset());
+  };
   tap(BALL_HOME.x + 22, BALL_HOME.y + 22);
   frames(20);
   shot("menu-root");
-  const trigger = sheetRowRect(2);
-  tap(SHEET_LIST.x + trigger.x + 60, SHEET_LIST.y + trigger.y + 19);
+  tapRow("trigger");
   frames(20);
   shot("menu-trigger");
-  const toggle = sheetRowRect(7);
-  tap(SHEET_LIST.x + toggle.x + 60, SHEET_LIST.y + toggle.y + 19);
+  tapRow("trigger.toggle");
   frames(20);
   shot("menu-toggle");
+  store.sheetBack();
+  store.sheetBack();
+  frames(20);
+  tapRow("apps");
+  frames(20);
+  shot("menu-apps");
   tap(10, 300);
   frames(10);
 

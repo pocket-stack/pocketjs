@@ -79,6 +79,8 @@ export const GLYPH = {
   trackpad: "󰟸",
   /** U+F035C */
   menu: "󰍜",
+  /** U+F003B */
+  apps: "󰀻",
   /** U+F01C0 */
   cursor: "󰇀",
 } as const;

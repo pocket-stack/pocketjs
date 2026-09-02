@@ -45,6 +45,20 @@ for (const file of flag("scan")) {
 }
 for (const list of flag("chars")) for (const ch of list) wanted.add(ch.codePointAt(0)!);
 
+/** A copy of `path` moved along x (font units); every command's x fields. */
+function shiftPath(path: Path, dx: number): Path {
+  const moved = new Path();
+  moved.unitsPerEm = path.unitsPerEm;
+  moved.commands = path.commands.map((command) => {
+    const next = { ...command } as Record<string, unknown>;
+    for (const key of ["x", "x1", "x2"]) {
+      if (typeof next[key] === "number") next[key] = (next[key] as number) + dx;
+    }
+    return next as typeof command;
+  });
+  return moved;
+}
+
 const font = parseFont(readFileSync(source).buffer as ArrayBuffer);
 const glyphs: Glyph[] = [new Glyph({ name: ".notdef", unicode: undefined as unknown as number, advanceWidth: font.unitsPerEm / 2, path: new Path() })];
 const missing: number[] = [];
@@ -55,12 +69,21 @@ for (const cp of [...wanted].sort((a, b) => a - b)) {
     continue;
   }
   const glyph = font.glyphs.get(index);
+  // Advances are normalised to the ink: a MONOSPACED Nerd Font patch gives
+  // every glyph one cell of advance, but draws the double-width icons across
+  // two, so the ink overflows to the right of the box a text layout measures
+  // — an icon centred in its button looked pushed right. Shifting each path
+  // to x = 0 and setting the advance to the ink's own width makes a
+  // single-glyph run measure exactly its ink, so centring is exact.
+  const bounds = glyph.path.getBoundingBox();
+  const shift = -bounds.x1;
+  const width = Math.max(1, Math.round(bounds.x2 - bounds.x1));
   glyphs.push(
     new Glyph({
       name: `uni${cp.toString(16).toUpperCase().padStart(4, "0")}`,
       unicode: cp,
-      advanceWidth: glyph.advanceWidth ?? font.unitsPerEm,
-      path: glyph.path,
+      advanceWidth: width,
+      path: shiftPath(glyph.path, shift),
     }),
   );
 }

@@ -29,8 +29,9 @@ against a scripted desktop; the panel is 480x320.
 |---|---|
 | ![the stage](media/stage.png) | ![a held tile's popup](media/popup.png) |
 | ![the control centre](media/control-centre.png) | ![Omarchy's menu as a sheet](media/menu-root.png) |
-| ![the Trigger submenu](media/menu-trigger.png) | ![the deck](media/deck.png) |
-| ![a key's bubble](media/deck-key.png) | ![a held key's variants](media/deck-variants.png) |
+| ![the Trigger submenu](media/menu-trigger.png) | ![the machine's applications](media/menu-apps.png) |
+| ![the deck](media/deck.png) | ![a key's bubble](media/deck-key.png) |
+| ![a held key's variants](media/deck-variants.png) | ![an empty workspace](media/empty.png) |
 
 ## The screen
 
@@ -61,11 +62,13 @@ after a day the strokes are made without looking.
   by class and title, the focused one bordered in the accent, floating
   windows marked. **Tap focuses. Hold a tile** and a popup opens at the
   finger — Float / Tile, Full screen, Close — the classic kind: one container
-  of rows with a caret at the point it answers. **Drag a floating window and
-  it moves**, on the laptop, under the finger (Hyprland places it every third
-  frame and on release). Drag a tiled window onto another to swap them, onto
-  a tab to move it there. Swipe empty stage to step workspaces; an empty
-  workspace offers Terminal, Browser and Files.
+  of rows with hairlines between them. **The finger that opened it picks a
+  row**: slide onto one and let go, one gesture; lift without sliding and the
+  popup stays up for a tap. **Drag a floating window and it moves**, on the
+  laptop, under the finger (Hyprland places it every third frame and on
+  release). Drag a tiled window onto another to swap them, onto a tab to
+  move it there. Swipe empty stage to step workspaces; an empty workspace
+  offers Terminal, Browser and Files.
 - **Deck.** The laptop's C surface on the iPod: five compact rows of keys
   over a trackpad, so typing and pointing need no mode of their own. Keys go
   straight to the desktop (`wtype`) as they are pressed; a pressed key rises,
@@ -82,12 +85,15 @@ after a day the strokes are made without looking.
 - **The ball.** Omarchy's menu (SUPER+SPACE) has a handle that floats over
   everything and lives on a side edge. **Tap it and the menu opens as a
   sheet** in the middle of the screen: the same rows in the same order with
-  the same glyphs, two columns wide, scrolling. A submenu opens in place with
-  its title and a back chevron; an action runs on the laptop and the sheet
-  goes away; the two runtime-listed submenus (Apps, Fonts) open on the laptop
-  instead. **Hold the ball and it comes along**; let go and it slides to the
-  nearer edge at that height. It fades while idle.
-- **Control centre.** Hangs from its button: Wi-Fi (tap toggles the radio),
+  the same glyphs, one column, scrolling — a menu reads as a list, and two
+  columns of eleven-character labels made the eye jump. A submenu opens in
+  place with its title and a back chevron; an action runs on the laptop and
+  the sheet goes away. **Apps lists the machine's own applications** (the
+  daemon reads the XDG desktop entries and pages them over; the row opens
+  that list here rather than on the laptop). **Hold the ball and it comes
+  along**; let go and it slides to the nearer edge at that height. It fades
+  while idle.
+- **Control centre.** Under its button: Wi-Fi (tap toggles the radio),
   a screenshot, nightlight, what is playing with its transport, then
   brightness and volume as sliders. Levels follow the finger **relatively** —
   touching a slider never jumps the level to the finger — and a tap on a
@@ -127,6 +133,31 @@ glyphs Omarchy's bar and menu draw: `fonts.json` names a 68 KiB subset of the
 symbols face (`tools/font-subset.ts`) as a fallback for codepoints Inter does
 not map, and the atlas baker takes those glyphs from it, so an icon is text —
 it recolours with the theme and needs no rectangle art.
+
+**The panel's own two axes.** A View's main axis is horizontal and its
+cross-axis default is stretch, so `justify-*` places a label across and
+`items-center` is what puts it on the middle line; a fixed-size box without
+it paints its text against the top edge. Icons are glyphs from an atlas baked
+at the panel's density, which is also why the ball's mark is a glyph rather
+than a ring of bordered Views — a stroked circle is rasterised at logical
+size and looked soft at 2x. The subset's advances are normalised to each
+glyph's ink (`tools/font-subset.ts`): a monospaced Nerd Font patch gives every
+glyph one cell of advance while drawing the double-width icons across two, so
+a centred icon sat visibly right of centre.
+
+**Geometry through the mirror, not the style object.** A `style` object is
+evaluated once, and Solid's `Show` keeps one instance while the value behind
+it changes — so anything whose position follows live state (the key bubble
+over the pressed key, a popup that re-records itself as the highlight moves,
+a key whose row gains a column on the symbol layer) writes `insetL`/`insetT`
+with `jump()` from an effect. The bubble parked on the first letter typed
+until it did.
+
+**A release is the commit, not the tap.** `onUp` arrives before `onTap` for
+one release, so a handler that clears its highlight in `onUp` leaves `onTap`
+with nothing to run — the popup's rows and the sheet's rows therefore act on
+`onUp`. This is also what makes hold-and-slide and tap-then-tap the same code
+path.
 
 **Motion is a pool, not a tree.** Tiles live in a fixed pool of 24 slots
 (protocol `WINDOWS_MAX`) keyed by window address. A snapshot re-targets the
@@ -175,12 +206,14 @@ threads) — compiled in only when `POCKET_SVC_WIRE` is defined.
 
 Lines are JSON (`protocol.ts`, `REMOTE_PROTO` 2). Host → device: `hello`,
 `auth`, `state`, `levels`, `theme`, `cc` (Wi-Fi and what is playing), `menu`
-(hidden and checked ids), `toast`. Device → host: `hello`, `act`, `ws`, `win`
-(focus, close, swap, move, place, float, full), `vol`, `bri`, `mute`, `media`,
-`type`, `key`, `ptr`, `click`, `scroll`, `drag`, `wifi`, `menu`. **A snapshot
-has to fit one 8 KiB poll batch**, so titles are clipped to 28 code points,
-windows to the 24 most recently focused, and coordinates are integers.
-Pointer motion is accumulated on the device and sent at most once per frame.
+(hidden and checked ids), `apps` (one page of the application list), `toast`.
+Device → host: `hello`, `act`, `ws`, `win` (focus, close, swap, move, place,
+float, full), `vol`, `bri`, `mute`, `media`, `type`, `key`, `ptr`, `click`,
+`scroll`, `drag`, `wifi`, `menu`, `launch`. **A snapshot has to fit one 8 KiB
+poll batch**, so titles are clipped to 28 code points, windows to the 24 most
+recently focused, coordinates are integers, and the application list arrives
+forty entries at a time. Pointer motion is accumulated on the device and sent
+at most once per frame.
 
 **The cable.** The device listens on port 8624. When the iPod is plugged into
 the Omarchy machine, usbmuxd lists it and `iproxy` forwards a host port to
@@ -245,7 +278,11 @@ touches in the view's rotated space.
   JSONC sample and the baked table, the deck's keyboard.
 - `tests/pocket-remote-sim.test.ts` — the built bundle in the headless sim
   over a fake svc channel: a snapshot becomes tiles, the strip switches
-  workspace, the ball opens the sheet and a submenu, the control centre
-  opens and mutes, the deck types a chord and the trackpad moves the pointer.
+  workspace, the ball opens the sheet, a submenu opens in place, the sheet
+  scrolls and lists the machine's applications, holding a tile opens its
+  popup and the same finger picks a row, the control centre opens and mutes,
+  the deck types a chord, the key bubble follows the key, and the trackpad
+  moves the pointer. (No tree probe while a finger is down: the probe
+  advances the world by one touchless frame and would end the hold.)
 - `bun tools/pocket-remote.ts client 127.0.0.1:8623 --for 4` — a scripted
   device against a live daemon.

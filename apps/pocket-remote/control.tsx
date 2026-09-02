@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// apps/pocket-remote/control.tsx — the control centre: a card that hangs
-// from its button at the strip's right end. Wi-Fi, a screenshot, nightlight,
+// apps/pocket-remote/control.tsx — the control centre: a card under its
+// button at the strip's right end (no caret: a triangle this small cannot
+// meet a rounded, bordered card without a seam). Wi-Fi, a screenshot, nightlight,
 // what is playing with its transport, then brightness and volume as
 // sliders. Levels follow the finger relatively — touching a slider never
 // jumps the level to the finger — and a tap on a track nudges by a step.
@@ -102,12 +103,6 @@ export function ControlCentre(p: { store: RemoteStore }) {
         root = node;
       }}
     >
-      {/* caret under the button */}
-      <View
-        class="absolute w-[16] h-[16] rotate-45 bg-[#414868]"
-        style={{ insetL: CC_BUTTON.x + CC_BUTTON.w / 2 - 8, insetT: CC.y - 8 }}
-        ref={themed("surfaceMuted")}
-      />
       <View
         class="absolute rounded-[14] bg-[#13141c] border border-[#414868] overflow-hidden"
         style={{ insetL: CC.x, insetT: CC.y, width: CC.w, height: CC.h }}
@@ -125,12 +120,12 @@ export function ControlCentre(p: { store: RemoteStore }) {
           <View class="absolute left-[10] top-[14] w-[24] h-[24] items-center justify-center">
             <Icon glyph={() => (wifi().on ? GLYPH.wifi : GLYPH.wifiOff)} tone={() => (wifi().on ? "onAccent" : "dim")} size="xl" />
           </View>
-          <View class="absolute left-[42] top-[9] h-[18] justify-center">
+          <View class="absolute left-[42] top-[9] w-[84] h-[18] items-center">
             <Text class={wifi().on ? "text-sm font-bold text-[#13141c]" : "text-sm font-bold text-[#a9b1d6]"} ref={themed(() => (wifi().on ? "textOnAccent" : "text"))}>
               Wi-Fi
             </Text>
           </View>
-          <View class="absolute left-[42] top-[27] w-[84] h-[16] items-start justify-center overflow-hidden">
+          <View class="absolute left-[42] top-[27] w-[84] h-[16] items-center overflow-hidden">
             <Text class={wifi().on ? "text-xs text-[#13141c]" : "text-xs text-[#565f89]"} ref={themed(() => (wifi().on ? "textOnAccent" : "textDim"))}>
               {wifi().on ? (wifi().ssid || "not connected") : "off"}
             </Text>
@@ -164,12 +159,12 @@ export function ControlCentre(p: { store: RemoteStore }) {
           <View class="absolute left-[10] top-[12] w-[24] h-[24] items-center justify-center">
             <Icon glyph={GLYPH.music} tone={() => (media().st === "playing" ? "accent" : "dim")} size="xl" />
           </View>
-          <View class="absolute left-[42] top-[6] w-[100] h-[18] items-start justify-center overflow-hidden">
+          <View class="absolute left-[42] top-[6] w-[100] h-[18] items-center overflow-hidden">
             <Text class="text-sm text-[#c0caf5]" ref={themed("text")}>
               {media().st === "none" ? "Nothing playing" : media().title || "Untitled"}
             </Text>
           </View>
-          <View class="absolute left-[42] top-[25] w-[100] h-[16] items-start justify-center overflow-hidden">
+          <View class="absolute left-[42] top-[25] w-[100] h-[16] items-center overflow-hidden">
             <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
               {media().st === "none" ? "" : media().artist}
             </Text>

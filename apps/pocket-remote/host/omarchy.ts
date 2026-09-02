@@ -428,6 +428,94 @@ export async function evaluateMenuConditions(entries: readonly MenuEntry[]): Pro
 }
 
 // ---------------------------------------------------------------------------
+// applications (the menu's `apps` provider, which the shell lists at open)
+// ---------------------------------------------------------------------------
+
+export interface AppEntry {
+  /** Desktop entry id, without `.desktop`. */
+  i: string;
+  n: string;
+}
+
+/** The `[Desktop Entry]` group's plain keys; later groups (actions) ignored. */
+export function parseDesktopEntry(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  let inEntry = false;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("[")) {
+      inEntry = line === "[Desktop Entry]";
+      continue;
+    }
+    if (!inEntry || !line || line.startsWith("#")) continue;
+    const at = line.indexOf("=");
+    if (at <= 0) continue;
+    const key = line.slice(0, at).trim();
+    // Localised keys (Name[de]) are skipped: the remote shows one language.
+    if (key.includes("[")) continue;
+    out[key] = line.slice(at + 1).trim();
+  }
+  return out;
+}
+
+/** Whether an entry belongs in a launcher, and what to call it. */
+export function launchableName(entry: Record<string, string>): string | null {
+  if ((entry.Type ?? "Application") !== "Application") return null;
+  if (entry.NoDisplay === "true" || entry.Hidden === "true") return null;
+  const name = entry.Name?.trim();
+  return name ? name.slice(0, 40) : null;
+}
+
+/** XDG application directories, in precedence order (the user's own first). */
+export function applicationDirectories(env: NodeJS.ProcessEnv = process.env): string[] {
+  const home = env.XDG_DATA_HOME ?? join(homedir(), ".local/share");
+  const dirs = (env.XDG_DATA_DIRS ?? "/usr/local/share:/usr/share").split(":").filter(Boolean);
+  const seen = new Set<string>();
+  return [home, ...dirs, "/var/lib/flatpak/exports/share"]
+    .map((dir) => join(dir, "applications"))
+    .filter((dir) => (seen.has(dir) ? false : (seen.add(dir), true)));
+}
+
+/** Every launchable application on the machine, by name. First directory to
+ *  carry an id wins, which is XDG's own rule. */
+export function readApps(env: NodeJS.ProcessEnv = process.env): AppEntry[] {
+  const byId = new Map<string, string>();
+  for (const dir of applicationDirectories(env)) {
+    let files: string[];
+    try {
+      files = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!file.endsWith(".desktop")) continue;
+      const id = file.slice(0, -".desktop".length);
+      if (byId.has(id)) continue;
+      let name: string | null;
+      try {
+        name = launchableName(parseDesktopEntry(readFileSync(join(dir, file), "utf8")));
+      } catch {
+        continue;
+      }
+      if (name) byId.set(id, name);
+    }
+  }
+  return [...byId]
+    .map(([i, n]) => ({ i, n }))
+    .sort((a, b) => a.n.localeCompare(b.n));
+}
+
+const APP_ID = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
+
+/** Launch one entry the way Omarchy launches applications: through uwsm, so
+ *  the window lands in the session's own scope. */
+export function launchApp(id: string, log: Log): boolean {
+  if (!APP_ID.test(id)) return false;
+  runDetached(["uwsm-app", "--", `${id}.desktop`], log);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // the pointer (host/pointer/pocket-pointer.c)
 // ---------------------------------------------------------------------------
 

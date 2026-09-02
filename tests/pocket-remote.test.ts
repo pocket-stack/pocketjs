@@ -22,8 +22,12 @@ import * as wire from "../apps/pocket-remote/host/wire.ts";
 import { buildState, luaWindow, luaWorkspace, parseEvent, type HyprClient, type HyprMonitor, type HyprWorkspace } from "../apps/pocket-remote/host/hypr.ts";
 import { childrenOf, normalizeMenu, parentOf, parseMenuJsonc, stripJsonc } from "../apps/pocket-remote/host/menu-source.ts";
 import {
+  applicationDirectories,
   evaluateMenuConditions,
+  launchableName,
+  launchApp,
   paletteFrom,
+  parseDesktopEntry,
   parseBrightnessctl,
   parseColorsToml,
   parseMprisNames,
@@ -75,6 +79,7 @@ import {
   SCREEN_W,
   SHEET,
   SHEET_LIST,
+  SHEET_ROW_H,
   sheetContentH,
   sheetMaxScroll,
   sheetRowAt,
@@ -90,6 +95,7 @@ import {
   TAB_W,
   TAB_X0,
   tabAt,
+  TILE_POPUP_ROWS,
   tileRect,
   trackDelta,
   trackFill,
@@ -310,22 +316,24 @@ describe("pocket-remote layout", () => {
     expect(ballHit(380, 220, ball)).toBe(false);
   });
 
-  test("a popup opens below its anchor when there is room, above otherwise, and stays on the stage", () => {
-    const below = placePopup(240, 60, 3);
+  test("a popup opens below its anchor when there is room, above otherwise, stays on the stage, and its first row is a short slide away", () => {
+    const below = placePopup(240, 60, TILE_POPUP_ROWS);
     expect(below.below).toBe(true);
     expect(below.y).toBeGreaterThan(60);
-    expect(below.h).toBe(3 * POPUP_ROW_H + 8);
-    const above = placePopup(240, 300, 3);
+    expect(below.h).toBe(TILE_POPUP_ROWS * POPUP_ROW_H + 8);
+    // A hold-and-slide has to reach row zero without letting go.
+    expect(below.y + 4 + POPUP_ROW_H / 2 - 60).toBeLessThanOrEqual(32);
+    const above = placePopup(240, 300, TILE_POPUP_ROWS);
     expect(above.below).toBe(false);
     expect(above.y + above.h).toBeLessThan(300);
-    const edge = placePopup(5, 60, 3);
+    const edge = placePopup(5, 60, TILE_POPUP_ROWS);
     expect(edge.x).toBeGreaterThanOrEqual(STAGE.x + 6);
-    expect(edge.caretX).toBeGreaterThanOrEqual(edge.x + 16);
-    const far = placePopup(478, 60, 3);
+    const far = placePopup(478, 60, TILE_POPUP_ROWS);
     expect(far.x + far.w).toBeLessThanOrEqual(SCREEN_W - 6);
     expect(popupRowAt(below, below.x + 10, below.y + 4 + 10)).toBe(0);
     expect(popupRowAt(below, below.x + 10, below.y + 4 + POPUP_ROW_H * 2 + 10)).toBe(2);
     expect(popupRowAt(below, below.x - 1, below.y + 10)).toBeNull();
+    expect(popupRowAt(below, below.x + 10, below.y + below.h + 4)).toBeNull();
   });
 
   test("the control centre hangs from its button and hit-tests its tiles, transport and sliders", () => {
@@ -355,21 +363,21 @@ describe("pocket-remote layout", () => {
     expect(CC_TRACK_X + CC_TRACK_W).toBeLessThan(CC.w);
   });
 
-  test("the menu sheet lays rows out in two columns, scrolls what does not fit, and hit-tests through the scroll", () => {
+  test("the menu sheet is one column, is centred, scrolls what does not fit, and hit-tests through the scroll", () => {
     expect(SHEET.x + SHEET.w).toBeLessThanOrEqual(SCREEN_W);
     expect(SHEET.y + SHEET.h).toBeLessThanOrEqual(SCREEN_H);
+    expect(SHEET.x).toBe(SCREEN_W - (SHEET.x + SHEET.w)); // centred
     expect(SHEET_LIST.y + SHEET_LIST.h).toBeLessThanOrEqual(SHEET.y + SHEET.h);
-    expect(sheetRowRect(0)).toMatchObject({ x: 0, y: 0 });
-    expect(sheetRowRect(1).x).toBeGreaterThan(sheetRowRect(0).w);
-    expect(sheetRowRect(2).y).toBe(sheetRowRect(0).h);
-    expect(sheetRowRect(1).x + sheetRowRect(1).w).toBeLessThanOrEqual(SHEET_LIST.w);
-    expect(sheetMaxScroll(10)).toBe(0); // the root fits
-    expect(sheetContentH(14)).toBeGreaterThan(SHEET_LIST.h);
-    expect(sheetMaxScroll(14)).toBe(sheetContentH(14) - SHEET_LIST.h);
-    const r3 = sheetRowRect(3);
-    expect(sheetRowAt(SHEET_LIST.x + r3.x + 10, SHEET_LIST.y + r3.y + 10, 10, 0)).toBe(3);
-    expect(sheetRowAt(SHEET_LIST.x + r3.x + 10, SHEET_LIST.y + r3.y + 10 - 38, 10, 38)).toBe(3);
-    expect(sheetRowAt(SHEET_LIST.x + r3.x + 10, SHEET_LIST.y + r3.y + 10, 3, 0)).toBeNull();
+    expect(sheetRowRect(0)).toEqual({ x: 0, y: 0, w: SHEET_LIST.w, h: SHEET_ROW_H });
+    expect(sheetRowRect(1)).toMatchObject({ x: 0, y: SHEET_ROW_H });
+    // Ten root rows in one column already scroll.
+    expect(sheetContentH(10)).toBeGreaterThan(SHEET_LIST.h);
+    expect(sheetMaxScroll(10)).toBe(sheetContentH(10) - SHEET_LIST.h);
+    expect(sheetMaxScroll(2)).toBe(0);
+    expect(sheetRowAt(SHEET_LIST.x + 10, SHEET_LIST.y + 10, 10, 0)).toBe(0);
+    expect(sheetRowAt(SHEET_LIST.x + 10, SHEET_LIST.y + 3 * SHEET_ROW_H + 10, 10, 0)).toBe(3);
+    expect(sheetRowAt(SHEET_LIST.x + 10, SHEET_LIST.y + 10, 10, 3 * SHEET_ROW_H)).toBe(3);
+    expect(sheetRowAt(SHEET_LIST.x + 10, SHEET_LIST.y + 10, 0, 0)).toBeNull();
     expect(sheetRowAt(SHEET.x + 2, SHEET_LIST.y + 10, 10, 0)).toBeNull();
   });
 
@@ -571,6 +579,36 @@ describe("pocket-remote omarchy readers", () => {
     expect(parseMprisPlayer(props)).toEqual({ st: "playing", title: "Blue in Green", artist: "Miles Davis, Bill Evans" });
     expect(parseMprisPlayer('{"type":"a{sv}","data":[{"PlaybackStatus":{"type":"s","data":"Stopped"}}]}')).toEqual({ st: "none", title: "", artist: "" });
     expect(parseMprisPlayer("")).toBeNull();
+  });
+});
+
+describe("pocket-remote applications", () => {
+  test("desktop entries are read the way a launcher reads them", () => {
+    const entry = parseDesktopEntry(
+      `[Desktop Entry]\n# a comment\nType=Application\nName=Files\nName[de]=Dateien\nExec=nautilus --new-window\nIcon=org.gnome.Nautilus\n\n[Desktop Action new-window]\nName=New Window\n`,
+    );
+    expect(entry.Name).toBe("Files");
+    expect(entry.Exec).toBe("nautilus --new-window");
+    expect(entry["Name[de]"]).toBeUndefined();
+    expect(launchableName(entry)).toBe("Files");
+    expect(launchableName(parseDesktopEntry("[Desktop Entry]\nType=Application\nName=X\nNoDisplay=true\n"))).toBeNull();
+    expect(launchableName(parseDesktopEntry("[Desktop Entry]\nType=Link\nName=X\n"))).toBeNull();
+    expect(launchableName(parseDesktopEntry("[Desktop Entry]\nType=Application\n"))).toBeNull();
+  });
+
+  test("the user's own directory comes first and flatpak's is included", () => {
+    const dirs = applicationDirectories({ HOME: "/home/evan", XDG_DATA_DIRS: "/usr/share:/usr/local/share" });
+    expect(dirs[0]!.endsWith("/.local/share/applications")).toBe(true);
+    expect(dirs).toContain("/usr/share/applications");
+    expect(dirs.some((dir) => dir.startsWith("/var/lib/flatpak"))).toBe(true);
+    expect(new Set(dirs).size).toBe(dirs.length);
+  });
+
+  test("only a well-formed desktop id may be launched", () => {
+    const said: string[] = [];
+    expect(launchApp("../../etc/passwd", (m) => said.push(m))).toBe(false);
+    expect(launchApp("foo; rm -rf /", (m) => said.push(m))).toBe(false);
+    expect(said).toEqual([]);
   });
 });
 

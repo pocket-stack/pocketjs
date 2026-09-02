@@ -97,20 +97,21 @@ export function ballHit(x: number, y: number, ball: { x: number; y: number }): b
 }
 
 // ---------------------------------------------------------------------------
-// popup (the classic one: a container of rows with a caret at its anchor)
+// popup (the classic one: a container of rows over the point it answers)
 // ---------------------------------------------------------------------------
 
 export const POPUP_W = 176;
-export const POPUP_ROW_H = 38;
+/** A held tile answers with three rows (stage.tsx). */
+export const TILE_POPUP_ROWS = 3;
+export const POPUP_ROW_H = 36;
 export const POPUP_PAD = 4;
-export const POPUP_CARET = 8;
-/** Distance between the anchor point and the popup's near edge. */
-export const POPUP_GAP = 12;
+/** Distance between the anchor point and the popup's near edge. Short: the
+ *  popup opens under a held finger and the first row has to be reachable
+ *  without letting go. */
+export const POPUP_GAP = 8;
 
 export interface Popup extends Rect {
-  /** Caret tip, screen x. */
-  caretX: number;
-  /** The popup opened below its anchor: the caret sits on the top edge. */
+  /** The popup opened below its anchor rather than above it. */
   below: boolean;
 }
 
@@ -123,8 +124,7 @@ export function placePopup(anchorX: number, anchorY: number, rows: number, bound
   const below = anchorY + POPUP_GAP + h <= bounds.y + bounds.h - 6;
   const y = below ? anchorY + POPUP_GAP : anchorY - POPUP_GAP - h;
   const x = Math.max(bounds.x + 6, Math.min(bounds.x + bounds.w - 6 - w, Math.round(anchorX - w / 2)));
-  const caretX = Math.max(x + 16, Math.min(x + w - 16, anchorX));
-  return { x, y: Math.max(bounds.y + 6, y), w, h, caretX, below };
+  return { x, y: Math.max(bounds.y + 6, y), w, h, below };
 }
 
 export function popupRowAt(p: Popup, x: number, y: number): number | null {
@@ -218,15 +218,14 @@ export function trackFill(level: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// the menu sheet (Omarchy's menu, centred, two columns, scrolling)
+// the menu sheet (Omarchy's menu, centred, one column, scrolling)
 // ---------------------------------------------------------------------------
 
-export const SHEET: Rect = { x: 30, y: 34, w: 420, h: 274 };
+export const SHEET: Rect = { x: 68, y: 34, w: 344, h: 274 };
 export const SHEET_HEAD_H = 36;
 export const SHEET_PAD = 8;
-export const SHEET_COLS = 2;
-export const SHEET_COL_W = 198;
-export const SHEET_ROW_H = 38;
+export const SHEET_ROW_H = 40;
+export const SHEET_RADIUS = 14;
 /** The scrolling list's viewport. */
 export const SHEET_LIST: Rect = {
   x: SHEET.x + SHEET_PAD,
@@ -237,15 +236,14 @@ export const SHEET_LIST: Rect = {
 export const SHEET_BACK: Rect = { x: SHEET.x + 4, y: SHEET.y + 2, w: 44, h: 32 };
 export const SHEET_CLOSE: Rect = { x: SHEET.x + SHEET.w - 48, y: SHEET.y + 2, w: 44, h: 32 };
 
-/** Row `i` of a submenu, in LIST space (before the scroll offset). */
+/** Row `i`, in LIST space (before the scroll offset). One column: a menu
+ *  reads as a list, and two columns of eleven-character labels did not. */
 export function sheetRowRect(i: number): Rect {
-  const col = i % SHEET_COLS;
-  const row = Math.floor(i / SHEET_COLS);
-  return { x: col * (SHEET_COL_W + SHEET_PAD), y: row * SHEET_ROW_H, w: SHEET_COL_W, h: SHEET_ROW_H };
+  return { x: 0, y: i * SHEET_ROW_H, w: SHEET_LIST.w, h: SHEET_ROW_H };
 }
 
 export function sheetContentH(count: number): number {
-  return Math.ceil(count / SHEET_COLS) * SHEET_ROW_H;
+  return count * SHEET_ROW_H;
 }
 
 export function sheetMaxScroll(count: number): number {
@@ -255,14 +253,8 @@ export function sheetMaxScroll(count: number): number {
 /** Row index under a screen point, given the list's scroll offset. */
 export function sheetRowAt(x: number, y: number, count: number, scroll: number): number | null {
   if (!within(x, y, SHEET_LIST)) return null;
-  const lx = x - SHEET_LIST.x;
-  const ly = y - SHEET_LIST.y + scroll;
-  const col = Math.floor(lx / (SHEET_COL_W + SHEET_PAD));
-  if (col < 0 || col >= SHEET_COLS || lx - col * (SHEET_COL_W + SHEET_PAD) >= SHEET_COL_W) return null;
-  const row = Math.floor(ly / SHEET_ROW_H);
-  if (row < 0) return null;
-  const i = row * SHEET_COLS + col;
-  return i < count ? i : null;
+  const i = Math.floor((y - SHEET_LIST.y + scroll) / SHEET_ROW_H);
+  return i >= 0 && i < count ? i : null;
 }
 
 // ---------------------------------------------------------------------------

@@ -34,6 +34,7 @@ import {
   type Mode,
   placePopup,
   type Popup,
+  TILE_POPUP_ROWS,
   type Rect,
   SHEET_LIST,
   sheetMaxScroll,
@@ -49,10 +50,11 @@ import {
   windowAt,
 } from "./layout.ts";
 import { MENU_ROOT, menuChildren, menuItem, menuParent } from "./menu-tree.ts";
-import type { MenuItem } from "./menu.ts";
+import type { MenuKind } from "./menu.ts";
 import {
   type ClientLine,
   type Direction,
+  type HostApps,
   type HostCc,
   type HostLine,
   type HostState,
@@ -192,6 +194,27 @@ export interface Sheet {
   hot: number | null;
 }
 
+/** The sheet's rows come from two places — the baked menu tree, and the
+ *  machine's application list — so the view sees one shape. */
+export interface SheetRow {
+  id: string;
+  label: string;
+  /** The glyph the shell shows, or "" for a row that has none. */
+  icon: string;
+  kind: MenuKind | "app";
+  checked?: boolean;
+}
+
+export interface AppEntry {
+  /** Desktop entry id, without `.desktop`. */
+  i: string;
+  n: string;
+}
+
+/** The menu's `apps` provider: the shell lists it at open time, so the
+ *  device asks the daemon for it and shows the list itself. */
+export const APPS_ROUTE = "apps";
+
 /** A held key's variant chips. */
 export interface KeyFly {
   /** Screen-space rect of the held key. */
@@ -245,6 +268,9 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   const [media, setMedia] = createSignal<Media>({ st: "none", title: "", artist: "" });
   const [menuHidden, setMenuHidden] = createSignal<ReadonlySet<string>>(new Set());
   const [menuChecked, setMenuChecked] = createSignal<ReadonlySet<string>>(new Set());
+  const [apps, setApps] = createSignal<AppEntry[]>([]);
+  /** Pages arrive one line at a time; the list swaps in when the last lands. */
+  let appPages: AppEntry[] = [];
 
   const tabs = createMemo<Tab[]>(() => {
     const s = state();
@@ -297,10 +323,22 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     toastUntil = frameCount + TOAST_FRAMES;
   };
 
-  /** The open submenu's visible rows. */
-  const sheetRows = createMemo<MenuItem[]>(() => {
+  /** The open route's rows: the machine's applications under the `apps`
+   *  provider, this submenu's visible children anywhere else. */
+  const sheetRows = createMemo<SheetRow[]>(() => {
     const s = sheet();
-    return s ? menuChildren(s.at, menuHidden()) : [];
+    if (!s) return [];
+    if (s.at === APPS_ROUTE) {
+      return apps().map((app) => ({ id: app.i, label: app.n, icon: "", kind: "app" as const }));
+    }
+    const checked = menuChecked();
+    return menuChildren(s.at, menuHidden()).map((item) => ({
+      id: item.id,
+      label: item.label,
+      icon: item.icon,
+      kind: item.kind,
+      checked: checked.has(item.id),
+    }));
   });
   const sheetScroller: Scroller = createScroller({
     max: () => sheetMaxScroll(sheetRows().length),
@@ -604,9 +642,15 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     say(item.kind === "action" ? item.label : `${item.label} — on the laptop`);
   };
 
+  /** Launch an application the daemon listed. */
+  const launch = (id: string, label: string) => {
+    send({ t: "launch", app: id });
+    say(label);
+  };
+
   // ---- popups --------------------------------------------------------------------
   const openPopup = (a: string, x: number, y: number) => {
-    setPopup({ a, place: placePopup(x, y, 3), floating: isFloating(a), hot: null });
+    setPopup({ a, place: placePopup(x, y, TILE_POPUP_ROWS), floating: isFloating(a), hot: null });
     setPopupT(0);
   };
   const popupHover = (hot: number | null) => {
@@ -687,17 +731,18 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     const s = sheet();
     if (s && s.hot !== hot) setSheet({ ...s, hot });
   };
-  /** A tapped row: a submenu opens here, anything else runs on the laptop
-   *  and the sheet goes away. */
+  /** A tapped row: a submenu opens here, the applications provider opens as
+   *  a list here, anything else runs on the laptop and the sheet goes away. */
   const sheetTap = (i: number) => {
-    const item = sheetRows()[i];
-    if (!item) return;
-    if (item.kind === "menu") {
-      sheetPush(item.id);
+    const row = sheetRows()[i];
+    if (!row) return;
+    if (row.kind === "menu" || (row.kind === "provider" && row.id === APPS_ROUTE)) {
+      sheetPush(row.id);
       return;
     }
     closeSheet();
-    menuRun(item.id);
+    if (row.kind === "app") launch(row.id, row.label);
+    else menuRun(row.id);
   };
 
   const openKeyFly = (fly: KeyFly) => {
@@ -753,11 +798,26 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
         setMenuHidden(new Set(Array.isArray(line.hide) ? line.hide.filter((v): v is string => typeof v === "string") : []));
         setMenuChecked(new Set(Array.isArray(line.check) ? line.check.filter((v): v is string => typeof v === "string") : []));
         break;
+      case "apps":
+        applyApps(line);
+        break;
       case "toast":
         say(line.text);
         break;
     }
   };
+  /** One page of the application list; page 0 starts over, the page without
+   *  `more` publishes what has arrived. */
+  const applyApps = (line: HostApps) => {
+    if (line.seq === 0) appPages = [];
+    if (Array.isArray(line.a)) {
+      for (const entry of line.a) {
+        if (entry && typeof entry.i === "string" && typeof entry.n === "string") appPages.push({ i: entry.i, n: entry.n });
+      }
+    }
+    if (line.more !== 1) setApps(appPages.slice());
+  };
+
   const applyCc = (line: HostCc) => {
     if (line.wifi && typeof line.wifi === "object") {
       setWifi({
@@ -934,6 +994,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     media,
     menuHidden,
     menuChecked,
+    apps,
     slots,
     tilesForHit,
     windowAt: (x: number, y: number) => windowAt(x, y, tilesForHit()),
@@ -1013,6 +1074,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     click,
     dragButton,
     menuRun,
+    launch,
     applyLine,
     send,
   };

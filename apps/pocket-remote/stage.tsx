@@ -2,10 +2,11 @@
 // apps/pocket-remote/stage.tsx — the live miniature of the focused monitor:
 // tiles = windows, accent border = focus. Tap focuses. Hold a tile and a
 // popup answers at the finger — float or tile it, take it full screen,
-// close it. Drag a tiled window onto another to swap them, onto a strip
-// tab to move it there; drag a floating window and it moves, on the laptop,
-// under the finger. Swipe empty stage to step workspaces; an empty
-// workspace offers the launchers.
+// close it — and the SAME finger picks a row: slide onto it and let go, one
+// gesture, or lift and tap. Drag a tiled window onto another to swap them,
+// onto a strip tab to move it there; drag a floating window and it moves, on
+// the laptop, under the finger. Swipe empty stage to step workspaces; an
+// empty workspace offers the launchers.
 
 import { Index, Show } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
@@ -97,7 +98,7 @@ function Launchers(p: { store: RemoteStore }) {
               <View class="absolute left-[8] top-[6] w-[24] h-[24] items-center justify-center">
                 <Icon glyph={LAUNCH_GLYPH[id()] ?? GLYPH.launch} tone="fg" size="lg" />
               </View>
-              <View class="absolute left-[36] top-0 h-[36] justify-center">
+              <View class="absolute left-[36] top-0 w-[62] h-[36] items-center">
                 <Text class="text-sm text-[#c0caf5]" ref={themed("text")}>
                   {actionById(id())?.label ?? id()}
                 </Text>
@@ -116,7 +117,9 @@ function Launchers(p: { store: RemoteStore }) {
   );
 }
 
-const POPUP_ROWS = (floating: boolean): PopupRow[] => [
+/** The rows a held tile answers with: what a window's own title bar would
+ *  offer if it had one. TILE_POPUP_ROWS sizes the box. */
+const popupRows = (floating: boolean): PopupRow[] => [
   { glyph: floating ? GLYPH.tile : GLYPH.float, label: floating ? "Tile" : "Float" },
   { glyph: GLYPH.fullscreen, label: "Full screen" },
   { glyph: GLYPH.close, label: "Close", tone: "danger" },
@@ -146,11 +149,18 @@ export function Stage(p: { store: RemoteStore }) {
   );
 }
 
-/** The held tile's popup, drawn over everything on the stage. */
+/** The held tile's popup, drawn over everything on the stage. Its inputs are
+ *  accessors: Show keeps one instance while the popup's own record changes
+ *  (a moving highlight is a new record), so geometry read once would freeze. */
 export function TilePopup(p: { store: RemoteStore }) {
   return (
     <Show when={p.store.popup()}>
-      {(popup) => <PopupBox place={popup().place} rows={POPUP_ROWS(popup().floating)} hot={popup().hot} progress={p.store.popupT} />}
+      <PopupBox
+        place={() => p.store.popup()!.place}
+        rows={() => popupRows(p.store.popup()!.floating)}
+        hot={() => p.store.popup()?.hot ?? null}
+        progress={p.store.popupT}
+      />
     </Show>
   );
 }
@@ -177,16 +187,27 @@ export function stageHandlers(store: RemoteStore): GestureHandlers {
   let down: Target = { kind: "none" };
   let swiping = false;
   let placing = false;
+  /** The contact that opened a tile's popup is still down: it now picks a
+   *  row. One gesture — hold, slide, release — with lifting early leaving
+   *  the popup up for a tap. */
+  let picking = false;
   const reset = () => {
     store.pressRelease();
     store.setDrag(null);
     swiping = false;
     placing = false;
+    picking = false;
   };
   return {
     onDown: (c) => {
       down = stageTarget(store, c.x, c.y);
+      picking = false;
       store.pressDown(down.kind === "tile" ? `tile:${down.a}` : down.kind === "launch" ? `launch:${down.i}` : null);
+    },
+    onMove: (c) => {
+      if (!picking) return;
+      const popup = store.popup();
+      if (popup) store.popupHover(popupRowAt(popup.place, c.x, c.y));
     },
     onTap: () => {
       const t = down;
@@ -199,10 +220,12 @@ export function stageHandlers(store: RemoteStore): GestureHandlers {
       if (down.kind === "tile") {
         store.pressDown(null);
         store.openPopup(down.a, c.x, c.y);
+        picking = true;
         down = { kind: "none" };
       }
     },
     onPanStart: (c) => {
+      if (picking) return; // the slide belongs to the popup, not the stage
       const t = down;
       store.pressDown(null);
       if (t.kind === "tile" && store.isFloating(t.a)) {
@@ -216,6 +239,11 @@ export function stageHandlers(store: RemoteStore): GestureHandlers {
       }
     },
     onPanMove: (c) => {
+      if (picking) {
+        const popup = store.popup();
+        if (popup) store.popupHover(popupRowAt(popup.place, c.x, c.y));
+        return;
+      }
       if (placing) {
         store.placeTo(c.x, c.y);
         return;
@@ -234,6 +262,16 @@ export function stageHandlers(store: RemoteStore): GestureHandlers {
       }
     },
     onUp: (c) => {
+      if (picking) {
+        // Released on a row: run it. Released anywhere else: the popup stays
+        // up, so the same choice can be made with a tap.
+        const popup = store.popup();
+        const row = popup ? popupRowAt(popup.place, c.x, c.y) : null;
+        if (row !== null) store.popupRun(row);
+        else store.popupHover(null);
+        reset();
+        return;
+      }
       if (placing) {
         store.placeTo(c.x, c.y, true);
         reset();
@@ -253,12 +291,14 @@ export function stageHandlers(store: RemoteStore): GestureHandlers {
     },
     onCancel: () => {
       if (placing) store.placeCancel();
+      if (picking) store.popupHover(null);
       reset();
     },
   };
 }
 
-/** While a tile's popup is up: rows answer, anything else puts it away. */
+/** While a tile's popup is up and no finger is mid-gesture on it: a row
+ *  answers a release, a touch anywhere else puts the popup away. */
 export function popupHandlers(store: RemoteStore): GestureHandlers {
   let outside = false;
   return {
@@ -279,15 +319,15 @@ export function popupHandlers(store: RemoteStore): GestureHandlers {
       if (!popup || outside) return;
       store.popupHover(popupRowAt(popup.place, c.x, c.y));
     },
-    onTap: () => {
+    onUp: (c) => {
+      // The action runs here, not in onTap: onUp comes first for one
+      // release and clearing the highlight there left onTap with nothing.
       const popup = store.popup();
       store.pressRelease();
-      if (!popup || outside || popup.hot === null) return;
-      store.popupRun(popup.hot);
-    },
-    onUp: () => {
-      store.pressRelease();
-      store.popupHover(null);
+      if (!popup || outside) return;
+      const row = popupRowAt(popup.place, c.x, c.y);
+      if (row !== null) store.popupRun(row);
+      else store.popupHover(null);
     },
     onCancel: () => {
       store.pressRelease();
