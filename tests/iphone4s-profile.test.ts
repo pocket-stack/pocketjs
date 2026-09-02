@@ -200,6 +200,12 @@ describe("private iPhone 4S profile", () => {
     const output = mkdtempSync(join(tmpdir(), "pocket-iphone4s-artwork-"));
     try {
       await bakeClassicIPhoneArtwork(output);
+      expect(IPHONE_CLASSIC_ICON_FILE).toBe("PocketClassic-v4.png");
+      for (const host of ["iphone4s", "ipodtouch4"]) {
+        const plist = readFileSync(join(repository, `hosts/${host}/Info.plist`), "utf8");
+        expect(plist).toContain(`<string>${IPHONE_CLASSIC_ICON_FILE}</string>`);
+        expect(plist).toMatch(/<key>UIPrerenderedIcon<\/key>\s*<true\/>/);
+      }
       expect(readFileSync(join(output, IPHONE_CLASSIC_ICON_FILE))).toEqual(readFileSync(IPHONE_CLASSIC_ICON_SOURCE));
 
       const one = await loadImage(join(output, IPHONE_CLASSIC_ICON_FILE));
@@ -226,6 +232,22 @@ describe("private iPhone 4S profile", () => {
         if (twoPixels[index] > 0 && twoPixels[index] < 255) antialiasedAlphaPixels += 1;
       }
       expect(antialiasedAlphaPixels).toBeGreaterThan(100);
+
+      let brightOuterPixels = 0;
+      for (let y = 0; y < two.height; y += 1) {
+        for (let x = 0; x < two.width; x += 1) {
+          if (x >= 10 && x < two.width - 10 && y >= 10 && y < two.height - 10) continue;
+          const index = (y * two.width + x) * 4;
+          if (twoPixels[index + 3] < 64) continue;
+          const luminance = (
+            0.2126 * twoPixels[index] +
+            0.7152 * twoPixels[index + 1] +
+            0.0722 * twoPixels[index + 2]
+          );
+          if (luminance > 220) brightOuterPixels += 1;
+        }
+      }
+      expect(brightOuterPixels).toBeLessThan(80);
     } finally {
       rmSync(output, { recursive: true, force: true });
     }

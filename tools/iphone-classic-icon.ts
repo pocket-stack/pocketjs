@@ -8,8 +8,8 @@ const REPOSITORY = fileURLToPath(new URL("..", import.meta.url));
 /** The installed iPhone 2G artwork is the single source for legacy iPhone icons. */
 export const IPHONE_CLASSIC_ICON_SOURCE = resolve(REPOSITORY, "hosts/iphone2g/Icon.png");
 export const IPHONE_CLASSIC_RETINA_SOURCE = resolve(REPOSITORY, "hosts/iphone4s/Icon.svg");
-export const IPHONE_CLASSIC_ICON_FILE = "PocketClassic-v3.png";
-export const IPHONE_CLASSIC_RETINA_ICON_FILE = "PocketClassic-v3@2x.png";
+export const IPHONE_CLASSIC_ICON_FILE = "PocketClassic-v4.png";
+export const IPHONE_CLASSIC_RETINA_ICON_FILE = "PocketClassic-v4@2x.png";
 
 const ICON_SUPERSAMPLE = 8;
 

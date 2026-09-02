@@ -9,8 +9,8 @@ The wrapper defaults to required OpenGL ES 1.1. Its retained UI core and UIKit
 view both use density 2, and it accepts only a 640×960 renderbuffer for the
 320×480 logical surface. SpringBoard artwork preserves the byte-identical
 iPhone 2G `Icon.png` at 1× and rasterizes the matching local `Icon.svg` with 8×
-supersampling for Retina, including the precomposed round mask, chrome bevel,
-and glass highlight.
+supersampling for Retina, including the precomposed round mask, thin metal edge,
+dark inset trim, and glass highlight.
 
 Use `bun iphone4s doctor`, `bun iphone4s prepare-sysroot`, and then the build,
 deploy, launch, status, and capture commands documented in `docs/IPHONE4S.md`.

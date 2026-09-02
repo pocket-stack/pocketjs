@@ -81,11 +81,12 @@ It fails instead of silently presenting the software rasterizer through a
 `CAEAGLLayer` when that contract cannot be established.
 
 SpringBoard artwork uses `hosts/iphone2g/Icon.png` as its single source.
-The 1× `PocketClassic-v3.png` is copied byte-for-byte. The Retina
-`PocketClassic-v3@2x.png` is independently rasterized from
+The 1× `PocketClassic-v4.png` is copied byte-for-byte. The Retina
+`PocketClassic-v4@2x.png` is independently rasterized from
 `hosts/iphone4s/Icon.svg` with 8× supersampling, retaining the original icon's
-transparent rounded corners, chrome bevel, enamel face, Pocket mark, and curved
-glass highlight without duplicating each 1× source pixel into a 2×2 block. The
+transparent rounded corners, thin metal edge, dark inset trim, enamel face,
+Pocket mark, and curved glass highlight without duplicating each 1× source
+pixel into a 2×2 block. The
 versioned basename prevents SpringBoard from reusing artwork cached under an
 older bundle resource name. `UIPrerenderedIcon` keeps iOS from adding a second
 gloss treatment.

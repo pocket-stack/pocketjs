@@ -81,6 +81,12 @@ embedded as `__pocket_js` / `__pocket_pak` sections. The build id hashes the
 plan, the guest artifacts, every native object, the sysroot stubs, and the
 baked artwork.
 
+**SpringBoard receives the iPhone 2G icon byte-for-byte at 1× and a separately
+rasterized 118×120 Retina reconstruction with the same thin metal edge and
+dark inset trim.** The `PocketClassic-v4` resource name invalidates older iOS 6
+icon-cache entries, while `UIPrerenderedIcon` prevents SpringBoard from adding
+another gloss layer.
+
 `deploy` copies the bundle over the USB SSH tunnel, verifies every file's
 SHA-256 on the device against the local receipt, and installs under a leased
 transactional lock with rollback — the same protocol as the iPhone 4S, with

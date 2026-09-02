@@ -16,19 +16,19 @@
   <key>CFBundleName</key>
   <string>PocketJS iPod touch 4</string>
   <key>CFBundleIconFile</key>
-  <string>PocketClassic-v3.png</string>
+  <string>PocketClassic-v4.png</string>
   <key>CFBundleIconFiles</key>
   <array>
-    <string>PocketClassic-v3</string>
+    <string>PocketClassic-v4</string>
   </array>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleSignature</key>
   <string>????</string>
   <key>CFBundleVersion</key>
-  <string>0.1.0</string>
+  <string>0.1.1</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>0.1.1</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
