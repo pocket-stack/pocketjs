@@ -17,6 +17,9 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
 export const IPODTOUCH4_DEV_TARGET_ID = "ipodtouch4-dev";
 export const IPODTOUCH4_DEV_HOST_ABI = 8;
 export const IPODTOUCH4_LOGICAL_VIEWPORT = [320, 480] as const;
+/** The same panel a quarter turn over: the host rotates its content view and
+ *  presents 480x320 logical on the 960x640 drawable (hosts/iphone2g/runtime.c). */
+export const IPODTOUCH4_LANDSCAPE_VIEWPORT = [480, 320] as const;
 export const IPODTOUCH4_PHYSICAL_VIEWPORT = [640, 960] as const;
 export const IPODTOUCH4_RASTER_DENSITY = 2;
 
@@ -29,7 +32,7 @@ export const IPODTOUCH4_DEV_CONTRACTS = definePlatformContractRegistry(
       form: "takeover",
       display: {
         physicalViewport: IPODTOUCH4_PHYSICAL_VIEWPORT,
-        logicalViewports: [IPODTOUCH4_LOGICAL_VIEWPORT],
+        logicalViewports: [IPODTOUCH4_LOGICAL_VIEWPORT, IPODTOUCH4_LANDSCAPE_VIEWPORT],
         presentations: ["native"],
         rasterDensity: IPODTOUCH4_RASTER_DENSITY,
       },

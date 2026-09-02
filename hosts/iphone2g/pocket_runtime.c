@@ -3,6 +3,9 @@
 #include "pocket_core.h"
 #include "pocket_spec.h"
 #include "quickjs.h"
+#ifdef POCKET_SVC_WIRE
+#include "svcwire.h"
+#endif
 
 #include <stddef.h>
 #include <stdint.h>
@@ -59,6 +62,14 @@ typedef enum {
   HostDebugPause,
   HostDebugStep,
   HostReportAppAction,
+#ifdef POCKET_SVC_WIRE
+  /* spec ops 30..32 — the host service channel over the PKNT wire
+   * (svcwire.c). Present only in builds whose companion is on the network,
+   * so every other legacy Apple op table stays byte-identical. */
+  HostSvcOpen,
+  HostSvcPoll,
+  HostSvcSend,
+#endif
 } HostOperation;
 
 static JSRuntime *runtime;
@@ -70,6 +81,10 @@ static char reported_action_name[POCKETJS_ACTION_NAME_CAPACITY];
 static int32_t reported_action_value;
 static unsigned long reported_action_sequence;
 static int runtime_failed;
+#ifdef POCKET_SVC_WIRE
+/* spec SVC_POLL_BUF (8192) + terminator: one svcPoll batch. */
+static char svc_poll_buffer[8193];
+#endif
 
 static void clear_error(void) {
   last_error[0] = '\0';
@@ -418,6 +433,24 @@ static JSValue host_operation(
       reported_action_sequence += 1;
       JS_FreeCString(ctx, text);
       return JS_UNDEFINED;
+#ifdef POCKET_SVC_WIRE
+    case HostSvcOpen: {
+      int open;
+      if (!string_argument(ctx, argc, argv, 0, &text, &text_length)) return JS_NewBool(ctx, 0);
+      open = svcwire_open(text);
+      JS_FreeCString(ctx, text);
+      return JS_NewBool(ctx, open);
+    }
+    case HostSvcPoll: {
+      size_t length = svcwire_recv_lines(svc_poll_buffer, sizeof svc_poll_buffer);
+      return length == 0 ? JS_UNDEFINED : JS_NewStringLen(ctx, svc_poll_buffer, length);
+    }
+    case HostSvcSend:
+      if (!string_argument(ctx, argc, argv, 0, &text, &text_length)) return JS_UNDEFINED;
+      svcwire_send_line(text, text_length);
+      JS_FreeCString(ctx, text);
+      return JS_UNDEFINED;
+#endif
   }
   return JS_ThrowInternalError(ctx, "unknown PocketJS HostOp");
 }
@@ -478,6 +511,14 @@ static int install_host(int width, int height) {
     JS_FreeValue(context, ui);
     return 0;
   }
+#ifdef POCKET_SVC_WIRE
+  if (!add_host_operation(context, ui, "svcOpen", 1, HostSvcOpen) ||
+      !add_host_operation(context, ui, "svcPoll", 0, HostSvcPoll) ||
+      !add_host_operation(context, ui, "svcSend", 1, HostSvcSend)) {
+    JS_FreeValue(context, ui);
+    return 0;
+  }
+#endif
 
   JSValue viewport = JS_NewObject(context);
   if (JS_IsException(viewport)) {
@@ -639,6 +680,11 @@ static int run_frame(
   unsigned int tick;
   unsigned int index;
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
+#ifdef POCKET_SVC_WIRE
+  /* Bounded, non-blocking: discovery, connect, rx and tx progress once per
+   * guest turn, before the guest polls. */
+  svcwire_pump();
+#endif
   JSValue touch_array = JS_NewArray(context);
   JSValue hit_array = JS_NewArray(context);
   if (JS_IsException(touch_array) || JS_IsException(hit_array)) {
