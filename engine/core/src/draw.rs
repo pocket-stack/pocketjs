@@ -533,6 +533,9 @@ fn disc_texture(
             // collapses to the nearest texel, so golden-pinned output is
             // byte-identical.
             linear: true,
+            // White RGB with coverage alpha by construction (see above), so
+            // linear sampling still resolves to white RGB under coverage.
+            coverage_only: true,
             revision: 0,
         },
     );

@@ -1,0 +1,4 @@
+# Firmware target only; offline vendoring is a per-project policy that the
+# project's own .cargo/config.toml adds (see hosts/sifli/README.md).
+[build]
+target = "thumbv8m.main-none-eabihf"

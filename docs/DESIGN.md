@@ -71,6 +71,21 @@ artifacts: `$JOB_TMP/map-*.json`).
   blending, and compatible PSM 5650 texture transforms to the PPA, then
   preserves ordering with the core RGB565 rasterizer for unsupported ops.
   It never allocates a full-frame RGB888/ARGB8888 intermediate.
+- **SiFli stays 16-bit and HAL-only**: `engine/backends/sifli-epic/` decodes
+  the DrawList once per frame, plans each damage region against a static
+  capability table, and emits typed commands (fills, A8 blends, gradients,
+  blits, four-point quads, tile copies, fences) to an executor behind a C
+  ABI. `hosts/sifli/components/pocketjs_gpu` runs them on EPIC through
+  public `HAL_EPIC_*` entry points and, on SF32LB58, on VG Lite for the
+  projective quads, RGB-modulated blits, and portable-format textures EPIC
+  cannot read (the SDK defines EPIC's color and 3×3 matrices for 57x only).
+  The CPU never writes the framebuffer: software fallback renders into SRAM
+  tiles that EPIC copies in and out, and A8 coverage is built in SRAM planes;
+  fences appear only where a plane or tile is reused. Coordinate limits
+  (1010 on 55x/56x/58x, 505 on 52x/57x) come from the SDK header and split
+  fills and bands in the planner. Every exact path is byte-identical to the
+  core RGB565 rasterizer; hardware scaling, gradients, and VG Lite sampling
+  are approximations the device self-check measures.
 - **Native animation**: tweens/springs tick in Rust per vblank with **fixed
   dt = 1/60 s** (frame content is a pure function of frame index — this is
   what makes byte-exact goldens possible **[R]**). JS only declares motion.

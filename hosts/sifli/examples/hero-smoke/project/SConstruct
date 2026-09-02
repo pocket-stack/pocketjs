@@ -1,0 +1,44 @@
+import os
+import rtconfig
+
+# The SiFli SDK checkout: `source $SIFLI_SDK/export.sh` sets this.
+SIFLI_SDK = os.getenv('SIFLI_SDK')
+if not SIFLI_SDK:
+    print("Please run set_env.bat in root folder of SIFLI SDK to set environment.")
+    exit()
+
+# The PocketJS checkout. Inside the repository this example finds it by
+# position; a product sets POCKETJS_ROOT explicitly.
+POCKETJS_ROOT = os.getenv('POCKETJS_ROOT') or os.path.abspath(
+    os.path.join(Dir('#').abspath, '..', '..', '..', '..', '..'))
+if not os.path.isfile(os.path.join(POCKETJS_ROOT, 'hosts', 'sifli', 'SConscript')):
+    print("Set POCKETJS_ROOT to a pocket-stack/pocketjs checkout.")
+    exit()
+# Kconfig.proj sources hosts/sifli/Kconfig through this variable.
+os.environ['POCKETJS_ROOT'] = POCKETJS_ROOT
+Export('POCKETJS_ROOT')
+
+from building import *
+
+PrepareEnv()
+
+AddBootLoader(SIFLI_SDK, rtconfig.CHIP)
+SifliEnv()
+
+# GCC 14 made several legacy C pointer conversions hard errors. SiFli's
+# bundled QuickJS still uses `int *` at a handful of int32_t call sites; keep
+# those SDK diagnostics as warnings without patching the SDK checkout.
+# PocketJS components and this example compile with -Werror separately.
+if rtconfig.PLATFORM == 'gcc':
+    rtconfig.CFLAGS += ' -fpermissive'
+    rtconfig.CCFLAGS += ' -fpermissive'
+
+TARGET = rtconfig.OUTPUT_DIR + rtconfig.TARGET_NAME + '.' + rtconfig.TARGET_EXT
+objs = PrepareBuilding(None)
+env = GetCurrentEnv()
+Import('pocketjs_rust_lib')
+env.Depends(TARGET, File(pocketjs_rust_lib))
+
+DoBuilding(TARGET, objs)
+AddFTAB(SIFLI_SDK, rtconfig.CHIP, env)
+GenDownloadScript(env)

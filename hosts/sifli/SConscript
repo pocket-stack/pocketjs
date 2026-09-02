@@ -1,0 +1,69 @@
+# hosts/sifli/SConscript — the one file a SiFli firmware project includes to
+# embed PocketJS: builds the `pocketjs-sifli` staticlib with cargo, links it
+# after the SDK, and adds the C components.
+#
+#   project/SConscript:
+#     Import('SIFLI_SDK', 'POCKETJS_ROOT')
+#     objs.extend(SConscript(os.path.join(POCKETJS_ROOT, 'hosts', 'sifli', 'SConscript'),
+#                            variant_dir='pocketjs', duplicate=0))
+#
+# cargo runs with the project directory as its working directory so the
+# project's own .cargo/config.toml (offline vendoring) applies; the crate's
+# rust-toolchain.toml selects the toolchain through RUSTUP_TOOLCHAIN because
+# rustup only reads that file from the working directory.
+import os
+import subprocess
+import sys
+from building import *
+
+cwd = GetCurrentDir()
+rust_dir = os.path.join(cwd, 'rust')
+target = 'thumbv8m.main-none-eabihf'
+target_dir = os.path.join(rust_dir, 'target')
+pocketjs_rust_lib = os.path.join(target_dir, target, 'release', 'libpocketjs_sifli.a')
+project_dir = Dir('#').abspath
+
+
+def _toolchain_channel():
+    path = os.path.join(rust_dir, 'rust-toolchain.toml')
+    try:
+        with open(path) as handle:
+            for line in handle:
+                line = line.strip()
+                if line.startswith('channel'):
+                    return line.split('=', 1)[1].strip().strip('"')
+    except OSError:
+        pass
+    return None
+
+
+if not GetOption('clean'):
+    cargo_env = os.environ.copy()
+    channel = _toolchain_channel()
+    if channel:
+        cargo_env['RUSTUP_TOOLCHAIN'] = channel
+    if os.path.isfile(os.path.join(project_dir, '.cargo', 'config.toml')):
+        cargo_env['CARGO_NET_OFFLINE'] = 'true'
+    command = [
+        'cargo', 'build', '--release', '--locked',
+        '--manifest-path', os.path.join(rust_dir, 'Cargo.toml'),
+        '--target', target,
+        '--target-dir', target_dir,
+    ]
+    print('pocketjs: ' + ' '.join(command))
+    try:
+        subprocess.check_call(command, cwd=project_dir, env=cargo_env)
+    except (OSError, subprocess.CalledProcessError) as error:
+        print('pocketjs: cargo build failed: %s' % error)
+        sys.exit(1)
+
+env = GetCurrentEnv()
+env.AppendUnique(LINKFLAGS_POST=[pocketjs_rust_lib])
+Export('pocketjs_rust_lib')
+
+objs = []
+objs.extend(SConscript(os.path.join(cwd, 'components', 'pocketjs_gpu', 'SConscript'),
+                       variant_dir='pocketjs_gpu', duplicate=0))
+objs.extend(SConscript(os.path.join(cwd, 'components', 'pocketjs_host', 'SConscript'),
+                       variant_dir='pocketjs_host', duplicate=0))
+Return('objs')

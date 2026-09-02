@@ -36,6 +36,7 @@ pub mod anim;
 pub mod codec;
 pub mod damage;
 pub mod draw;
+pub mod drawlist;
 pub mod layout;
 pub mod pak;
 pub mod package;
@@ -81,12 +82,45 @@ pub struct Texture {
     /// Sample with bilinear filtering (spec::img::FLAG_LINEAR). Pure sampling
     /// hint for backends — the pixel bytes are identical either way.
     pub linear: bool,
+    /// Every texel is either white RGB or (under nearest sampling) fully
+    /// transparent, so the texture carries only coverage. Baked rounded-corner
+    /// discs are the common case; fixed-function backends may blend such a
+    /// texture as an A8 mask tinted by the DrawList modulate color.
+    coverage_only: bool,
     /// Changes only when this live texture's bytes are overwritten in place.
     ///
     /// Generation-tagged handles catch free/reuse, while this revision lets
     /// GPU backends refresh one still-live binding without retransferring
     /// every other texture.
     revision: u64,
+}
+
+/// True when every texel of a texture is white RGB, or fully transparent
+/// under nearest sampling (bilinear sampling could blend a transparent
+/// texel's stored color into visible pixels, so only white qualifies then).
+/// PSM_5650 has no alpha channel and never qualifies.
+pub fn classify_coverage_only(psm: u32, pixels: &[u8], palette: Option<&[u8]>, linear: bool) -> bool {
+    match psm {
+        spec::psm::PSM_8888 => pixels.chunks_exact(4).all(|p| {
+            let white = p[0] == 255 && p[1] == 255 && p[2] == 255;
+            white || (!linear && p[3] == 0)
+        }),
+        spec::psm::PSM_4444 => pixels.chunks_exact(2).all(|p| {
+            let pixel = u16::from_le_bytes([p[0], p[1]]);
+            pixel & 0x0fff == 0x0fff || (!linear && pixel >> 12 == 0)
+        }),
+        spec::psm::PSM_T8 => {
+            let Some(palette) = palette else {
+                return false;
+            };
+            pixels.iter().all(|&index| {
+                let p = index as usize * 4;
+                let white = palette[p] == 255 && palette[p + 1] == 255 && palette[p + 2] == 255;
+                white || (!linear && palette[p + 3] == 0)
+            })
+        }
+        _ => false,
+    }
 }
 
 impl Texture {
@@ -670,16 +704,19 @@ impl Ui {
             }
             copy_aligned(stream, byte_len)
         };
-        let tex = Texture {
+        let linear = flags & spec::img::FLAG_LINEAR != 0;
+        let mut tex = Texture {
             data: chunks,
             byte_len,
             w,
             h,
             psm,
             palette,
-            linear: flags & spec::img::FLAG_LINEAR != 0,
+            linear,
+            coverage_only: false,
             revision: 0,
         };
+        tex.coverage_only = classify_coverage_only(psm, tex.pixels(), tex.palette(), linear);
         let handle = tex_alloc(&mut self.textures, &mut self.tex_free, tex);
         if handle >= 0 {
             self.bump_raster_revision();
@@ -753,6 +790,7 @@ impl Ui {
             );
         }
         tex.revision = tex.revision.wrapping_add(1);
+        tex.coverage_only = classify_coverage_only(tex.psm, tex.pixels(), tex.palette(), tex.linear);
         self.bump_raster_revision();
         true
     }
@@ -1652,6 +1690,18 @@ impl Ui {
             .tex
             .as_ref()
             .map(|texture| texture.revision)
+    }
+
+    /// True when a live texture carries only coverage (see
+    /// [`classify_coverage_only`]): every texel is white RGB or, under
+    /// nearest sampling, fully transparent. Classified once at upload and
+    /// again after [`Ui::update_texture_t8`]; `None` for stale handles.
+    pub fn texture_coverage_only(&self, handle: i32) -> Option<bool> {
+        let slot = tex_resolve(&self.textures, handle)?;
+        self.textures[slot as usize]
+            .tex
+            .as_ref()
+            .map(|texture| texture.coverage_only)
     }
 
     /// Number of texture slots ever allocated (live or free) — the walk

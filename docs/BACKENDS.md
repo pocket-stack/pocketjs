@@ -12,7 +12,8 @@ in exactly one capability: **who measures and shapes text**.
 The portable backend is the baked-text pipeline every fixed-function host
 shares: `pocket-ui-wgpu` on the desktop, the core software rasterizer
 (`engine/core/src/raster.rs`) behind the wasm, Apple, PocketBook and sim
-hosts, the PSP GE walker, the ESP32-P4 PPA and Symbian GLES2 ports.
+hosts, the PSP GE walker, the ESP32-P4 PPA, SiFli EPIC/VG Lite and Symbian
+GLES2 ports.
 
 - **Text is baked at compile time.** `framework/compiler/bake-font.ts`
   rasterizes the app's collected codepoints into FONT ATLAS v3 blobs; the
@@ -189,7 +190,7 @@ X,Y[,d|u|r]@TICK` (drags, right clicks), `--key
 
 |                    | portable                                                         | gpui                                        |
 | ------------------ | ---------------------------------------------------------------- | ------------------------------------------- |
-| hosts              | PSP, Vita, PocketBook, ESP32-P4, Symbian, web, sim, macOS widget | macOS and Linux (`hosts/desktop`)           |
+| hosts              | PSP, Vita, PocketBook, ESP32-P4, SiFli, Symbian, web, sim, macOS widget | macOS and Linux (`hosts/desktop`)           |
 | text measurement   | core, atlas advance tables                                       | gpui platform text system, per-app opt-in   |
 | codepoint coverage | baked charset (+ runtime extension)                              | OS fallback chain, color emoji              |
 | pixel determinism  | byte-exact across hosts                                          | per-host; transactions still deterministic  |

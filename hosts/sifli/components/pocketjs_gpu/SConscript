@@ -1,0 +1,14 @@
+import os
+from building import *
+
+cwd = GetCurrentDir()
+src = Glob('src/*.c')
+CPPPATH = [
+    os.path.join(cwd, 'include'),
+    os.path.join(cwd, 'src'),
+    os.path.abspath(os.path.join(cwd, '..', '..', 'include')),
+]
+
+group = DefineGroup('PocketJS GPU', src, depend=['POCKETJS_GPU'],
+                    CPPPATH=CPPPATH, LOCAL_CCFLAGS=' -Werror')
+Return('group')

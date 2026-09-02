@@ -1,0 +1,13 @@
+import os
+from building import *
+
+cwd = GetCurrentDir()
+objs = []
+
+Import('SIFLI_SDK', 'POCKETJS_ROOT')
+objs.extend(SConscript(os.path.join(SIFLI_SDK, 'SConscript'), variant_dir="sifli_sdk", duplicate=0))
+objs.extend(SConscript(os.path.join(POCKETJS_ROOT, 'hosts', 'sifli', 'SConscript'),
+                       variant_dir="pocketjs", duplicate=0))
+objs.extend(SConscript(cwd + '/../src/SConscript', variant_dir="src", duplicate=0))
+
+Return('objs')

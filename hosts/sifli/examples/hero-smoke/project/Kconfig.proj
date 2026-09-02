@@ -1,0 +1,7 @@
+#APP specific configuration.
+source "$POCKETJS_ROOT/hosts/sifli/Kconfig"
+
+config CUSTOM_MEM_MAP
+    bool
+	select custom_mem_map
+	default y if !SOC_SIMULATOR

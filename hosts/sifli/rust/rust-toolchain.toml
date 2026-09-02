@@ -1,0 +1,4 @@
+[toolchain]
+channel = "1.93.0"
+profile = "minimal"
+targets = ["thumbv8m.main-none-eabihf"]

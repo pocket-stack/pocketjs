@@ -8,10 +8,10 @@
 //  (c) Regenerates package.json's exports block from the subpath registry
 //      (framework/compiler/subpaths.ts) and byte-compares: the npm surface
 //      can never drift from the one declaration. Fix = `bun tools/gen-exports.ts`.
-//  (d) Regenerates hosts/iphone2g/pocket_spec.h (the C input constants native
+//  (d) Regenerates every committed pocket_spec.h (the C input constants native
 //      hosts include) from spec.ts and byte-compares. Fix = `bun contracts/spec/gen-c.ts`.
 
-import { generateC } from "../contracts/spec/gen-c.ts";
+import { generateC, POCKET_SPEC_HEADERS } from "../contracts/spec/gen-c.ts";
 import { generateRust } from "../contracts/spec/gen-rust.ts";
 import { withGeneratedExports } from "../tools/gen-exports.ts";
 import {
@@ -50,15 +50,18 @@ check(
   "run `bun contracts/spec/gen-rust.ts` and commit the result",
 );
 
-// ---- (d) generated pocket_spec.h is in sync -----------------------------------
+// ---- (d) every generated pocket_spec.h is in sync -----------------------------
 
-const specHPath = new URL("../hosts/iphone2g/pocket_spec.h", import.meta.url).pathname;
-const committedHeader = await Bun.file(specHPath).text().catch(() => null);
-check(
-  committedHeader !== null && committedHeader === generateC(),
-  "hosts/iphone2g/pocket_spec.h matches spec.ts",
-  "run `bun contracts/spec/gen-c.ts` and commit the result",
-);
+for (const relative of POCKET_SPEC_HEADERS) {
+  const specHPath = new URL(relative, new URL("../contracts/spec/gen-c.ts", import.meta.url))
+    .pathname;
+  const committedHeader = await Bun.file(specHPath).text().catch(() => null);
+  check(
+    committedHeader !== null && committedHeader === generateC(),
+    `${relative.replace("../../", "")} matches spec.ts`,
+    "run `bun contracts/spec/gen-c.ts` and commit the result",
+  );
+}
 
 // ---- (c) package.json exports match the subpath registry ---------------------
 

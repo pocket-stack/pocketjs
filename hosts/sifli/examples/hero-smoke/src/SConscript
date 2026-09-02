@@ -1,0 +1,23 @@
+import os
+import sys
+from building import *
+
+cwd = GetCurrentDir()
+example_root = os.path.abspath(os.path.join(cwd, '..'))
+assets_root = os.path.join(example_root, 'assets')
+generated = [os.path.join(cwd, 'pocket_assets.S'),
+             os.path.join(cwd, 'pocket_catalog.generated.c')]
+if not all(os.path.isfile(path) for path in generated):
+    print('hero-smoke: generated assets missing; run '
+          '`bun tools/sifli.ts assets hosts/sifli/examples/hero-smoke` first')
+    sys.exit(1)
+
+env = GetCurrentEnv()
+asset_object = env.Object(Glob('pocket_assets.S')[0])  # object lands in the variant dir
+env.Depends(asset_object, Glob(os.path.join(assets_root, '*')))
+
+app_group = DefineGroup('Applications', Glob('*.c'), depend=[''], CPPPATH=[cwd],
+                        LOCAL_CCFLAGS=' -Werror')
+asset_group = DefineGroup('PocketJS assets', asset_object, depend=[''])
+group = app_group + asset_group
+Return('group')

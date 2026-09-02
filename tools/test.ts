@@ -162,6 +162,12 @@ const SUITE: readonly Stage[] = [
     browser: true,
     tests: ["tests/launcher-sim.test.ts"],
   },
+  {
+    name: "sifli sim",
+    prep: [["bun", "tools/build.ts", "hero-main", "--density=2", "--hz=60"]],
+    browser: true,
+    tests: ["tests/sifli-sim.test.ts"],
+  },
 ];
 
 // ---------------------------------------------------------------------------

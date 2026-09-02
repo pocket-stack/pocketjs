@@ -1,0 +1,67 @@
+menuconfig POCKETJS_GPU
+    bool "PocketJS GPU command queue (EPIC / VG Lite)"
+    default y
+    depends on BF0_HCPU
+    help
+      The C executor behind hosts/sifli/include/pocketjs_gpu.h. Runs the
+      renderer's fills, A8 blends, gradients, native texture blits, and CPU
+      fallback tile copies on EPIC through the SiFli HAL.
+
+if POCKETJS_GPU
+
+config POCKETJS_GPU_MASK_TILE_KB
+    int "A8 plane size per slot (KB, two slots in SRAM)"
+    default 64
+    range 4 512
+
+config POCKETJS_GPU_CPU_TILE_KB
+    int "RGB565 tile size per slot for CPU fallback (KB, two slots in SRAM)"
+    default 64
+    range 4 512
+
+config POCKETJS_GPU_MAX_TEXTURES
+    int "Native texture registry capacity"
+    default 32
+    range 1 256
+
+config POCKETJS_GPU_MIN_PIXELS
+    int "Smallest rectangle (physical pixels) worth a hardware transaction"
+    default 64
+    range 1 1048576
+
+config POCKETJS_GPU_DIRECT_CPU_WRITES
+    bool "Let the renderer write the framebuffer from the CPU"
+    default n
+    help
+      Off keeps every CPU fallback inside SRAM tiles that EPIC copies in and
+      out, so the framebuffer stays GPU-only. Turn on only when the
+      framebuffer is CPU-writable without cache maintenance and profiling
+      shows tile copies cost more than direct writes.
+
+endif
+
+if POCKETJS_GPU
+
+config POCKETJS_GPU_VGLITE
+    bool "Run transformed, tinted, and portable-format blits on VG Lite (SF32LB58)"
+    default y
+    depends on USING_VGLITE
+    help
+      Adds a second executor for the commands EPIC cannot run on 58x:
+      four-point (projective) texture quads, RGB-modulated blits, and
+      textures kept in PocketJS portable formats. Commands switch engines
+      with a drain of the other engine; the profiler counts the switches.
+
+config POCKETJS_GPU_VGLITE_POOL_KB
+    int "VG Lite contiguous pool in SRAM (KB)"
+    default 320
+    range 128 1024
+    depends on POCKETJS_GPU_VGLITE
+
+config POCKETJS_GPU_VGLITE_CMD_KB
+    int "VG Lite command buffer (KB, two of them come from the pool)"
+    default 64
+    range 16 256
+    depends on POCKETJS_GPU_VGLITE
+
+endif

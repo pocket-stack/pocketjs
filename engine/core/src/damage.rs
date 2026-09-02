@@ -8,6 +8,10 @@
 //! clipped to that rectangle so painter order and translucent overlays remain
 //! correct.
 //!
+//! Inserted, removed, or type-changed operations are conservatively aligned
+//! against exact nearby anchors. Every unmatched old and new bound is damaged;
+//! structural churn therefore stays partial without assuming node identity.
+//!
 //! Keep one tracker per physical framebuffer. Core-managed texture, font and
 //! style mutations are detected through [`Ui::raster_revision`]. Hosts must
 //! still call [`DamageTracker::invalidate`] for output-affecting mutations
@@ -15,9 +19,10 @@
 
 use alloc::vec::Vec;
 
-use crate::{spec, Ui};
+use crate::drawlist::{self, Op};
+use crate::Ui;
 
-const CLIP_DEPTH: usize = 32;
+const STRUCTURE_RESYNC_OPS: usize = 32;
 
 /// Default fixed capacity used by the generic software rasterizer.
 pub const DEFAULT_DAMAGE_REGIONS: usize = 8;
@@ -377,109 +382,6 @@ fn target_screen(ui: &Ui, target: DamageTarget) -> Result<DamageRect, DamageErro
     ))
 }
 
-struct DecodedOp<'a> {
-    code: u32,
-    words: &'a [u32],
-    bounds: DamageRect,
-}
-
-struct DamageDecoder<'a> {
-    words: &'a [u32],
-    index: usize,
-    screen: DamageRect,
-    clip: DamageRect,
-    stack: [DamageRect; CLIP_DEPTH],
-    depth: usize,
-}
-
-impl<'a> DamageDecoder<'a> {
-    fn new(words: &'a [u32], screen: DamageRect) -> Self {
-        Self {
-            words,
-            index: 0,
-            screen,
-            clip: screen,
-            stack: [screen; CLIP_DEPTH],
-            depth: 0,
-        }
-    }
-
-    fn next(&mut self, ui: &Ui) -> Result<Option<DecodedOp<'a>>, ()> {
-        if self.index == self.words.len() {
-            return Ok(None);
-        }
-        let start = self.index;
-        let code = *self.words.get(start).ok_or(())?;
-        let len = match code {
-            spec::draw_op::RECT => 4,
-            spec::draw_op::GRAD_RECT => 6,
-            spec::draw_op::GLYPH_RUN => {
-                let count = (self.words.get(start + 1).copied().ok_or(())? >> 16) as usize;
-                3usize
-                    .checked_add(count.checked_mul(2).ok_or(())?)
-                    .ok_or(())?
-            }
-            spec::draw_op::TEX_QUAD => 9,
-            spec::draw_op::SCISSOR => 3,
-            spec::draw_op::SCISSOR_POP => 1,
-            spec::draw_op::TRI => 7,
-            spec::draw_op::TEX_TRI => 12,
-            spec::draw_op::TEXT_RUN => {
-                // 8 header words + ceil(byteLen/4) packed UTF-8 words.
-                let bytes = *self.words.get(start + 7).ok_or(())? as usize;
-                8usize.checked_add(bytes.div_ceil(4)).ok_or(())?
-            }
-            spec::draw_op::SURFACE_QUAD => 9,
-            _ => return Err(()),
-        };
-        let end = start.checked_add(len).ok_or(())?;
-        let words = self.words.get(start..end).ok_or(())?;
-        self.index = end;
-
-        let bounds = match code {
-            spec::draw_op::RECT | spec::draw_op::GRAD_RECT => {
-                logical_rect(words[1], words[2]).intersect(self.clip)
-            }
-            spec::draw_op::GLYPH_RUN => glyph_run_bounds(ui, words, self.clip),
-            spec::draw_op::TEX_QUAD => logical_rect(words[2], words[3]).intersect(self.clip),
-            spec::draw_op::SCISSOR => {
-                if self.depth >= self.stack.len() {
-                    return Err(());
-                }
-                self.stack[self.depth] = self.clip;
-                self.depth += 1;
-                self.clip = self.screen.intersect(logical_rect(words[1], words[2]));
-                self.clip
-            }
-            spec::draw_op::SCISSOR_POP => {
-                if self.depth == 0 {
-                    return Err(());
-                }
-                self.depth -= 1;
-                self.clip = self.stack[self.depth];
-                DamageRect::empty()
-            }
-            spec::draw_op::TRI => triangle_bounds([words[1], words[2], words[3]], self.clip),
-            spec::draw_op::TEX_TRI => triangle_bounds([words[2], words[5], words[8]], self.clip),
-            // Native-text runs carry no glyph geometry the tracker can
-            // measure; the core keeps every partially-clipped run inside a
-            // scissor, so the current clip is a sound (conservative) bound.
-            spec::draw_op::TEXT_RUN => self.clip,
-            spec::draw_op::SURFACE_QUAD => logical_rect(words[6], words[7]).intersect(self.clip),
-            _ => return Err(()),
-        };
-        Ok(Some(DecodedOp {
-            code,
-            words,
-            bounds,
-        }))
-    }
-
-    fn is_balanced(&self) -> bool {
-        self.depth == 0
-    }
-}
-
 fn draw_list_damage<const MAX_REGIONS: usize>(
     ui: &Ui,
     previous: &[u32],
@@ -490,31 +392,93 @@ fn draw_list_damage<const MAX_REGIONS: usize>(
         return Ok(DamagePlan::empty(screen));
     }
 
-    let mut old = DamageDecoder::new(previous, screen);
-    let mut new = DamageDecoder::new(current, screen);
+    let old = decode_draw_list(ui, previous, screen)?;
+    let new = decode_draw_list(ui, current, screen)?;
     let mut damage = DamagePlan::empty(screen);
-    loop {
-        let old_op = old.next(ui).map_err(|_| DamageError::MalformedDrawList)?;
-        let new_op = new.next(ui).map_err(|_| DamageError::MalformedDrawList)?;
-        match (old_op, new_op) {
-            (None, None) => break,
-            (Some(old_op), Some(new_op)) if old_op.code == new_op.code => {
-                if old_op.words != new_op.words {
-                    damage.add(old_op.bounds, screen);
-                    damage.add(new_op.bounds, screen);
-                }
-            }
-            _ => return Ok(DamagePlan::full(screen)),
+    let mut old_index = 0usize;
+    let mut new_index = 0usize;
+    while old_index < old.len() && new_index < new.len() {
+        let old_op = &old[old_index];
+        let new_op = &new[new_index];
+        if decoded_ops_equal(old_op, new_op) {
+            old_index += 1;
+            new_index += 1;
+            continue;
+        }
+        if old_op.code == new_op.code {
+            damage.add(old_op.bounds, screen);
+            damage.add(new_op.bounds, screen);
+            old_index += 1;
+            new_index += 1;
+            continue;
+        }
+        if let Some((old_skip, new_skip)) = find_resync_anchor(&old, &new, old_index, new_index) {
+            add_op_bounds(&mut damage, &old[old_index..old_index + old_skip], screen);
+            add_op_bounds(&mut damage, &new[new_index..new_index + new_skip], screen);
+            old_index += old_skip;
+            new_index += new_skip;
+        } else {
+            damage.add(old_op.bounds, screen);
+            damage.add(new_op.bounds, screen);
+            old_index += 1;
+            new_index += 1;
         }
     }
-    if !old.is_balanced() || !new.is_balanced() {
-        return Err(DamageError::MalformedDrawList);
-    }
+    add_op_bounds(&mut damage, &old[old_index..], screen);
+    add_op_bounds(&mut damage, &new[new_index..], screen);
     Ok(damage)
 }
 
+fn decode_draw_list<'a>(
+    ui: &Ui,
+    words: &'a [u32],
+    screen: DamageRect,
+) -> Result<Vec<Op<'a>>, DamageError> {
+    drawlist::decode(ui, words, screen).map_err(|_| DamageError::MalformedDrawList)
+}
+
+fn decoded_ops_equal(old: &Op<'_>, new: &Op<'_>) -> bool {
+    old.code == new.code && old.bounds == new.bounds && old.words == new.words
+}
+
+fn add_op_bounds<const MAX_REGIONS: usize>(
+    damage: &mut DamagePlan<MAX_REGIONS>,
+    operations: &[Op<'_>],
+    screen: DamageRect,
+) {
+    for operation in operations {
+        damage.add(operation.bounds, screen);
+    }
+}
+
+fn find_resync_anchor(
+    old: &[Op<'_>],
+    new: &[Op<'_>],
+    old_index: usize,
+    new_index: usize,
+) -> Option<(usize, usize)> {
+    let old_count = (old.len() - old_index).min(STRUCTURE_RESYNC_OPS + 1);
+    let new_count = (new.len() - new_index).min(STRUCTURE_RESYNC_OPS + 1);
+    let mut best: Option<(usize, usize, usize)> = None;
+    for old_skip in 0..old_count {
+        for new_skip in 0..new_count {
+            if old_skip == 0 && new_skip == 0 {
+                continue;
+            }
+            let cost = old_skip + new_skip;
+            if best.is_some_and(|(_, _, best_cost)| cost >= best_cost) {
+                continue;
+            }
+            if decoded_ops_equal(&old[old_index + old_skip], &new[new_index + new_skip]) {
+                best = Some((old_skip, new_skip, cost));
+            }
+        }
+    }
+    best.map(|(old_skip, new_skip, _)| (old_skip, new_skip))
+}
+
 fn validate_draw_list(ui: &Ui, words: &[u32], screen: DamageRect) -> Result<(), DamageError> {
-    let mut decoder = DamageDecoder::new(words, screen);
+    let mut decoder = drawlist::Decoder::new(words, screen);
     while decoder
         .next(ui)
         .map_err(|_| DamageError::MalformedDrawList)?
@@ -527,65 +491,10 @@ fn validate_draw_list(ui: &Ui, words: &[u32], screen: DamageRect) -> Result<(), 
     }
 }
 
-fn glyph_run_bounds(ui: &Ui, words: &[u32], clip: DamageRect) -> DamageRect {
-    if words.len() < 3 || words[2] >> 24 == 0 {
-        return DamageRect::empty();
-    }
-    let slot = (words[1] & 0xff) as u8;
-    let Some(atlas) = ui.font_atlas(slot) else {
-        return DamageRect::empty();
-    };
-    let mut bounds = DamageRect::empty();
-    for glyph in words[3..].chunks_exact(2) {
-        let gid = (glyph[1] & 0xffff) as u16;
-        if gid >= atlas.glyph_count {
-            continue;
-        }
-        let (x, y) = xy(glyph[0]);
-        bounds = bounds.union(DamageRect::new(
-            x,
-            y,
-            x + atlas.cell_w as i32,
-            y + atlas.cell_h as i32,
-        ));
-    }
-    bounds.intersect(clip)
-}
-
-fn triangle_bounds(vertices: [u32; 3], clip: DamageRect) -> DamageRect {
-    let [(x0, y0), (x1, y1), (x2, y2)] = vertices.map(xy);
-    DamageRect::new(
-        x0.min(x1).min(x2),
-        y0.min(y1).min(y2),
-        x0.max(x1).max(x2),
-        y0.max(y1).max(y2),
-    )
-    .intersect(clip)
-}
-
-#[inline]
-fn xy(word: u32) -> (i32, i32) {
-    (
-        (word & 0xffff) as u16 as i16 as i32,
-        (word >> 16) as u16 as i16 as i32,
-    )
-}
-
-#[inline]
-fn wh(word: u32) -> (i32, i32) {
-    ((word & 0xffff) as i32, (word >> 16) as i32)
-}
-
-#[inline]
-fn logical_rect(xy_word: u32, wh_word: u32) -> DamageRect {
-    let (x, y) = xy(xy_word);
-    let (w, h) = wh(wh_word);
-    DamageRect::new(x, y, x + w, y + h)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spec;
 
     fn xy_word(x: i16, y: i16) -> u32 {
         x as u16 as u32 | ((y as u16 as u32) << 16)
@@ -640,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn structure_target_and_invalidation_force_full_redraws() {
+    fn structural_removal_retains_partial_damage_but_invalidation_stays_full() {
         let mut ui = Ui::new();
         ui.set_viewport(16.0, 8.0);
         let previous = vec![
@@ -654,7 +563,9 @@ mod tests {
         tracker.commit(&ui, &previous, target(16, 8, 1));
 
         let structural = tracker.prepare(&ui, &current, target(16, 8, 1)).unwrap();
-        assert!(structural.is_full_redraw());
+        assert!(!structural.is_full_redraw());
+        assert_eq!(structural.region_count(), 1);
+        assert_eq!(structural.bounds(), DamageRect::new(1, 1, 4, 4));
 
         tracker.commit(&ui, &current, target(16, 8, 1));
         tracker.invalidate();
@@ -674,6 +585,41 @@ mod tests {
             .prepare(&ui, &current, DamageTarget::new(32, 16, 2, 2),)
             .unwrap()
             .is_full_redraw());
+    }
+
+    #[test]
+    fn structural_resync_preserves_an_exact_common_suffix() {
+        let mut ui = Ui::new();
+        ui.set_viewport(20.0, 10.0);
+        let background = [
+            spec::draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(20, 10),
+            0xff10_0804,
+        ];
+        let suffix = [
+            spec::draw_op::RECT,
+            xy_word(15, 2),
+            wh_word(3, 3),
+            0xff00_ff00,
+        ];
+        let removed = [
+            spec::draw_op::GRAD_RECT,
+            xy_word(2, 3),
+            wh_word(5, 4),
+            0xff00_00ff,
+            0xffff_0000,
+            spec::GradDir::ToRight as u32,
+        ];
+        let previous = [background.as_slice(), removed.as_slice(), suffix.as_slice()].concat();
+        let current = [background.as_slice(), suffix.as_slice()].concat();
+        let mut tracker = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        tracker.commit(&ui, &previous, target(20, 10, 1));
+
+        let damage = tracker.prepare(&ui, &current, target(20, 10, 1)).unwrap();
+        assert!(!damage.is_full_redraw());
+        assert_eq!(damage.region_count(), 1);
+        assert_eq!(damage.bounds(), DamageRect::new(2, 3, 7, 7));
     }
 
     #[test]

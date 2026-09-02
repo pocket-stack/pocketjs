@@ -1,0 +1,9 @@
+{
+  "density": 2,
+  "hz": 60,
+  "framework": "solid",
+  "launcher": "hero-main",
+  "guests": [
+    { "output": "hero-main", "title": "Hero" }
+  ]
+}

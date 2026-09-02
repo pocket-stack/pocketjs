@@ -36,8 +36,9 @@ composition without touching unchanged pixels.
 
 Keep one `RenderTargetState` per framebuffer. This is required for
 double-buffered hosts because each target contains a different older frame.
-The first render and structural DrawList changes use a conservative full
-redraw. This backend additionally promotes damage covering at least 75
+The first render uses a full redraw. Inserted, removed, or type-changed
+operations are resynchronized at exact nearby anchors and only the unmatched
+old and new bounds are repainted. This backend additionally promotes damage covering at least 75
 percent of the viewport; that transaction-cost policy is deliberately kept
 outside the common damage planner.
 

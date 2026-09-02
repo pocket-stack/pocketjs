@@ -271,6 +271,7 @@ hardware bootable is its own work, tracked in Pocket Museum.
 | Android 4.3 | BlackBerry runtime, JNI | [#298](https://github.com/pocket-stack/pocketjs/pull/298) |
 | PocketBook e-ink | inkview, partial refresh | [#172](https://github.com/pocket-stack/pocketjs/pull/172) |
 | ESP-IDF | RGB565 and PPA | [#160](https://github.com/pocket-stack/pocketjs/pull/160) |
+| SiFli SF32LB5x | RGB565, EPIC and VG Lite | [`hosts/sifli`](./hosts/sifli/README.md) |
 | The browser | WebAssembly core | [Playground](https://pocketjs.dev/playground/) |
 
 Devices verified so far: **Sony PSP** (2004), **PS Vita** (2011),

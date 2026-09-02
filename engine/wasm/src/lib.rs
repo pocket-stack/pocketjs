@@ -30,6 +30,7 @@ use pocketjs_core::raster;
 
 static mut UI: Option<Ui> = None;
 static mut FRAMEBUFFER: Vec<u8> = Vec::new();
+static mut RGB565_FRAMEBUFFER: Vec<u16> = Vec::new();
 #[derive(Clone)]
 struct CompositorRaster {
     pixels: Vec<u8>,
@@ -706,6 +707,32 @@ pub extern "C" fn ui_render() -> *const u8 {
 #[no_mangle]
 pub extern "C" fn ui_render_scaled(scale: u32) -> *const u8 {
     render_at_scale(scale)
+}
+
+/// Rasterize the current tree with the RGB565 software rasterizer at an
+/// integer physical scale (1 through 4) and return the `u16` framebuffer
+/// pointer: the exact output the RGB565 device hosts compare against
+/// (frame CRC parity). Returns null for an unsupported scale.
+#[no_mangle]
+pub extern "C" fn ui_render_rgb565_scaled(scale: u32) -> *const u16 {
+    if !(1..=raster::MAX_RENDER_SCALE).contains(&scale) {
+        return core::ptr::null();
+    }
+    let u = ui();
+    let (viewport_w, viewport_h) = u.viewport();
+    let Some(pixels) = (viewport_w as usize)
+        .checked_mul(scale as usize)
+        .and_then(|w| w.checked_mul((viewport_h as usize).checked_mul(scale as usize)?))
+    else {
+        return core::ptr::null();
+    };
+    let dl: *const pocketjs_core::DrawList = u.draw();
+    let u_ref: &Ui = unsafe { &*(u as *const Ui) };
+    unsafe {
+        RGB565_FRAMEBUFFER.resize(pixels, 0);
+        raster::render_scaled_rgb565(u_ref, &(*dl).words, &mut RGB565_FRAMEBUFFER, scale);
+        RGB565_FRAMEBUFFER.as_ptr()
+    }
 }
 
 /// Rasterize the shell with retained child AppInstance framebuffers inserted

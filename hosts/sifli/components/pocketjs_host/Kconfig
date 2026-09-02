@@ -1,0 +1,128 @@
+menuconfig POCKETJS_HOST
+    bool "PocketJS host (QuickJS guest, framebuffer ring, input)"
+    default y
+    depends on POCKETJS_GPU && PKG_USING_QUICKJS && BSP_USING_LCD && RT_USING_MEMHEAP
+    help
+      The reusable firmware host: a bounded PSRAM heap shared by QuickJS and
+      the Rust core, the RGB565 framebuffer ring presented through the
+      RT-Thread LCD device, board keys and touch mapped to the PocketJS input
+      contract, one mounted guest at a time from an embedded catalog, and
+      the serial profiler.
+
+if POCKETJS_HOST
+
+config POCKETJS_LOGICAL_WIDTH
+    int "Guest viewport width (logical pixels)"
+    default 512
+
+config POCKETJS_LOGICAL_HEIGHT
+    int "Guest viewport height (logical pixels)"
+    default 300
+
+config POCKETJS_RENDER_SCALE
+    int "Integer render scale (physical pixels per logical pixel)"
+    default 2
+    range 1 4
+
+config POCKETJS_RASTER_DENSITY
+    int "Raster density the guest assets were baked at"
+    default 2
+    range 1 4
+
+config POCKETJS_TICK_HZ
+    int "Guest frame rate (Hz)"
+    default 60
+    range 1 120
+
+config POCKETJS_FRAMEBUFFER_COUNT
+    int "RGB565 framebuffers in the presentation ring"
+    default 3
+    range 2 4
+    help
+      RAM-less DPI panels need three: one scanned, one pending, one being
+      rendered. Each framebuffer keeps its own damage tracker.
+
+config POCKETJS_HEAP_KB
+    int "Shared QuickJS + Rust heap in cached PSRAM (KB)"
+    default 7168
+
+config POCKETJS_QJS_MEMORY_LIMIT_KB
+    int "QuickJS runtime memory limit inside the shared heap (KB)"
+    default 4096
+
+config POCKETJS_MPU_OVERRIDE
+    bool "Override the SDK MPU table: PSRAM1 cached, PSRAM2 non-cacheable"
+    default y
+    help
+      SF32LB58x only (the chip is a compiler define, not a Kconfig symbol;
+      host_mpu.c refuses other chips). The framebuffer ring lives in
+      PSRAM2. Marking that window normal non-cacheable at startup lets EPIC
+      and the LCD controller observe CPU writes without cache maintenance.
+      Adding the region later, after the SDK table is live, raises DACCVIOL
+      on the first framebuffer write.
+
+config POCKETJS_KEY_LONG_PRESS_MS
+    int "Key long-press threshold (ms); 0 keeps level semantics"
+    default 0
+    help
+      0: KEY1/KEY2 levels are reported as LEFT/RIGHT every frame.
+      >0: a key emits one LEFT/RIGHT pulse on release; holding KEY2 on the
+      launcher emits one CIRCLE pulse, holding KEY1 in a guest returns to
+      the launcher.
+
+config POCKETJS_INPUT_TOUCH
+    bool "Forward touch contacts to the guest"
+    default y
+    depends on BSP_USING_TOUCHD
+
+config POCKETJS_NATIVE_TEXTURE_STAGING
+    bool "Copy native texture blobs into the heap before registering them"
+    default y
+    help
+      Native (.epic) blobs are linked into code rodata. Copying them into
+      the cached PSRAM heap once per guest mount keeps EPIC reads on the
+      data bus.
+
+config POCKETJS_PROFILE
+    bool "Print frame, render, and work statistics once per second"
+    default y
+
+endif
+
+if POCKETJS_HOST
+
+config POCKETJS_FORCE_SOFTWARE
+    bool "Render every frame with the core software rasterizer (bring-up)"
+    default n
+    help
+      Bypasses the GPU queue: each frame is a full software render into the
+      framebuffer. Use it to validate the heap, MPU, LCD ring, and input
+      before trusting the hardware path.
+
+config POCKETJS_SELF_CHECK
+    bool "Compare hardware frames against the software rasterizer"
+    default n
+    help
+      Every POCKETJS_SELF_CHECK_INTERVAL frames the current DrawList is
+      also rendered by the core software rasterizer into a scratch PSRAM
+      buffer and compared pixel by pixel; the serial port reports the
+      mismatch ratio, PSNR, the largest channel delta, both CRC32s, and up
+      to 16 differing pixels. `bun tools/sifli.ts selfcheck <log>` applies
+      the acceptance thresholds.
+
+config POCKETJS_SELF_CHECK_INTERVAL
+    int "Frames between self-checks"
+    default 60
+    range 1 3600
+    depends on POCKETJS_SELF_CHECK
+
+config POCKETJS_FRAME_CRC
+    bool "Print a CRC32 of every presented frame"
+    default n
+    help
+      `[PocketJS] crc frame=<n> hash=<draw hash> crc=<crc32>` per frame
+      for `bun tools/sifli.ts crc <output> --assert <log>`, which renders
+      the same guest through the simulator's RGB565 path and compares the
+      sequence. Costs one uncached read of the framebuffer per frame.
+
+endif

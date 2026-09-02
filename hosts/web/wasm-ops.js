@@ -17,7 +17,7 @@ const encoder = new TextEncoder();
 
 /**
  * Instantiate pocketjs.wasm and return
- * { ops, init, tick, drawHash, render, renderScaled,
+ * { ops, init, tick, drawHash, render, renderScaled, renderRgb565Scaled,
  *   renderIncremental, renderScaledIncremental, exports }.
  * `ops` is a complete HostOps (framework/src/host.ts) — hand it to the app bundle as
  * globalThis.ui before eval'ing it.
@@ -221,6 +221,17 @@ export async function createWasmUi(wasm, options = {}) {
     renderScaled(scale) {
       scale = integerInRange(scale, "render scale", 1, 4);
       return framebufferView(ex.ui_render_scaled(scale), scale);
+    },
+    /** The core's RGB565 rasterizer at an integer physical scale: the exact
+     *  software path of the RGB565 device hosts (frame CRC parity). */
+    renderRgb565Scaled(scale) {
+      scale = integerInRange(scale, "render scale", 1, 4);
+      if (!ex.ui_render_rgb565_scaled) {
+        throw new Error("this pocketjs.wasm predates ui_render_rgb565_scaled — rebuild it: bun tools/wasm.ts");
+      }
+      const ptr = ex.ui_render_rgb565_scaled(scale);
+      if (!ptr) throw new Error(`pocketjs.wasm rejected render scale ${scale}`);
+      return new Uint16Array(ex.memory.buffer, ptr, viewportWidth * scale * viewportHeight * scale);
     },
     /** Render shell chrome and child rasters in SURFACE_QUAD painter order. */
     renderComposited(scale = 1) {

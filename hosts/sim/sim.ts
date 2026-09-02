@@ -196,6 +196,8 @@ export interface SimWorld {
   frame: (buttons: number, analog?: number, touches?: readonly number[]) => void;
   tick: () => void;
   render: () => Uint8Array;
+  /** The RGB565 rasterizer at the render scale: what an RGB565 device host presents. */
+  renderRgb565: () => Uint16Array;
   ticksPerFrame: number;
   hz: number;
   effects: EffectEvent[];
@@ -272,6 +274,7 @@ export async function bootWorld(
     frame,
     tick: wasm.tick,
     render: () => wasm.renderScaled(renderScale),
+    renderRgb565: () => wasm.renderRgb565Scaled(renderScale),
     ticksPerFrame: TICKS_PER_SECOND / hz,
     hz,
     effects,

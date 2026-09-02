@@ -1,0 +1,6 @@
+assets/
+src/pocket_assets.S
+src/pocket_catalog.generated.c
+project/build_*/
+project/.sconsign.dblite
+project/__pycache__/

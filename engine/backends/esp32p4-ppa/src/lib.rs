@@ -1830,7 +1830,7 @@ mod tests {
     }
 
     #[test]
-    fn incremental_render_falls_back_for_structural_changes_and_invalidation() {
+    fn incremental_render_keeps_structural_removal_partial_and_invalidation_full() {
         let mut ui = Ui::new();
         ui.set_viewport(16.0, 8.0);
         let previous = vec![
@@ -1875,7 +1875,8 @@ mod tests {
                 &mut MockPpa::default(),
             )
             .unwrap();
-        assert!(structural.full_redraw);
+        assert!(!structural.full_redraw);
+        assert_eq!(structural.damage_pixels, 3 * 3);
         assert_eq!(output, full_reference(&ui, &current, 16, 8));
 
         state.invalidate();

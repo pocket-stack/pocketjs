@@ -1,0 +1,38 @@
+# PocketJS launcher layout for the 16 MiB MPI4 NOR and 16 + 16 MiB PSRAM.
+# The HCPU image is copied into the first 9 MiB of PSRAM1 at boot; the
+# remaining 7 MiB is the cached runtime heap. PSRAM2 stays available for the
+# non-cacheable LCD framebuffer ring.
+
+version: 3
+chip: SF32LB586VDD36
+
+memory:
+  - mpi: mpi4
+    type: nor
+    size: 0x01000000
+
+partitions:
+  - name: psram_data
+    type: data
+    subtype: ram
+    region: psram1
+    offset: 0x00900000
+    size: 0x00700000
+
+  - name: psram_data2
+    type: data
+    subtype: ram
+    region: psram2
+    offset: 0x00000000
+    size: 0x01000000
+
+  - name: hcpu_flash_code
+    type: app
+    subtype: factory
+    region: mpi4
+    offset: 0x00000000
+    size: 0x00900000
+    core: HCPU
+    exec:
+      region: psram1
+      offset: 0x00000000

@@ -3,7 +3,7 @@
 
 use alloc::vec::Vec;
 
-use crate::{spec, style, Ui};
+use crate::{spec, style, Ui, TEX_PALETTE_BYTES};
 
 // ---- binary blob builders (bytes hand-assembled per spec.ts formats) --------
 
@@ -3905,4 +3905,46 @@ fn clearing_native_measure_restores_baked_goldens_path() {
     let counts = validate_drawlist(&ui.draw().words.clone());
     assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0);
     assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 1);
+}
+
+// ---- coverage-only texture classification ---------------------------------------
+
+#[test]
+fn coverage_only_is_classified_at_upload_and_after_t8_updates() {
+    let mut ui = Ui::new();
+    let white_alpha: Vec<u8> = (0..16).flat_map(|i| [255, 255, 255, (i * 17) as u8]).collect();
+    let mask = ui.upload_texture(&white_alpha, 4, 4, spec::psm::PSM_8888);
+    assert_eq!(ui.texture_coverage_only(mask), Some(true));
+
+    // Texel 1 is visible (alpha 17), so a tinted channel disqualifies it.
+    let mut tinted = white_alpha.clone();
+    tinted[4] = 200;
+    let colour = ui.upload_texture(&tinted, 4, 4, spec::psm::PSM_8888);
+    assert_eq!(ui.texture_coverage_only(colour), Some(false));
+
+    // A transparent texel may hide any color under nearest sampling, but not
+    // under bilinear sampling where its color bleeds into neighbours.
+    let mut hidden = white_alpha.clone();
+    hidden[0] = 10;
+    hidden[3] = 0;
+    let nearest = ui.upload_texture(&hidden, 4, 4, spec::psm::PSM_8888);
+    let linear = ui.upload_texture_flags(&hidden, 4, 4, spec::psm::PSM_8888, spec::img::FLAG_LINEAR);
+    assert_eq!(ui.texture_coverage_only(nearest), Some(true));
+    assert_eq!(ui.texture_coverage_only(linear), Some(false));
+
+    let opaque = ui.upload_texture(&[0xff; 32], 4, 4, spec::psm::PSM_5650);
+    assert_eq!(ui.texture_coverage_only(opaque), Some(false));
+    assert_eq!(ui.texture_coverage_only(0x7fff_ffff), None);
+
+    let mut t8 = vec![0u8; TEX_PALETTE_BYTES + 16];
+    t8[0..4].copy_from_slice(&[255, 255, 255, 128]);
+    let video = ui.upload_texture(&t8, 4, 4, spec::psm::PSM_T8);
+    assert_eq!(ui.texture_coverage_only(video), Some(true));
+    let mut palette = vec![0u8; TEX_PALETTE_BYTES];
+    palette[0..4].copy_from_slice(&[0, 255, 0, 255]);
+    assert!(ui.update_texture_t8(video, &palette, &[0u8; 16]));
+    assert_eq!(ui.texture_coverage_only(video), Some(false));
+    palette[0..4].copy_from_slice(&[255, 255, 255, 255]);
+    assert!(ui.update_texture_t8(video, &palette, &[0u8; 16]));
+    assert_eq!(ui.texture_coverage_only(video), Some(true));
 }

@@ -1,0 +1,4 @@
+#Kconfig root for the PocketJS hero-smoke example (menuconfig entry; the
+#build generates its own root that sources Kconfig.proj).
+source "$SIFLI_SDK/Kconfig.v2"
+rsource "Kconfig.proj"

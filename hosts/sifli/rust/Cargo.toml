@@ -1,0 +1,34 @@
+# hosts/sifli/rust — the `pocketjs-sifli` staticlib every SiFli SF32LB5x
+# firmware links. STANDALONE CRATE (same model as engine/backends/sifli-epic):
+# it lives outside the desktop workspace with its own Cargo.lock because the
+# SiFli SCons build invokes cargo for the thumbv8m.main-none-eabihf target
+# and the firmware must build offline from a vendored third-party set.
+#
+# Build (from a project directory whose .cargo/config.toml may add offline
+# vendoring):
+#   cargo build --release --locked \
+#     --manifest-path $POCKETJS_ROOT/hosts/sifli/rust/Cargo.toml \
+#     --target thumbv8m.main-none-eabihf
+[package]
+name = "pocketjs-sifli"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+pocketjs-core = { path = "../../../engine/core" }
+pocketjs-sifli-epic = { path = "../../../engine/backends/sifli-epic" }
+
+[profile.release]
+codegen-units = 1
+debug = false
+opt-level = "s"
+overflow-checks = false
+panic = "abort"
+strip = true
+
+[workspace]

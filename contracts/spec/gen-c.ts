@@ -1,15 +1,21 @@
-// Deterministic codegen: contracts/spec/spec.ts -> hosts/iphone2g/pocket_spec.h,
-// the C header every native host includes for the cross-language input
-// constants (button bitmask, analog center). Hosts keep their own platform
-// key codes; the portable mask they map onto comes only from here.
+// Deterministic codegen: contracts/spec/spec.ts -> pocket_spec.h, the C
+// header every native host includes for the cross-language input constants
+// (button bitmask, analog center). Hosts keep their own platform key codes;
+// the portable mask they map onto comes only from here.
 //
 // Run from PocketJS/:  bun contracts/spec/gen-c.ts
 //
 // tests/contract.ts imports generateC() and byte-compares its output against
-// the committed header, so the C constants can never drift from spec.ts. Keep
-// this generator free of anything non-deterministic.
+// every committed copy in POCKET_SPEC_HEADERS, so the C constants can never
+// drift from spec.ts. Keep this generator free of anything non-deterministic.
 
 import { ANALOG_CENTER, BTN } from "./spec.ts";
+
+/** Every committed copy of the generated header, relative to this file. */
+export const POCKET_SPEC_HEADERS = [
+  "../../hosts/iphone2g/pocket_spec.h",
+  "../../hosts/sifli/include/pocket_spec.h",
+] as const;
 
 function hex(n: number, pad = 4): string {
   return "0x" + (n >>> 0).toString(16).toUpperCase().padStart(pad, "0");
@@ -40,7 +46,10 @@ export function generateC(): string {
 }
 
 if (import.meta.main) {
-  const out = new URL("../../hosts/iphone2g/pocket_spec.h", import.meta.url).pathname;
-  await Bun.write(out, generateC());
-  console.log(`wrote ${out}`);
+  const header = generateC();
+  for (const relative of POCKET_SPEC_HEADERS) {
+    const out = new URL(relative, import.meta.url).pathname;
+    await Bun.write(out, header);
+    console.log(`wrote ${out}`);
+  }
 }

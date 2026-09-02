@@ -23,6 +23,7 @@ pocketjs/
 │  ├─ psp/        QuickJS + rust-psp EBOOT host
 │  ├─ vita/       Vita host
 │  ├─ esp32p4/    reusable ESP-IDF PPA adapter + component smoke build
+│  ├─ sifli/      reusable SiFli SF32LB5x host: EPIC/VG Lite command queue, QuickJS host, staticlib (standalone crate)
 │  ├─ pocketbook/ PocketBook e-reader host (inkview, standalone lone-bin crate)
 │  ├─ symbian/    Nokia E7 Qt/QuickJS runtime + visible toolchain probe
 │  ├─ apple/      NativeScript iOS shell over engine/apple + @nativescript/pocketjs
@@ -70,7 +71,9 @@ New things go where the axis says — never invent a top-level directory:
 - **npm surface is frozen**: `@pocketjs/framework/*` export *keys* never
   change; the `exports`/`files` maps in package.json absorb internal moves.
 - **Cargo stays non-workspace where toolchains demand it**: `engine/core`,
-  `engine/wasm`, `engine/symbian`, `engine/backends/esp32p4-ppa`, `hosts/psp`,
-  `hosts/vita`, `hosts/pocketbook`, and the gu/vita 3D crates each stand alone
-  with their own lockfiles. `engine/Cargo.toml` is the one desktop workspace.
+  `engine/wasm`, `engine/symbian`, `engine/backends/esp32p4-ppa`,
+  `engine/backends/sifli-epic`, `hosts/sifli/rust`, `hosts/psp`, `hosts/vita`,
+  `hosts/pocketbook`, and the gu/vita 3D crates each stand alone with their
+  own lockfiles.
+  `engine/Cargo.toml` is the one desktop workspace.
 - **Moves are `git mv`** — history stays traceable.
