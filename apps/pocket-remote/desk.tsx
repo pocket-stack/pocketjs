@@ -462,7 +462,7 @@ function MenuCascade(p: { store: RemoteStore }) {
   };
   let veil: NodeMirror | null = null;
   createEffect(() => {
-    if (veil) jump(veil, "opacity", p.store.flyT() * 0.85);
+    if (veil) jump(veil, "opacity", p.store.flyT() * 0.92);
   });
   return (
     <>
@@ -476,7 +476,7 @@ function MenuCascade(p: { store: RemoteStore }) {
       />
       <View class="absolute left-0 top-[34] w-[480] h-[18] items-center justify-center">
         <Text class="text-xs text-[#565f89]" ref={themed("textDim")}>
-          {fly()?.hot !== null ? "release: open on the desktop · slide right for shortcuts" : "slide to a route"}
+          {fly()?.hot !== null ? "release to open · slide right for shortcuts" : "slide to a route"}
         </Text>
       </View>
       <Index each={MENU_ROUTES}>

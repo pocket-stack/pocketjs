@@ -122,6 +122,15 @@ export function selectIPodTouch4App(name: string | undefined): IPodTouch4App {
 }
 
 const APP = selectIPodTouch4App(process.env.POCKETJS_IPODTOUCH4_APP);
+/**
+ * The machine the iPod is plugged into, when it is not this one: an ssh host
+ * (alias) with usbmuxd + libimobiledevice. Device discovery and the iproxy
+ * tunnel then run there, and every ssh/scp to the device jumps through it
+ * (ProxyJump), so keys and the pinned host key stay on this Mac.
+ */
+const VIA = process.env.POCKETJS_IPODTOUCH4_VIA?.trim() || null;
+/** The tunnel's port on the jump host (fixed: nothing else there uses it). */
+const VIA_TUNNEL_PORT = 22224;
 const BUNDLE_NAME = APP.bundleName;
 const BUNDLE_ID = APP.bundleId;
 const EXECUTABLE = APP.executable;
@@ -345,10 +354,20 @@ function readReceipt(): BuildReceipt {
   return JSON.parse(readFileSync(receiptPath(), "utf8")) as BuildReceipt;
 }
 
+function shellQuote(word: string): string {
+  return /^[A-Za-z0-9_./:=+-]+$/.test(word) ? word : `'${word.replace(/'/g, "'\\''")}'`;
+}
+
+/** Run a libimobiledevice command where the device is: here, or on VIA. */
+function usbRun(command: string, args: readonly string[]): string {
+  if (!VIA) return mustRun(command, args);
+  return mustRun("ssh", ["-o", "BatchMode=yes", VIA, [command, ...args].map(shellQuote).join(" ")]);
+}
+
 function deviceUdid(): string {
   const requested = process.env.POCKETJS_IPODTOUCH4_UDID?.trim();
   if (requested) return requested;
-  const ids = mustRun("idevice_id", ["-l"])
+  const ids = usbRun("idevice_id", ["-l"])
     .split("\n")
     .map((id) => id.trim())
     .filter(Boolean);
@@ -361,7 +380,7 @@ function deviceUdid(): string {
 }
 
 function deviceValue(udid: string, key: string): string {
-  return mustRun("ideviceinfo", ["-u", udid, "-k", key]);
+  return usbRun("ideviceinfo", ["-u", udid, "-k", key]);
 }
 
 function verifyDeviceIdentity(): string {
@@ -389,8 +408,14 @@ function verifyDeviceIdentity(): string {
   return udid;
 }
 
+/** ssh/scp options that route through the jump host when the device is there. */
+function viaArgs(): string[] {
+  return VIA ? ["-o", `ProxyJump=${VIA}`] : [];
+}
+
 function sshArgs(port: number, command: string): string[] {
   return [
+    ...viaArgs(),
     "-i",
     KEY_PATH,
     "-p",
@@ -455,10 +480,15 @@ async function withTunnel<T>(
   // LOCAL_PORT may point at another device, so it is only the known-host alias
   // for SSH verification and for the explicit long-running `tunnel` command.
   const udid = verifyDeviceIdentity();
-  const port = await availableLocalPort();
+  const port = VIA ? VIA_TUNNEL_PORT : await availableLocalPort();
+  // On a jump host the forwarder runs there; -tt gives it a pty so it dies
+  // with this ssh instead of lingering when the tunnel is torn down.
   const tunnel = Bun.spawn({
-    cmd: ["iproxy", "-u", udid, `${port}:${DEVICE_PORT}`],
+    cmd: VIA
+      ? ["ssh", "-tt", "-o", "BatchMode=yes", VIA, `exec iproxy -u ${udid} ${port}:${DEVICE_PORT}`]
+      : ["iproxy", "-u", udid, `${port}:${DEVICE_PORT}`],
     cwd: REPOSITORY,
+    stdin: "ignore",
     stdout: "ignore",
     stderr: "pipe",
   });
@@ -471,7 +501,7 @@ async function withTunnel<T>(
     if (tunnel.exitCode === null) tunnel.kill();
     await tunnel.exited;
     const stderr = await new Response(tunnel.stderr as ReadableStream).text();
-    throw new Error(`pocket ipodtouch4: USB SSH tunnel did not become ready${stderr ? `:\n${stderr}` : ""}`);
+    throw new Error(`pocket ipodtouch4: USB SSH tunnel${VIA ? ` via ${VIA}` : ""} did not become ready${stderr ? `:\n${stderr}` : ""}`);
   } finally {
     if (tunnel.exitCode === null) {
       tunnel.kill();
@@ -482,10 +512,19 @@ async function withTunnel<T>(
 
 async function doctor(): Promise<void> {
   let ok = true;
-  const required = ["bun", "rustup", "xcrun", "ldid", "idevice_id", "ideviceinfo", "iproxy", "ssh", "scp", "tar", "unzip", "hdiutil"];
+  const usbTools = ["idevice_id", "ideviceinfo", "iproxy"];
+  const required = ["bun", "rustup", "xcrun", "ldid", ...(VIA ? [] : usbTools), "ssh", "scp", "tar", "unzip", "hdiutil"];
   for (const name of required) {
     const path = commandPath(name);
     ok = check(name, path !== undefined, path ?? "not found") && ok;
+  }
+  if (VIA) {
+    for (const name of usbTools) {
+      const found = run("ssh", ["-o", "BatchMode=yes", VIA, `command -v ${name}`]);
+      ok = check(`${name} on ${VIA}`, found.exitCode === 0, found.exitCode === 0 ? found.stdout.trim() : `not found on ${VIA} (pacman -S usbmuxd libimobiledevice)`) && ok;
+    }
+    const muxd = run("ssh", ["-o", "BatchMode=yes", VIA, "test -S /var/run/usbmuxd && echo socket"]);
+    ok = check(`usbmuxd on ${VIA}`, muxd.exitCode === 0, muxd.exitCode === 0 ? "/var/run/usbmuxd" : `no /var/run/usbmuxd on ${VIA} (the usbmuxd package starts it on plug-in)`) && ok;
   }
   const toolchain = inspectIPodTouch4Toolchain();
   ok = check(
@@ -895,6 +934,7 @@ async function deploy(): Promise<void> {
   try {
     await withTunnel(async (port) => {
       mustRun("scp", [
+        ...viaArgs(),
         "-O",
         "-i",
         KEY_PATH,
@@ -1176,7 +1216,7 @@ function tunnel(): never {
 }
 
 function usage(): void {
-  console.log(`PocketJS iPod touch 4 tool  (app: ${APP.id}; POCKETJS_IPODTOUCH4_APP=${Object.keys(IPODTOUCH4_APPS).join("|")})
+  console.log(`PocketJS iPod touch 4 tool  (app: ${APP.id}; POCKETJS_IPODTOUCH4_APP=${Object.keys(IPODTOUCH4_APPS).join("|")}; POCKETJS_IPODTOUCH4_VIA=<ssh host the iPod is plugged into>${VIA ? ` = ${VIA}` : ""})
 
   bun ipodtouch4 doctor
   bun ipodtouch4 setup-sources

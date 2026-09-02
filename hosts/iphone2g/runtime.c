@@ -1,4 +1,13 @@
 #include "pocket_runtime.h"
+/* The svc transport's state, for the acceptance record: "absent" on builds
+ * without the network channel, else discover / connecting / hello / up /
+ * up-usb / backoff (svcwire.c). */
+#ifdef POCKET_SVC_WIRE
+#include "svcwire.h"
+#define POCKET_SVC_STATE_NAME() svcwire_state_name()
+#else
+#define POCKET_SVC_STATE_NAME() "absent"
+#endif
 
 #include <fcntl.h>
 #include <stddef.h>
@@ -359,7 +368,7 @@ static void write_acceptance_record(void) {
     "frame_us=%lu\nsubmit_us=%lu\npresent_us=%lu\n"
     "window_frames=%lu\nwindow_us=%lu\nblit_us=%lu\n"
     "damage_attempts=%lu\ndamage_failures=%lu\ndamage_full_redraws=%lu\n"
-    "damage_pixels=%lu\ncomposites=%lu\ndamage_regions_last=%lu\nerror=%s\n",
+    "damage_pixels=%lu\ncomposites=%lu\ndamage_regions_last=%lu\nsvc=%s\nerror=%s\n",
     POCKET_BUILD_ID,
     state,
     (long)getpid(),
@@ -392,6 +401,7 @@ static void write_acceptance_record(void) {
     pocket_runtime_damage_pixels(),
     g_composites,
     g_damage_regions_last,
+    POCKET_SVC_STATE_NAME(),
     g_state == POCKET_STATE_FAILED ? g_status_message : ""
   );
   g_last_record_attempt_frame = g_guest_frames;

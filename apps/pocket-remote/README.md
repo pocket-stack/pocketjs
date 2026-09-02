@@ -20,29 +20,25 @@ looks them up.
 ## The screen
 
 ```
-┌────┬───────────────────────────────────────────────────┬────┐
-│ ☀  │ 1 2 3 +            dwindle        ⏮ ▷ ⏭          │ ♪  │  strip   32 px
-│    ├───────────────────────────────────────────────────┤    │
-│    │                                                   │    │
-│ b  │        live miniature of the focused monitor      │ v  │  stage  228 px
-│ r  │        tiles = windows, accent border = focus     │ o  │
-│ i  │                                                   │ l  │
-│    ├───────────────────────────────────────────────────┤    │
-│    │ Ω  >_  ◍  ▤  ✎  ⛶  ◱  ▣  ⌨  ⋯                     │    │  dock    60 px
-└────┴───────────────────────────────────────────────────┴────┘
- 40px                       400 px                        40px
+┌─────────────────────────────────────────────────────────────┐
+│ 1 2 3 +                          dwindle       ⏮ ▷ ⏭        │  strip   28 px
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│           live miniature of the focused monitor             │  stage  240 px
+│           tiles = windows, accent border = focus            │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│ Ω  >_  ◍  ▤  ✎  ⛶  ◱  ▣  ≡  ⌨  ⋯                            │  dock    52 px
+└─────────────────────────────────────────────────────────────┘
 ```
 
 The layout does not move. Every element has one place, every place one job,
-so the remote can be used with a glance and, after a day, without one.
+so the remote can be used with a glance and, after a day, without one. It
+has two verbs: **tap**, and **hold-and-slide** — hold a key and a set of
+choices opens under the finger; slide onto one and release. Novices see the
+choices, experts stroke through them without looking (the marking-menu
+result).
 
-- **Rails** (left brightness, right volume). A drag anywhere on a rail moves
-  the level **relatively** — touching a rail never jumps the level to the
-  finger, the failure of every absolute slider on a thin track. A full-track
-  drag spans 0–100 %. A tap on the track nudges 5 %, the keyboard's own step.
-  The cap toggles: mute on the right, nightlight on the left. Thumbs rest at
-  the edges when the device is held in two hands, and the rails stay live
-  under every sheet.
 - **Strip**. One tab per workspace Hyprland has, the active one filled, plus
   one empty tab so there is always somewhere new to go (the Omarchy bar's
   rule). Tap switches. Hold a tab to bring the focused window there and
@@ -56,21 +52,39 @@ so the remote can be used with a glance and, after a day, without one.
   move it there. Swipe empty stage to step workspaces. The stage is direct
   manipulation of the real desktop: the snapshot comes from `hyprctl clients`
   geometry, so a tile is exactly where the window is.
-- **Dock**. Menu, Terminal, Browser, Files, Editor, Full screen, Float,
-  Screenshot, Type, More. Nine things a remote is reached for; each runs the
+- **Dock**. Menu, Term, Web, Files, Edit, Full, Float, Shot, Levels, Type,
+  more — eleven 43 px slots across the full width. Each action runs the
   command Omarchy binds to the equivalent key.
-- **Pad** (More). Everything else, grouped the way Omarchy's own menu groups
-  it — Window, Desk, Toggle, Capture, Theme, System — as labelled keys on one
-  sheet. **Destructive keys take a hold** (close, suspend, close all) and say
-  so when tapped. The Theme page lists the installed themes; the active one is
-  filled.
-- **Type**. A landscape keyboard sends each key to the focused window
-  (`wtype`). Nothing is buffered on the device: the desktop shows the truth.
+- **Menu** (tap) toggles Omarchy's menu on the desktop. **Menu (hold)** opens
+  the cascade: six routes rise above the dock over a veil — Apps, Capture,
+  Toggle, Style, System, Learn, nearest first — and sliding onto a route fans
+  its leaves out beside it. Release on a leaf to run it, on a route to open
+  that route's menu on the desktop, elsewhere to cancel.
+- **Levels** is the control-centre control: brightness and volume as two
+  horizontal sliders with their toggles (nightlight, mute) in one card.
+  Tap Levels to open it sticky and drag a slider; tap outside to close.
+  Hold Levels and slide: the row under the finger follows it **relatively**
+  (a slider never jumps to the finger), release and the card lingers a second
+  then puts itself away. Brightness and volume are low-frequency, so they
+  earn one slot, not two rails.
+- **Type** opens the keyboard over the whole screen — when typing is the job,
+  nothing else on the remote matters. Five rows of 48 px keys: esc and the
+  digits on top, letters, arrows, tab, ctrl and alt, a chevron in the caption
+  bar to put it away. Chords two ways: **sticky modifiers** (tap ctrl, then
+  the key; ctrl arms, paints itself, drops after one key) and
+  **hold-and-slide variants** (hold `x` → `^X` `⌥X`, hold `1` → `F1` `^1`,
+  as light chips above the key; release on the key itself types it plain).
+  Keys go straight to the desktop (`wtype`); nothing is buffered on the
+  device, so what the desktop shows is the truth.
+- **more** opens the pad: everything else, grouped the way Omarchy's own
+  menu groups it — Window, Desk, Toggle, Capture, Theme, System — as
+  labelled keys. **Destructive keys take a hold** (close, suspend, close all)
+  and say so when tapped.
 
 Every touch target answers a press with a tint overlay that lingers a few
 frames after release — a capacitive panel has no hover and the remote's own
 feedback is the only local one; the action itself is confirmed on the
-desktop. A toast over the dock names the last action.
+desktop. A toast over the stage names the last action.
 
 ## Why these choices
 
@@ -134,6 +148,17 @@ second; the device connects to the datagram's source. A host override file
 at `/private/var/tmp/pocketjs-svc-host.txt` on the device (one line,
 `a.b.c.d[:port]`) skips discovery for broadcast-hostile networks.
 
+**The cable.** The device also listens on port 8624. When the iPod is plugged
+into the Omarchy machine, usbmuxd lists it and `iproxy` forwards a host port
+to that listener; the daemon polls `idevice_id -l` every three seconds,
+forwards a port per device and dials it. Same wire, roles of `connect()`
+reversed — the device still speaks the hello first — no WiFi, no beacon, no
+firewall rule, and **a device on the cable is trusted without a dialog:
+physical possession is the pairing.** The device's acceptance record reports
+the transport as `svc=up-usb`. This needs the `usbmuxd` package on the
+machine (libimobiledevice alone ships `iproxy` but not the daemon that talks
+to the device).
+
 ## Trust
 
 The LAN is not a trust boundary. The daemon accepts commands only from
@@ -168,6 +193,11 @@ On the iPod:
 POCKETJS_IPODTOUCH4_APP=pocket-remote bun ipodtouch4 deploy
 POCKETJS_IPODTOUCH4_APP=pocket-remote bun ipodtouch4 launch
 ```
+
+When the iPod is plugged into the Omarchy machine rather than this Mac, add
+`POCKETJS_IPODTOUCH4_VIA=x1nano`: device discovery and the `iproxy` tunnel
+run there over ssh, and every ssh/scp to the device jumps through it
+(`ProxyJump`), so the deployment key and the pinned host key stay here.
 
 The app coexists with Pocket Clear: its own bundle, executable, URL scheme
 and receipt files (`tools/ipodtouch4.ts` `IPODTOUCH4_APPS`).

@@ -1,7 +1,7 @@
 // apps/pocket-remote/host/serve.ts — the Omarchy-side daemon for Pocket
 // Remote. Runs on the Omarchy machine as a user service:
 //
-//   node serve.ts [--port 8622] [--beacon] [--name <picker name>]
+//   node serve.ts [--port 8622] [--beacon] [--no-usb] [--name <picker name>]
 //
 // Node >= 23.6 (native type stripping); Omarchy installs Node through mise,
 // so `~/.local/share/mise/shims/node` is the interpreter the unit uses.
@@ -11,15 +11,22 @@
 // and theme to every connected device, and runs the commands the device asks
 // for — never a command string off the wire, only ids from actions.ts.
 //
+// USB: when the device is plugged into this machine, usbmuxd (the usbmuxd
+// package) lists it and iproxy can forward a host port to the device's
+// listener (hosts/iphone2g/svcwire.c, port 8624). The daemon polls for
+// devices, forwards a port per device and connects to it — the wire is the
+// same, only who dials is reversed, and a device on the cable is trusted:
+// physical possession is the pairing.
+//
 // Trust: the LAN is not a trust boundary. A device that has not been seen
 // before is put on hold and a dialog appears on the desktop (hyprland-dialog)
 // asking whether to allow it; the answer is remembered by address in
 // ~/.local/state/pocket-remote/allowed.json. Until allowed, a device sees the
 // mirror but its commands are dropped.
 
-import { createServer, type Socket } from "node:net";
+import { createServer, Socket } from "node:net";
 import { createSocket } from "node:dgram";
-import { execFile } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, watch, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
@@ -64,21 +71,24 @@ import {
 interface Options {
   port: number;
   beacon: boolean;
+  /** Look for devices on this machine's USB through usbmuxd. */
+  usb: boolean;
   name: string;
   /** Skip the approval dialog (every device allowed) — for tests only. */
   trustAll: boolean;
 }
 
 function parseOptions(argv: string[]): Options {
-  const options: Options = { port: WIRE_PORT, beacon: false, name: hostname(), trustAll: false };
+  const options: Options = { port: WIRE_PORT, beacon: false, usb: true, name: hostname(), trustAll: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
     if (arg === "--port") options.port = Number(argv[++i]);
     else if (arg === "--beacon") options.beacon = true;
+    else if (arg === "--no-usb") options.usb = false;
     else if (arg === "--name") options.name = argv[++i] ?? options.name;
     else if (arg === "--trust-all") options.trustAll = true;
     else if (arg === "--help" || arg === "-h") {
-      console.log("node serve.ts [--port 8622] [--beacon] [--name <picker name>]");
+      console.log("node serve.ts [--port 8622] [--beacon] [--no-usb] [--name <picker name>]");
       process.exit(0);
     }
   }
@@ -165,6 +175,8 @@ interface Conn {
   device: string;
   auth: "ok" | "pending" | "denied";
   lastSeen: number;
+  /** Arrived over the cable (usbmuxd): allowed without a dialog. */
+  trusted: boolean;
 }
 
 const conns = new Set<Conn>();
@@ -282,7 +294,7 @@ async function handle(conn: Conn, line: ClientLine): Promise<void> {
   if (line.t === "hello") {
     conn.device = typeof line.device === "string" ? line.device.slice(0, 40) : "device";
     if (line.proto !== REMOTE_PROTO) log(`${conn.address}: proto ${line.proto} (ours ${REMOTE_PROTO})`);
-    if (options.trustAll || allowed.has(conn.address)) conn.auth = "ok";
+    if (options.trustAll || conn.trusted || allowed.has(conn.address)) conn.auth = "ok";
     else if (denied.has(conn.address)) conn.auth = "denied";
     else conn.auth = "pending";
     sendLine(conn, { t: "hello", proto: REMOTE_PROTO, name: options.name, omarchy: omarchyVersion, auth: conn.auth });
@@ -400,8 +412,9 @@ execFile("omarchy-version", [], { timeout: 3000 }, (error, stdout) => {
   if (!error) omarchyVersion = stdout.trim();
 });
 
-const server = createServer((socket) => {
-  const address = socket.remoteAddress?.replace(/^::ffff:/, "") ?? "?";
+/** Wire up one socket, whichever end dialled: the device speaks the hello
+ *  first either way. */
+function attach(socket: Socket, address: string, trusted: boolean, onGone?: () => void): void {
   const conn: Conn = {
     socket,
     address,
@@ -410,6 +423,7 @@ const server = createServer((socket) => {
     device: "device",
     auth: "pending",
     lastSeen: Date.now(),
+    trusted,
   };
   socket.setNoDelay(true);
   conns.add(conn);
@@ -446,13 +460,20 @@ const server = createServer((socket) => {
     }
   });
   const gone = () => {
-    if (conns.delete(conn)) log(`${address} disconnected`);
+    if (conns.delete(conn)) {
+      log(`${address} disconnected`);
+      onGone?.();
+    }
   };
   socket.on("close", gone);
   socket.on("error", (error) => {
     log(`${address}: ${error.message}`);
     gone();
   });
+}
+
+const server = createServer((socket) => {
+  attach(socket, socket.remoteAddress?.replace(/^::ffff:/, "") ?? "?", false);
 });
 
 server.listen(options.port, "0.0.0.0", () => {
@@ -485,6 +506,106 @@ if (options.beacon) {
     setInterval(() => udp.send(payload, WIRE_BEACON_PORT, "255.255.255.255", () => {}), 1000);
     log(`beacon on udp ${WIRE_BEACON_PORT}`);
   });
+}
+
+// ---------------------------------------------------------------------------
+// usb (usbmuxd): forward a host port to each plugged device's listener and dial it
+// ---------------------------------------------------------------------------
+
+/** hosts/iphone2g/svcwire.c POCKET_SVC_LISTEN_PORT. */
+const USB_DEVICE_PORT = 8624;
+const USB_LOCAL_PORT_BASE = 8630;
+
+interface UsbLink {
+  udid: string;
+  localPort: number;
+  proxy: ChildProcess | null;
+  socket: Socket | null;
+  /** Earliest time to dial again after a failure. */
+  retryAt: number;
+}
+
+const usbLinks = new Map<string, UsbLink>();
+let usbToolMissing = false;
+
+function listUsbDevices(): Promise<string[]> {
+  return new Promise((resolve) => {
+    execFile("idevice_id", ["-l"], { timeout: 3000 }, (error, stdout) => {
+      if (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (!usbToolMissing) {
+          usbToolMissing = true;
+          log(
+            code === "ENOENT"
+              ? "usb: idevice_id not installed; the cable path is off (pacman -S usbmuxd libimobiledevice)"
+              : `usb: idevice_id failed (${error.message.trim().split("\n")[0]}); is usbmuxd installed and running?`,
+          );
+        }
+        resolve([]);
+        return;
+      }
+      usbToolMissing = false;
+      resolve(stdout.split("\n").map((line) => line.trim()).filter((line) => /^[0-9a-f-]{20,}$/i.test(line)));
+    });
+  });
+}
+
+function dialUsb(link: UsbLink): void {
+  if (link.socket || Date.now() < link.retryAt) return;
+  if (!link.proxy) {
+    const proxy = spawn("iproxy", ["-u", link.udid, `${link.localPort}:${USB_DEVICE_PORT}`], { stdio: "ignore" });
+    proxy.on("exit", () => {
+      if (link.proxy === proxy) link.proxy = null;
+    });
+    proxy.on("error", (error) => log(`usb ${link.udid.slice(0, 8)}: iproxy: ${error.message}`));
+    link.proxy = proxy;
+    link.retryAt = Date.now() + 500; // let iproxy bind before dialling
+    return;
+  }
+  const socket = new Socket();
+  link.socket = socket;
+  const label = `usb:${link.udid.slice(0, 8)}`;
+  const failed = () => {
+    if (link.socket === socket) link.socket = null;
+    link.retryAt = Date.now() + 2000;
+  };
+  socket.once("error", failed);
+  socket.connect(link.localPort, "127.0.0.1", () => {
+    socket.removeListener("error", failed);
+    log(`usb ${link.udid.slice(0, 8)}: dialled the device's listener on ${USB_DEVICE_PORT}`);
+    attach(socket, label, true, failed);
+  });
+}
+
+function dropUsb(link: UsbLink): void {
+  link.socket?.destroy();
+  link.socket = null;
+  link.proxy?.kill();
+  link.proxy = null;
+}
+
+async function pollUsb(): Promise<void> {
+  const ids = await listUsbDevices();
+  for (const udid of ids) {
+    if (!usbLinks.has(udid)) {
+      log(`usb: device ${udid.slice(0, 8)} on the cable`);
+      usbLinks.set(udid, { udid, localPort: USB_LOCAL_PORT_BASE + (usbLinks.size % 20), proxy: null, socket: null, retryAt: 0 });
+    }
+  }
+  for (const [udid, link] of usbLinks) {
+    if (!ids.includes(udid)) {
+      log(`usb: device ${udid.slice(0, 8)} unplugged`);
+      dropUsb(link);
+      usbLinks.delete(udid);
+      continue;
+    }
+    dialUsb(link);
+  }
+}
+
+if (options.usb) {
+  void pollUsb();
+  setInterval(() => void pollUsb(), 3000);
 }
 
 // mirror sources

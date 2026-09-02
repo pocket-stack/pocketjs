@@ -23,6 +23,13 @@
  * when the tool bakes one, then the LAN beacon. A failing override degrades
  * into beacon discovery instead of wedging the transport.
  *
+ * The wire also LISTENS on POCKET_SVC_LISTEN_PORT: a companion on the
+ * machine the device is plugged into reaches it through usbmuxd (iproxy
+ * forwards a host port to this one), which needs no WiFi, no beacon and no
+ * firewall rule. An accepted connection is the same wire with the roles of
+ * connect() reversed — the device still speaks the hello first — and it
+ * wins over any outbound attempt in flight.
+ *
  * Like the 3DS transport this host never blocks a frame on the network:
  * every socket is non-blocking and svcwire_pump does a bounded amount of
  * work per call from the frame runner.
@@ -72,6 +79,9 @@
 #ifndef POCKET_SVC_HOST_PATH
 #define POCKET_SVC_HOST_PATH "/private/var/tmp/pocketjs-svc-host.txt"
 #endif
+#ifndef POCKET_SVC_LISTEN_PORT
+#define POCKET_SVC_LISTEN_PORT 8624
+#endif
 
 typedef enum {
   SVC_STATE_IDLE,
@@ -86,7 +96,11 @@ static int enabled;
 static char app_id[65];
 static SvcState state = SVC_STATE_IDLE;
 static int beacon_fd = -1;
+static int listen_fd = -1;
 static int tcp_fd = -1;
+/* The live connection came in over the listener (usbmuxd), not out to a
+ * beacon: reported in the acceptance record as "up-usb". */
+static int inbound;
 static struct sockaddr_in target;
 static int target_from_override;
 static int override_failed;
@@ -104,6 +118,8 @@ static size_t tx_offset;
 static int pong_pending;
 static uint8_t pong_payload[SVC_PING_MAX];
 static uint32_t pong_length;
+
+static void queue_hello(void);
 
 static uint64_t now_ms(void) {
   struct timeval tv;
@@ -144,6 +160,7 @@ static void enter_state(SvcState next) {
 static void close_connection(void) {
   if (tcp_fd >= 0) close(tcp_fd);
   tcp_fd = -1;
+  inbound = 0;
   rx_length = 0;
   skip_remaining = 0;
   tx_length = 0;
@@ -181,6 +198,51 @@ static void ensure_beacon_socket(void) {
     return;
   }
   beacon_fd = fd;
+}
+
+static void ensure_listen_socket(void) {
+  int fd;
+  int reuse = 1;
+  struct sockaddr_in address;
+  if (listen_fd >= 0 || POCKET_SVC_LISTEN_PORT == 0) return;
+  fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) return;
+  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse);
+  memset(&address, 0, sizeof address);
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_ANY);
+  address.sin_port = htons(POCKET_SVC_LISTEN_PORT);
+  if (bind(fd, (struct sockaddr *)&address, sizeof address) != 0 || listen(fd, 1) != 0 ||
+      !set_nonblocking(fd)) {
+    close(fd);
+    return;
+  }
+  listen_fd = fd;
+}
+
+/* Take one inbound connection if a companion reached the listener. While a
+ * connection is up, extra arrivals are refused (closed) so the wire stays
+ * one connection. Returns 1 when a new connection was adopted. */
+static int poll_listener(int adopt) {
+  int fd;
+  int nodelay = 1;
+  struct sockaddr_in peer;
+  socklen_t peer_length = sizeof peer;
+  if (listen_fd < 0) return 0;
+  fd = accept(listen_fd, (struct sockaddr *)&peer, &peer_length);
+  if (fd < 0) return 0;
+  if (!adopt || !set_nonblocking(fd)) {
+    close(fd);
+    return 0;
+  }
+  setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
+  close_connection();
+  tcp_fd = fd;
+  inbound = 1;
+  queue_hello();
+  last_rx_ms = now_ms();
+  enter_state(SVC_STATE_HELLO_WAIT);
+  return 1;
 }
 
 /* Drain beacon datagrams. While DISCOVERing, the first one advertising our
@@ -292,6 +354,8 @@ static void start_connect(void) {
 static void pump_discover(void) {
   struct sockaddr_in candidate;
   ensure_beacon_socket();
+  ensure_listen_socket();
+  if (poll_listener(1)) return;
   if (!override_failed && read_host_override(&candidate)) {
     target = candidate;
     target_from_override = 1;
@@ -525,10 +589,12 @@ void svcwire_pump(void) {
       break;
     case SVC_STATE_CONNECTING:
       poll_beacon(NULL);
+      if (poll_listener(1)) break; /* the wire in the cable beats the one in the air */
       pump_connecting();
       break;
     case SVC_STATE_HELLO_WAIT:
       poll_beacon(NULL);
+      poll_listener(0);
       pump_tx();
       if (tcp_fd < 0) break;
       pump_rx();
@@ -539,6 +605,7 @@ void svcwire_pump(void) {
       break;
     case SVC_STATE_UP:
       poll_beacon(NULL);
+      poll_listener(0);
       pump_rx();
       if (tcp_fd < 0) break;
       pump_tx();
@@ -548,6 +615,7 @@ void svcwire_pump(void) {
       break;
     case SVC_STATE_BACKOFF:
       poll_beacon(NULL);
+      if (poll_listener(1)) break;
       if (now_ms() - state_since_ms > SVC_BACKOFF_MS) enter_state(SVC_STATE_DISCOVER);
       break;
   }
@@ -583,7 +651,7 @@ const char *svcwire_state_name(void) {
     case SVC_STATE_HELLO_WAIT:
       return "hello";
     case SVC_STATE_UP:
-      return "up";
+      return inbound ? "up-usb" : "up";
     case SVC_STATE_BACKOFF:
       return "backoff";
     case SVC_STATE_IDLE:
@@ -596,6 +664,8 @@ void svcwire_shutdown(void) {
   close_connection();
   if (beacon_fd >= 0) close(beacon_fd);
   beacon_fd = -1;
+  if (listen_fd >= 0) close(listen_fd);
+  listen_fd = -1;
   enabled = 0;
   state = SVC_STATE_IDLE;
   lines_length = 0;
