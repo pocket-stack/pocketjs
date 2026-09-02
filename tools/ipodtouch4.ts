@@ -660,6 +660,9 @@ async function build(): Promise<void> {
     `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`,
     ...receiptPathDefines(),
     ...(APP.keepAwake ? ["-DPOCKET_KEEP_AWAKE"] : []),
+    // The wrapper reports the transport's state in the acceptance record,
+    // so it needs the same switch as the guest runtime.
+    ...(APP.svcWire ? ["-DPOCKET_SVC_WIRE"] : []),
   ];
   const svcWireDefines = APP.svcWire ? ["-DPOCKET_SVC_WIRE"] : [];
   const crtGlobalsObject = join(nativeBuild, "crt_globals.o");

@@ -220,9 +220,10 @@ static void ensure_listen_socket(void) {
   listen_fd = fd;
 }
 
-/* Take one inbound connection if a companion reached the listener. While a
- * connection is up, extra arrivals are refused (closed) so the wire stays
- * one connection. Returns 1 when a new connection was adopted. */
+/* Take one inbound connection if a companion reached the listener. While an
+ * inbound connection is up, extra arrivals are refused (closed) so the wire
+ * stays one connection; an inbound arrival while a WiFi connection is up
+ * replaces it. Returns 1 when a new connection was adopted. */
 static int poll_listener(int adopt) {
   int fd;
   int nodelay = 1;
@@ -605,7 +606,9 @@ void svcwire_pump(void) {
       break;
     case SVC_STATE_UP:
       poll_beacon(NULL);
-      poll_listener(0);
+      /* The cable beats the air: an inbound (usbmuxd) connection replaces a
+       * WiFi one; a second inbound while one is up is refused. */
+      if (poll_listener(!inbound)) break;
       pump_rx();
       if (tcp_fd < 0) break;
       pump_tx();
