@@ -168,6 +168,12 @@ function writeFixture(): void {
   set("frame_limit", "1000");
   set("use_disk_shader_cache", "false");
   set("check_for_update_on_start", "false");
+  // A guest that shows the RTC must see the same time on every run: pin the
+  // emulated clock to 2000-01-01 00:00:00
+  // instead of the host's. It still advances with emulated time, so a
+  // minute-resolution display stays stable for the first 60 s of a run.
+  set("init_clock", "1");
+  set("init_time", "946684800");
   writeFileSync(CONFIG, config);
 }
 
