@@ -36,6 +36,7 @@ use psp::sys::{
     TextureColorComponent, TextureEffect, TextureFilter, TexturePixelFormat, VertexType,
 };
 use psp::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use pocketjs_core::raster::{poly_span_bound, poly_spans, PolySpan};
 use pocketjs_core::{spec, text::Atlas, TexView, Ui};
 
 // ---------------------------------------------------------------------------
@@ -551,6 +552,57 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                 }
                 flush(GuPrimitive::Triangles, VTYPE_C, (count * 3) as i32, verts as *const c_void, bytes);
                 i = end;
+            }
+            spec::draw_op::POLY if i + 3 <= n => {
+                // The GE cannot compute per-pixel coverage, so it does not:
+                // `poly_spans` is the same solve engine/core/src/raster.rs
+                // fills for itself, and this draws what it returns as alpha
+                // sprites — the path already used for rounded corners and
+                // shadows. A triangle fan here would put a binary edge on
+                // hardware and a sampled one everywhere else, which is the one
+                // thing an op shared by six backends must not do.
+                let nverts = words[i + 1] as usize;
+                let next = i + 3 + nverts;
+                if !(3..=8).contains(&nverts) || next > n {
+                    break;
+                }
+                let color = words[i + 2];
+                let (cr, cg, cb, ca) =
+                    (color & 0xff, (color >> 8) & 0xff, (color >> 16) & 0xff, color >> 24);
+                let poly = &words[i + 3..next];
+                // Full viewport: the GE scissors, exactly as it does for the
+                // rects the core has already intersected.
+                let clip = (0, 0, SCREEN_WIDTH as i32, SCREEN_HEIGHT as i32);
+                let bound = poly_span_bound(1, clip, poly);
+                if bound > 0 {
+                    let vbuf = pool_alloc(bound * 2 * core::mem::size_of::<VertC>()) as *mut VertC;
+                    let mut k = 0usize;
+                    poly_spans(1, clip, poly, |s: PolySpan| {
+                        let cov = ca * s.hits / 16;
+                        if cov == 0 {
+                            return;
+                        }
+                        let c = (cov << 24) | (cb << 16) | (cg << 8) | cr;
+                        // SAFETY: `bound` is an upper bound on the spans this
+                        // call emits, and the buffer was sized for two
+                        // vertices each.
+                        unsafe {
+                            *vbuf.add(k * 2) =
+                                VertC { color: c, x: s.x as i16, y: s.y as i16, z: 0, _pad: 0 };
+                            *vbuf.add(k * 2 + 1) = VertC {
+                                color: c,
+                                x: (s.x + s.len) as i16,
+                                y: (s.y + 1) as i16,
+                                z: 0,
+                                _pad: 0,
+                            };
+                        }
+                        k += 1;
+                    });
+                    let used = k * 2 * core::mem::size_of::<VertC>();
+                    flush(GuPrimitive::Sprites, VTYPE_C, (k * 2) as i32, vbuf as *const c_void, used);
+                }
+                i = next;
             }
             spec::draw_op::GLYPH_RUN if i + 3 <= n => {
                 let w1 = words[i + 1];

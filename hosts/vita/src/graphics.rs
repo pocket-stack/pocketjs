@@ -627,6 +627,36 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                 color_vertices(&vertices, SceGxmPrimitiveType_SCE_GXM_PRIMITIVE_TRIANGLES);
                 i += 7;
             }
+            spec::draw_op::POLY if i + 3 <= words.len() => {
+                // GXM has no per-pixel coverage; a triangle fan is today's
+                // binary fill of the same convex polygon.
+                let nverts = words[i + 1] as usize;
+                let next = i + 3 + nverts;
+                if !(3..=8).contains(&nverts) || next > words.len() {
+                    break;
+                }
+                let color = words[i + 2];
+                let mut vertices = [vita2d_color_vertex {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.5,
+                    color: 0,
+                }; 8];
+                for k in 0..nverts {
+                    let (x, y) = xy(words[i + 3 + k]);
+                    vertices[k] = vita2d_color_vertex {
+                        x,
+                        y,
+                        z: 0.5,
+                        color,
+                    };
+                }
+                color_vertices(
+                    &vertices[..nverts],
+                    SceGxmPrimitiveType_SCE_GXM_PRIMITIVE_TRIANGLE_FAN,
+                );
+                i = next;
+            }
             spec::draw_op::GLYPH_RUN if i + 3 <= words.len() => {
                 let meta = words[i + 1];
                 let slot = (meta & 0xff) as u8;
@@ -767,6 +797,9 @@ fn validate_texture_residency(ui: &Ui, words: &[u32]) -> io::Result<()> {
             spec::draw_op::RECT => i.checked_add(4),
             spec::draw_op::GRAD_RECT => i.checked_add(6),
             spec::draw_op::TRI => i.checked_add(7),
+            spec::draw_op::POLY if i + 1 < words.len() => {
+                i.checked_add(3 + words[i + 1] as usize)
+            }
             spec::draw_op::GLYPH_RUN if i + 2 < words.len() => {
                 let slot = (words[i + 1] & 0xff) as u8;
                 if ui.font_atlas(slot).is_none() {

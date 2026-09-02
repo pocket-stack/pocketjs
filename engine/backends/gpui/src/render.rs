@@ -313,7 +313,7 @@ impl GpuiRenderer {
                     *i += 1;
                     return;
                 }
-                spec::draw_op::TRI | spec::draw_op::TEX_TRI => {
+                spec::draw_op::TRI | spec::draw_op::TEX_TRI | spec::draw_op::POLY => {
                     self.paint_tri_batch(ui, words, i, origin, window, cx);
                 }
                 spec::draw_op::TEXT_RUN => {
@@ -546,10 +546,11 @@ impl GpuiRenderer {
 
     // ---- triangle batches (raster fallback) -----------------------------------
 
-    /// Paint one consecutive TRI/TEX_TRI batch starting at `*i`. Flat solid
-    /// TRIs alone stay vector paths; any gouraud or textured member sends
-    /// the WHOLE batch through the core software rasterizer so painter
-    /// order inside the batch (3D subtrees sort by depth) is preserved.
+    /// Paint one consecutive TRI/TEX_TRI/POLY batch starting at `*i`. Flat
+    /// solid TRIs and POLYs stay vector paths; any gouraud or textured
+    /// member sends the WHOLE batch through the core software rasterizer so
+    /// painter order inside the batch (3D subtrees sort by depth) is
+    /// preserved. POLY is flat-coloured by construction.
     fn paint_tri_batch(
         &mut self,
         ui: &Ui,
@@ -574,21 +575,50 @@ impl GpuiRenderer {
                     needs_raster = true;
                     end += 12;
                 }
+                spec::draw_op::POLY => {
+                    if end + 3 > words.len() {
+                        break;
+                    }
+                    let n = words[end + 1] as usize;
+                    if !(3..=8).contains(&n) || end + 3 + n > words.len() {
+                        break;
+                    }
+                    end += 3 + n;
+                }
                 _ => break,
             }
         }
         *i = end;
         let batch = &words[start..end];
         if !needs_raster {
-            for tri in batch.as_chunks::<7>().0 {
-                let color = abgr(tri[4]);
-                let (x0, y0) = decode_xy(tri[1]);
-                let (x1, y1) = decode_xy(tri[2]);
-                let (x2, y2) = decode_xy(tri[3]);
-                let mut path = Path::new(point(px(x0) + origin.x, px(y0) + origin.y));
-                path.line_to(point(px(x1) + origin.x, px(y1) + origin.y));
-                path.line_to(point(px(x2) + origin.x, px(y2) + origin.y));
-                window.paint_path(path, color);
+            let mut j = 0usize;
+            while j < batch.len() {
+                match batch[j] {
+                    spec::draw_op::TRI => {
+                        let color = abgr(batch[j + 4]);
+                        let (x0, y0) = decode_xy(batch[j + 1]);
+                        let (x1, y1) = decode_xy(batch[j + 2]);
+                        let (x2, y2) = decode_xy(batch[j + 3]);
+                        let mut path = Path::new(point(px(x0) + origin.x, px(y0) + origin.y));
+                        path.line_to(point(px(x1) + origin.x, px(y1) + origin.y));
+                        path.line_to(point(px(x2) + origin.x, px(y2) + origin.y));
+                        window.paint_path(path, color);
+                        j += 7;
+                    }
+                    spec::draw_op::POLY => {
+                        let n = batch[j + 1] as usize;
+                        let color = abgr(batch[j + 2]);
+                        let (x0, y0) = decode_xy(batch[j + 3]);
+                        let mut path = Path::new(point(px(x0) + origin.x, px(y0) + origin.y));
+                        for k in 1..n {
+                            let (x, y) = decode_xy(batch[j + 3 + k]);
+                            path.line_to(point(px(x) + origin.x, px(y) + origin.y));
+                        }
+                        window.paint_path(path, color);
+                        j += 3 + n;
+                    }
+                    _ => break,
+                }
             }
             return;
         }
@@ -607,15 +637,17 @@ impl GpuiRenderer {
         let mut key_words: Vec<u32> = batch.to_vec();
         let mut j = 0usize;
         while j < batch.len() {
-            if batch[j] == spec::draw_op::TEX_TRI {
-                let slot = batch[j + 1] & spec::TEX_SLOT_MASK;
-                if let Some((_, revision, _)) = ui.texture_at_versioned(slot) {
-                    key_words.push(revision as u32);
-                    key_words.push((revision >> 32) as u32);
+            match batch[j] {
+                spec::draw_op::TEX_TRI => {
+                    let slot = batch[j + 1] & spec::TEX_SLOT_MASK;
+                    if let Some((_, revision, _)) = ui.texture_at_versioned(slot) {
+                        key_words.push(revision as u32);
+                        key_words.push((revision >> 32) as u32);
+                    }
+                    j += 12;
                 }
-                j += 12;
-            } else {
-                j += 7;
+                spec::draw_op::POLY => j += 3 + batch[j + 1] as usize,
+                _ => j += 7,
             }
         }
         let hash = fnv64(&key_words);
@@ -634,23 +666,39 @@ impl GpuiRenderer {
         let (mut min_x, mut min_y, mut max_x, mut max_y) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
         let mut j = 0usize;
         while j < batch.len() {
-            let idxs: &[usize] = if batch[j] == spec::draw_op::TEX_TRI {
-                &[j + 2, j + 5, j + 8]
-            } else {
-                &[j + 1, j + 2, j + 3]
-            };
-            for &k in idxs {
-                let (x, y) = decode_xy(batch[k]);
-                min_x = min_x.min(x as i32);
-                min_y = min_y.min(y as i32);
-                max_x = max_x.max(x.ceil() as i32);
-                max_y = max_y.max(y.ceil() as i32);
+            match batch[j] {
+                spec::draw_op::TEX_TRI => {
+                    for &k in &[j + 2, j + 5, j + 8] {
+                        let (x, y) = decode_xy(batch[k]);
+                        min_x = min_x.min(x as i32);
+                        min_y = min_y.min(y as i32);
+                        max_x = max_x.max(x.ceil() as i32);
+                        max_y = max_y.max(y.ceil() as i32);
+                    }
+                    j += 12;
+                }
+                spec::draw_op::POLY => {
+                    let n = batch[j + 1] as usize;
+                    for k in 0..n {
+                        let (x, y) = decode_xy(batch[j + 3 + k]);
+                        min_x = min_x.min(x as i32);
+                        min_y = min_y.min(y as i32);
+                        max_x = max_x.max(x.ceil() as i32);
+                        max_y = max_y.max(y.ceil() as i32);
+                    }
+                    j += 3 + n;
+                }
+                _ => {
+                    for &k in &[j + 1, j + 2, j + 3] {
+                        let (x, y) = decode_xy(batch[k]);
+                        min_x = min_x.min(x as i32);
+                        min_y = min_y.min(y as i32);
+                        max_x = max_x.max(x.ceil() as i32);
+                        max_y = max_y.max(y.ceil() as i32);
+                    }
+                    j += 7;
+                }
             }
-            j += if batch[j] == spec::draw_op::TEX_TRI {
-                12
-            } else {
-                7
-            };
         }
         if min_x >= max_x || min_y >= max_y {
             return;

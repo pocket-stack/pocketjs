@@ -7,9 +7,10 @@
 //! (TEX_QUAD) and gradient endpoint colors (GRAD_RECT).
 //!
 //! Transforms (translate/scale/rotate) compose down the walk as 2D affines.
-//! Axis-aligned content uses RECT/GRAD_RECT/TEX_QUAD; ROTATED solid/gradient
-//! boxes are corner-transformed, Sutherland-Hodgman-clipped and emitted as
-//! TRI ops. v1 degradations (documented):
+//! Axis-aligned content uses RECT/GRAD_RECT/TEX_QUAD; ROTATED solid boxes
+//! are corner-transformed, Sutherland-Hodgman-clipped and emitted as one
+//! POLY op (coverage over the whole clipped polygon). ROTATED gradient
+//! boxes still fan into TRI ops. v1 degradations (documented):
 //!   - rotated IMAGE quads are conservatively culled (no textured-tri op);
 //!   - glyph cells position along the rotated/scaled frame but stay upright
 //!     and unscaled (bitmap cells); glyphs whose cell top-left leaves the
@@ -1283,9 +1284,7 @@ impl<'a> Walker<'a> {
                         .map(|&(x, y)| ClipVert { x, y, color: unpack(color), u: 0.0, v: 0.0 })
                         .collect();
                     let clipped = sutherland_hodgman(&poly, clip);
-                    for i in 1..clipped.len().saturating_sub(1) {
-                        emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
-                    }
+                    emit_poly(dl, &clipped, color, clip, self.screen);
                 }
                 Item3::TexMesh { cell_start, cell_end, tex, modulate } => {
                     for cell in &tex_cells[cell_start..cell_end] {
@@ -1657,7 +1656,7 @@ impl<'a> Walker<'a> {
 
     /// Emit a solid/gradient local-space rect under `world`: axis-aligned
     /// path (RECT/GRAD_RECT, clipped with color re-interpolation) or the
-    /// rotated path (Sutherland-Hodgman -> TRI ops).
+    /// rotated path (Sutherland-Hodgman -> POLY for flat, TRI fan for gradient).
     #[allow(clippy::too_many_arguments)]
     fn emit_box(&self, dl: &mut DrawList, world: &Affine, x0: f32, y0: f32, x1: f32, y1: f32, fill: Fill, clip: &Clip) {
         if x1 <= x0 || y1 <= y0 {
@@ -1743,8 +1742,10 @@ impl<'a> Walker<'a> {
                 }
             }
         } else {
-            // Rotated: transform corners, Sutherland-Hodgman clip, fan into
-            // TRI ops (gouraud carries any gradient through the clip).
+            // Rotated: transform corners, Sutherland-Hodgman clip. Flat fills
+            // emit one POLY (coverage over the whole clipped polygon — a TRI
+            // fan would double-blend the shared diagonal). Gradients still
+            // fan into TRI ops (gouraud carries the endpoint colours).
             let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
             let mut poly: Vec<ClipVert> = Vec::with_capacity(8);
             for (i, &(lx, ly)) in corners.iter().enumerate() {
@@ -1755,8 +1756,13 @@ impl<'a> Walker<'a> {
             if clipped.len() < 3 {
                 return;
             }
-            for i in 1..clipped.len() - 1 {
-                emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
+            match fill {
+                Fill::Flat(color) => emit_poly(dl, &clipped, color, clip, self.screen),
+                Fill::Grad { .. } => {
+                    for i in 1..clipped.len() - 1 {
+                        emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
+                    }
+                }
             }
         }
     }
@@ -2741,6 +2747,50 @@ fn sutherland_hodgman(poly: &[ClipVert], clip: &Clip) -> Vec<ClipVert> {
         cur = next;
     }
     cur
+}
+
+/// Emit one POLY op (flat colour). N is capped at 8 — Sutherland-Hodgman
+/// clipping a quad against a rect yields at most 8 vertices; anything
+/// larger falls back to the TRI fan. Degenerate polygons after rounding
+/// are dropped, matching `emit_tri`.
+fn emit_poly(
+    dl: &mut DrawList,
+    verts: &[ClipVert],
+    color: u32,
+    clip: &Clip,
+    screen: (f32, f32),
+) {
+    if verts.len() < 3 {
+        return;
+    }
+    if verts.len() > 8 {
+        for i in 1..verts.len() - 1 {
+            emit_tri(dl, &verts[0], &verts[i], &verts[i + 1], clip, screen);
+        }
+        return;
+    }
+    let px = |v: &ClipVert| {
+        (
+            clampf(roundf(clampf(v.x, clip.x0, clip.x1)), 0.0, screen.0),
+            clampf(roundf(clampf(v.y, clip.y0, clip.y1)), 0.0, screen.1),
+        )
+    };
+    let mut area2 = 0.0f32;
+    for i in 0..verts.len() {
+        let (x0, y0) = px(&verts[i]);
+        let (x1, y1) = px(&verts[(i + 1) % verts.len()]);
+        area2 += x0 * y1 - x1 * y0;
+    }
+    if area2 == 0.0 {
+        return;
+    }
+    dl.words.push(spec::draw_op::POLY);
+    dl.words.push(verts.len() as u32);
+    dl.words.push(color);
+    for v in verts {
+        let (x, y) = px(v);
+        dl.words.push(xy_word(x, y));
+    }
 }
 
 /// Emit one TRI op (degenerate triangles after rounding are dropped).

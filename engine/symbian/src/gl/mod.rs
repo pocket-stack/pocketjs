@@ -791,6 +791,39 @@ impl Renderer {
                     }
                     index += 7;
                 }
+                spec::draw_op::POLY if index + 3 <= words.len() => {
+                    let n = words[index + 1] as usize;
+                    let next = index + 3 + n;
+                    if !(3..=8).contains(&n) || next > words.len() {
+                        break;
+                    }
+                    if texture != self.white {
+                        self.flush(texture, clip, &mut start);
+                        texture = self.white;
+                    }
+                    let color = words[index + 2];
+                    let (x0, y0) = xy(words[index + 3]);
+                    for k in 1..n - 1 {
+                        let (x1, y1) = xy(words[index + 3 + k]);
+                        let (x2, y2) = xy(words[index + 3 + k + 1]);
+                        self.vertices.push(Vertex {
+                            position: [x0, y0],
+                            uv: [0.0, 0.0],
+                            color,
+                        });
+                        self.vertices.push(Vertex {
+                            position: [x1, y1],
+                            uv: [0.0, 0.0],
+                            color,
+                        });
+                        self.vertices.push(Vertex {
+                            position: [x2, y2],
+                            uv: [0.0, 0.0],
+                            color,
+                        });
+                    }
+                    index = next;
+                }
                 spec::draw_op::SCISSOR if index + 3 <= words.len() => {
                     self.flush(texture, clip, &mut start);
                     clip_stack.push(clip);

@@ -1,6 +1,7 @@
 //! DrawList → wgpu. The third DrawList backend (after the PSP GE and the
-//! wasm software rasterizer), executing the closed 7-op set pinned in
-//! spec.ts "DRAWLIST op format".
+//! wasm software rasterizer), executing the closed DrawList op set pinned
+//! in spec.ts "DRAWLIST op format". Hardware has no per-pixel coverage, so
+//! POLY degrades to a triangle fan — today's binary fill.
 //!
 //! The core's CPU clip stage guarantees every coordinate is inside
 //! [0, viewport] — this backend only batches: one vertex stream, draw calls
@@ -639,6 +640,45 @@ impl UiRenderer {
                     }
                     self.verts.extend_from_slice(&v);
                     i += 7;
+                }
+                spec::draw_op::POLY => {
+                    if i + 3 > words.len() {
+                        break;
+                    }
+                    let n = words[i + 1] as usize;
+                    if !(3..=8).contains(&n) || i + 3 + n > words.len() {
+                        break;
+                    }
+                    if cur_tex != TexBind::White {
+                        flush!(TexBind::White, scissor);
+                    }
+                    let color = words[i + 2];
+                    let (x0, y0) = xy(words[i + 3]);
+                    for k in 1..n - 1 {
+                        let (x1, y1) = xy(words[i + 3 + k]);
+                        let (x2, y2) = xy(words[i + 3 + k + 1]);
+                        self.verts.extend_from_slice(&[
+                            UiVertex {
+                                pos: ndc(x0, y0),
+                                uv: [0.0, 0.0],
+                                color,
+                                mode: MODE_SOLID,
+                            },
+                            UiVertex {
+                                pos: ndc(x1, y1),
+                                uv: [0.0, 0.0],
+                                color,
+                                mode: MODE_SOLID,
+                            },
+                            UiVertex {
+                                pos: ndc(x2, y2),
+                                uv: [0.0, 0.0],
+                                color,
+                                mode: MODE_SOLID,
+                            },
+                        ]);
+                    }
+                    i += 3 + n;
                 }
                 spec::draw_op::TEXT_RUN => {
                     // Native-text op: emitted only when the host installed a
