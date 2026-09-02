@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/host/serve.ts — the Omarchy-side daemon for Pocket
 // Remote. Runs on the Omarchy machine as a user service:
 //
@@ -41,13 +42,19 @@ import {
 } from "../protocol.ts";
 import { hyprBatch, hyprDirectory, hyprDispatch, luaWindow, luaWorkspace, snapshot, STATE_EVENTS, watchEvents } from "./hypr.ts";
 import {
+  evaluateMenuConditions,
+  loadMenu,
+  Pointer,
   pressKey,
   readLevels,
+  readMedia,
   readTheme,
+  readWifi,
   runAction,
+  runMenuEntry,
   setBrightness,
-  setThemeByName,
   setVolume,
+  setWifi,
   themeStateDirectory,
   toggleMute,
   typeText,
@@ -201,6 +208,14 @@ const hyprDir = hyprDirectory();
 let lastState: HostState | null = null;
 let lastLevels: { vol: number; mute: boolean; bri: number } | null = null;
 let theme = readTheme();
+/** The focused monitor's origin in layout px: a placement off the wire is
+ *  monitor-relative and Hyprland wants layout coordinates. */
+let monitorOrigin = { x: 0, y: 0 };
+let lastCc: HostLine | null = null;
+let lastMenu: { hide: string[]; check: string[] } | null = null;
+let menuEntries = loadMenu();
+let menuBusy = false;
+const pointer = new Pointer(undefined, log);
 let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 let snapshotBusy = false;
 let snapshotDirty = false;
@@ -213,6 +228,7 @@ async function refreshState(): Promise<void> {
   snapshotBusy = true;
   try {
     const state = await snapshot(hyprDir);
+    monitorOrigin = { x: state.mon.x ?? 0, y: state.mon.y ?? 0 };
     const text = JSON.stringify(state);
     if (!lastState || JSON.stringify(lastState) !== text) {
       lastState = state;
@@ -258,6 +274,41 @@ async function refreshLevels(force = false): Promise<void> {
   }
 }
 
+/** The control centre's other half: the network and what is playing. */
+async function refreshCc(): Promise<void> {
+  try {
+    const [wifi, media] = await Promise.all([readWifi(), readMedia()]);
+    const line: HostLine = { t: "cc", wifi, media };
+    if (!lastCc || JSON.stringify(lastCc) !== JSON.stringify(line)) {
+      lastCc = line;
+      broadcast(line);
+    }
+  } catch (error) {
+    log(`cc: ${(error as Error).message}`);
+  }
+}
+
+/** The menu's live conditions, the way the shell evaluates them at open:
+ *  one bash run over every `when` and `checked`, here on a timer so the
+ *  device's sheet never waits for it. */
+async function refreshMenu(): Promise<void> {
+  if (menuBusy) return;
+  menuBusy = true;
+  try {
+    menuEntries = loadMenu();
+    const result = await evaluateMenuConditions(menuEntries);
+    if (!lastMenu || JSON.stringify(lastMenu) !== JSON.stringify(result)) {
+      lastMenu = result;
+      broadcast({ t: "menu", hide: result.hide, check: result.check });
+      log(`menu: ${menuEntries.length} rows, ${result.hide.length} hidden, ${result.check.length} checked`);
+    }
+  } catch (error) {
+    log(`menu: ${(error as Error).message}`);
+  } finally {
+    menuBusy = false;
+  }
+}
+
 function refreshTheme(): void {
   const next = readTheme();
   if (JSON.stringify(next) === JSON.stringify(theme)) return;
@@ -274,6 +325,8 @@ function sendMirror(conn: Conn): void {
     sendLine(conn, line);
   }
   if (lastState) sendLine(conn, lastState);
+  if (lastCc) sendLine(conn, lastCc);
+  if (lastMenu) sendLine(conn, { t: "menu", hide: lastMenu.hide, check: lastMenu.check });
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +410,23 @@ async function handle(conn: Conn, line: ClientLine): Promise<void> {
           await dispatchLogged(`hl.dsp.window.move({ window = ${window}, workspace = ${target}, follow = false })`);
           break;
         }
+        case "place": {
+          // Monitor-relative logical px off the wire; Hyprland places in
+          // layout coordinates, so the focused monitor's origin goes back on.
+          const x = Number(line.x);
+          const y = Number(line.y);
+          if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 20000 || Math.abs(y) > 20000) return;
+          await dispatchLogged(
+            `hl.dsp.window.move({ window = ${window}, x = ${Math.round(x + monitorOrigin.x)}, y = ${Math.round(y + monitorOrigin.y)} })`,
+          );
+          break;
+        }
+        case "float":
+          await dispatchLogged(`hl.dsp.window.float({ window = ${window}, action = "toggle" })`);
+          break;
+        case "full":
+          await batchLogged([`hl.dsp.focus({ window = ${window} })`, 'hl.dsp.window.fullscreen({ mode = "fullscreen" })']);
+          break;
       }
       scheduleSnapshot();
       return;
@@ -394,11 +464,38 @@ async function handle(conn: Conn, line: ClientLine): Promise<void> {
       }
       return;
     }
-    case "theme":
-      if (typeof line.name === "string" && setThemeByName(line.name, theme.list, log)) {
-        setTimeout(refreshTheme, 1500);
-        setTimeout(refreshTheme, 4000);
+    case "ptr": {
+      const dx = Number(line.dx);
+      const dy = Number(line.dy);
+      if (Number.isFinite(dx) && Number.isFinite(dy) && Math.abs(dx) < 2000 && Math.abs(dy) < 2000) pointer.move(dx, dy);
+      return;
+    }
+    case "click":
+      if (line.b === "l" || line.b === "r" || line.b === "m") pointer.click(line.b);
+      return;
+    case "scroll": {
+      const dx = Number(line.dx);
+      const dy = Number(line.dy);
+      if (Number.isFinite(dx) && Number.isFinite(dy) && Math.abs(dx) < 2000 && Math.abs(dy) < 2000) pointer.scroll(dx, dy);
+      return;
+    }
+    case "drag":
+      pointer.button("l", line.on === 1);
+      return;
+    case "wifi":
+      setWifi(line.on === 1, log);
+      setTimeout(() => void refreshCc(), 1500);
+      setTimeout(() => void refreshCc(), 5000);
+      return;
+    case "menu":
+      if (typeof line.id !== "string" || !runMenuEntry(menuEntries, line.id, log)) {
+        log(`${conn.address}: unknown menu row ${JSON.stringify(line.id)}`);
+        return;
       }
+      log(`menu: ${line.id}`);
+      scheduleSnapshot(300);
+      setTimeout(() => void refreshMenu(), 2000);
+      setTimeout(() => void refreshLevels(), 500);
       return;
   }
 }
@@ -618,7 +715,12 @@ watchEvents(
 );
 void refreshState();
 void refreshLevels(true);
+void refreshCc();
+void refreshMenu();
 setInterval(() => void refreshLevels(), 1000);
+setInterval(() => void refreshCc(), 3000);
+setInterval(() => void refreshMenu(), 30_000);
+if (!pointer.available()) log("pointer: helper not built; the trackpad will be inert until the next deploy");
 setInterval(() => scheduleSnapshot(), 5000); // belt and braces for missed events
 try {
   const stateDir = themeStateDirectory();

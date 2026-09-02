@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/host/wire.ts — the host side of the SVC WIRE (PKNT)
 // protocol: framing, the device hello, the discovery beacon. Byte layouts
 // come from contracts/spec/spec.ts "SVC WIRE protocol" and must stay

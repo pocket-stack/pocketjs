@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/protocol.ts — the JSON lines the iPod and the Omarchy
 // daemon exchange over the SVC WIRE (spec ops 30..32). One file, imported by
 // both ends, so a field cannot drift between them. Every line is small: the
@@ -9,7 +10,7 @@ import type { ActionId } from "./actions.ts";
 
 /** The svc app id: what the beacon advertises and the hello names. */
 export const REMOTE_APP = "pocket-remote";
-export const REMOTE_PROTO = 1;
+export const REMOTE_PROTO = 2;
 
 /** Title bytes kept per window in a snapshot. */
 export const TITLE_MAX = 28;
@@ -54,8 +55,9 @@ export interface WsInfo {
 
 export interface HostState {
   t: "state";
-  /** The focused monitor's logical size (pixels / scale). */
-  mon: { w: number; h: number };
+  /** The focused monitor's logical size (pixels / scale) and, for the
+   *  daemon's own use, its origin in layout px. */
+  mon: { w: number; h: number; x?: number; y?: number };
   /** Ordinary workspaces (ids > 0), ascending. */
   ws: WsInfo[];
   /** Active workspace id on the focused monitor. */
@@ -128,7 +130,34 @@ export interface HostToast {
   text: string;
 }
 
-export type HostLine = HostHello | HostAuth | HostState | HostLevels | HostTheme | HostToast;
+/** What the control centre shows besides the levels: the network and
+ *  whatever is playing. Sent on change. */
+export interface HostCc {
+  t: "cc";
+  wifi: {
+    /** The radio is on. */
+    on: 0 | 1;
+    /** Connected network, "" when none; "ethernet" links carry the device. */
+    ssid: string;
+    /** Signal 0..100, 0 when unknown. */
+    sig: number;
+  };
+  media: {
+    st: "playing" | "paused" | "none";
+    title: string;
+    artist: string;
+  };
+}
+
+/** The menu's live conditions: rows hidden by a failing `when`, rows whose
+ *  `checked` holds. Full sets, sent when they change. */
+export interface HostMenu {
+  t: "menu";
+  hide: string[];
+  check: string[];
+}
+
+export type HostLine = HostHello | HostAuth | HostState | HostLevels | HostTheme | HostToast | HostCc | HostMenu;
 
 // ---------------------------------------------------------------------------
 // device -> host
@@ -158,7 +187,12 @@ export type WindowOp =
   | { op: "focus"; a: string }
   | { op: "close"; a: string }
   | { op: "swap"; a: string; dir: Direction }
-  | { op: "move"; a: string; n: number };
+  | { op: "move"; a: string; n: number }
+  /** Put a floating window at monitor-relative logical px (a drag). */
+  | { op: "place"; a: string; x: number; y: number }
+  /** Toggle floating / fullscreen on one window. */
+  | { op: "float"; a: string }
+  | { op: "full"; a: string };
 
 export type ClientWindow = { t: "win" } & WindowOp;
 
@@ -194,9 +228,42 @@ export interface ClientKey {
   mods?: Modifier[];
 }
 
-export interface ClientTheme {
-  t: "theme";
-  name: string;
+/** Trackpad: relative pointer motion in laptop-screen px (already
+ *  accelerated on the device), at most one line per device frame. */
+export interface ClientPointer {
+  t: "ptr";
+  dx: number;
+  dy: number;
+}
+
+export interface ClientClick {
+  t: "click";
+  b: "l" | "r" | "m";
+}
+
+/** Two-finger scroll, in px of travel. */
+export interface ClientScroll {
+  t: "scroll";
+  dx: number;
+  dy: number;
+}
+
+/** Hold the left button down (a long-press on the trackpad) and let go. */
+export interface ClientDrag {
+  t: "drag";
+  on: 0 | 1;
+}
+
+export interface ClientWifi {
+  t: "wifi";
+  on: 0 | 1;
+}
+
+/** Run one row of Omarchy's menu by id (menu.ts / host/menu-source.ts): an
+ *  action runs its command, a provider submenu opens on the desktop. */
+export interface ClientMenu {
+  t: "menu";
+  id: string;
 }
 
 export type ClientLine =
@@ -209,7 +276,12 @@ export type ClientLine =
   | ClientMedia
   | ClientType
   | ClientKey
-  | ClientTheme;
+  | ClientPointer
+  | ClientClick
+  | ClientScroll
+  | ClientDrag
+  | ClientWifi
+  | ClientMenu;
 
 /** Parse one wire batch (newline-separated JSON) into typed lines; malformed
  *  lines are skipped rather than allowed to wedge the reader. */

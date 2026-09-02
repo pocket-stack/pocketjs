@@ -1,9 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/store.ts — the remote's live state: the link to the
-// daemon, the mirrored desktop (workspaces, windows, levels, theme), the
-// tile slot pool that animates the stage, the hold-and-slide flyouts, and
-// the senders every touch target calls. Everything the screen shows reads
-// from here; nothing here knows about pixels except the tile pool and the
-// flyout progress, which own motion.
+// daemon, the mirrored desktop (workspaces, windows, levels, theme, network,
+// what is playing, the menu's live conditions), the tile slot pool that
+// animates the stage, the ball, the popups (a tile's, the control centre,
+// the menu sheet), the deck's keyboard state, and the senders every touch
+// target calls. Everything the screen shows reads from here; nothing here
+// knows about pixels except the motion owners — the tile pool, the ball and
+// the entrance progresses — which write geometry straight to node mirrors.
 //
 // Reactivity is coarse on purpose: a snapshot replaces one signal, tiles
 // live in a fixed pool of per-slot signals so a frame in which one window
@@ -13,16 +16,28 @@ import { batch, createMemo, createSignal, type Accessor } from "solid-js";
 import { getOps } from "@pocketjs/framework";
 import { jump } from "@pocketjs/framework/animation";
 import type { NodeMirror } from "@pocketjs/framework/components";
+import { createScroller, type Scroller } from "@pocketjs/framework/kinetics";
 import { onFrame } from "@pocketjs/framework/lifecycle";
-import { type ActionId, actionById, MENU_ROUTES } from "./actions.ts";
+import { type ActionId, actionById } from "./actions.ts";
+import type { KbLayer, KeyVariant } from "./keyboard-layout.ts";
 import {
   approach,
-  CARD_LINGER_FRAMES,
-  CLOSE_HOLD_SECONDS,
+  BALL,
+  BALL_HOME,
+  ballSnap,
+  CC_LINGER_FRAMES,
+  ccRowAt,
   clamp01,
   easeProgress,
+  type Fit,
   fitMonitor,
+  type Mode,
+  placePopup,
+  type Popup,
   type Rect,
+  SHEET_LIST,
+  sheetMaxScroll,
+  stageToMonitor,
   stageWindows,
   stripTabs,
   swapDirection,
@@ -30,11 +45,15 @@ import {
   TILE_SLOTS,
   TILE_TWO_LINES_H,
   tileRect,
+  trackDelta,
   windowAt,
 } from "./layout.ts";
+import { MENU_ROOT, menuChildren, menuItem, menuParent } from "./menu-tree.ts";
+import type { MenuItem } from "./menu.ts";
 import {
   type ClientLine,
   type Direction,
+  type HostCc,
   type HostLine,
   type HostState,
   type Layout,
@@ -129,6 +148,7 @@ export interface TileSlot {
   dying: boolean;
 }
 
+/** A tiled window being dragged onto another (swap) or onto a tab (move). */
 export interface Drag {
   a: string;
   x: number;
@@ -139,20 +159,22 @@ export interface Drag {
   overWs: number | null;
 }
 
-export interface Closing {
+/** A tile's popup: float/tile, full screen, close. */
+export interface TilePopup {
   a: string;
-  /** 0..1 of CLOSE_HOLD_SECONDS. */
-  progress: number;
+  place: Popup;
+  floating: boolean;
+  hot: number | null;
 }
 
 /**
- * The levels card: brightness and volume, the control-centre control. Opened
- * sticky by a tap on the dock (tap outside closes) or by hold-and-slide (the
- * finger that opened it adjusts, release lingers then closes).
+ * The control centre. Opened sticky by a tap on its button (tap outside
+ * closes) or by hold-and-slide (the finger that opened it adjusts, release
+ * lingers then closes).
  */
-export interface Card {
+export interface Cc {
   mode: "sticky" | "hold";
-  /** Row the sliding finger is on (hold mode) or dragging (sticky mode). */
+  /** Slider row the finger is on (hold mode) or dragging (sticky mode). */
   row: 0 | 1 | null;
   /** Finger x and level when the current row was entered — drags are relative. */
   refX: number;
@@ -161,40 +183,42 @@ export interface Card {
   until: number;
 }
 
-/** The Menu key's cascade: routes in column one, the hot route's leaves in
- *  column two. `hot` / `leaf` are what is under the finger. */
-export interface MenuFly {
-  kind: "menu";
+/** The menu sheet: which submenu is open and how it was reached. */
+export interface Sheet {
+  /** The open submenu's id ("root" at the top). */
+  at: string;
+  /** Ancestors, root first — what back returns to. */
+  trail: string[];
   hot: number | null;
-  leaf: number | null;
-  /** Route whose leaves column two shows (sticks while the finger crosses). */
-  open: number | null;
 }
 
-/** A held key's modifier variants (ctrl+x, alt+x, F-keys). */
-export interface KeyVariant {
-  label: string;
-  k: string;
-  mods: Modifier[];
-}
-
+/** A held key's variant chips. */
 export interface KeyFly {
-  kind: "keyvar";
   /** Screen-space rect of the held key. */
   key: Rect;
   variants: KeyVariant[];
   hot: number | null;
 }
 
-export type Flyout = MenuFly | KeyFly;
+export interface Wifi {
+  on: boolean;
+  ssid: string;
+  sig: number;
+}
 
-export type KbLayer = "lower" | "upper" | "sym";
+export interface Media {
+  st: "playing" | "paused" | "none";
+  title: string;
+  artist: string;
+}
 
 const TOAST_FRAMES = 150;
 /** Frames between level sends while a slider is being dragged. */
 const LEVEL_SEND_EVERY = 3;
 /** Frames after a slider release during which host echoes are ignored. */
 const LEVEL_ECHO_HOLD = 30;
+/** Frames between placements while a floating tile is dragged. */
+const PLACE_SEND_EVERY = 3;
 
 export type RemoteStore = ReturnType<typeof createRemoteStore>;
 
@@ -217,6 +241,10 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
   const [themeName, setThemeName] = createSignal("tokyo-night");
   const [themeList, setThemeList] = createSignal<string[]>([]);
   const [colors, setColors] = createSignal<ThemeColors>(TOKYO_NIGHT);
+  const [wifi, setWifi] = createSignal<Wifi>({ on: false, ssid: "", sig: 0 });
+  const [media, setMedia] = createSignal<Media>({ st: "none", title: "", artist: "" });
+  const [menuHidden, setMenuHidden] = createSignal<ReadonlySet<string>>(new Set());
+  const [menuChecked, setMenuChecked] = createSignal<ReadonlySet<string>>(new Set());
 
   const tabs = createMemo<Tab[]>(() => {
     const s = state();
@@ -234,31 +262,85 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     if (!s || !s.focus) return "";
     return s.win.find((w) => w.a === s.focus)?.c ?? "";
   });
+  const fit = createMemo<Fit | null>(() => {
+    const s = state();
+    return s ? fitMonitor(s.mon) : null;
+  });
 
   // ---- ui --------------------------------------------------------------------
-  const [pad, setPad] = createSignal<number | null>(null);
-  const [kb, setKb] = createSignal(false);
+  const [mode, setMode] = createSignal<Mode>("stage");
   const [kbLayer, setKbLayer] = createSignal<KbLayer>("lower");
   const [kbMods, setKbMods] = createSignal<Modifier[]>([]);
   const [pressed, setPressed] = createSignal<string | null>(null);
+  /** 0..1 eased press depth of the pressed target: attack on down, release
+   *  after up. Keys scale and brighten by it, the bubble rides on it. */
+  const [pressT, setPressT] = createSignal(0);
   const [drag, setDrag] = createSignal<Drag | null>(null);
-  const [closing, setClosing] = createSignal<Closing | null>(null);
-  const [card, setCard] = createSignal<Card | null>(null);
-  const [flyout, setFlyout] = createSignal<Flyout | null>(null);
-  /** 0..1 progress of the open flyout (drives its entrance). */
+  const [popup, setPopup] = createSignal<TilePopup | null>(null);
+  const [popupT, setPopupT] = createSignal(0);
+  const [cc, setCc] = createSignal<Cc | null>(null);
+  const [ccT, setCcT] = createSignal(0);
+  const [sheet, setSheet] = createSignal<Sheet | null>(null);
+  const [sheetT, setSheetT] = createSignal(0);
+  /** Restarted on every route change: the list's own entrance. */
+  const [sheetListT, setSheetListT] = createSignal(0);
+  const [keyFly, setKeyFly] = createSignal<KeyFly | null>(null);
   const [flyT, setFlyT] = createSignal(0);
-  /** 0..1 progress of the menu's second column, restarted per route. */
-  const [flyT2, setFlyT2] = createSignal(0);
-  const [cardT, setCardT] = createSignal(0);
   const [toast, setToast] = createSignal("");
   const [frame, setFrame] = createSignal(0);
   let toastUntil = 0;
   let frameCount = 0;
-  let pressLinger = 0;
+  let pressHeld = false;
 
   const say = (text: string) => {
     setToast(text);
     toastUntil = frameCount + TOAST_FRAMES;
+  };
+
+  /** The open submenu's visible rows. */
+  const sheetRows = createMemo<MenuItem[]>(() => {
+    const s = sheet();
+    return s ? menuChildren(s.at, menuHidden()) : [];
+  });
+  const sheetScroller: Scroller = createScroller({
+    max: () => sheetMaxScroll(sheetRows().length),
+    extent: () => SHEET_LIST.h,
+    overscroll: 40,
+  });
+
+  // ---- the ball ----------------------------------------------------------------
+  const [ball, setBall] = createSignal<{ x: number; y: number }>({ ...BALL_HOME });
+  const [ballDragging, setBallDragging] = createSignal(false);
+  const ballCur = { x: BALL_HOME.x, y: BALL_HOME.y };
+  let ballNode: NodeMirror | null = null;
+  let grab = { dx: 0, dy: 0 };
+  const paintBall = () => {
+    if (!ballNode) return;
+    jump(ballNode, "insetL", Math.round(ballCur.x));
+    jump(ballNode, "insetT", Math.round(ballCur.y));
+  };
+  const bindBall = (node: NodeMirror) => {
+    ballNode = node;
+    paintBall();
+  };
+  /** A held ball comes along with the finger from where it was grabbed. */
+  const ballGrab = (x: number, y: number) => {
+    const b = ball();
+    grab = { dx: x - b.x, dy: y - b.y };
+    setBallDragging(true);
+  };
+  const ballDragTo = (x: number, y: number) => {
+    if (!ballDragging()) return;
+    ballCur.x = x - grab.dx;
+    ballCur.y = y - grab.dy;
+    setBall({ x: ballCur.x, y: ballCur.y });
+    paintBall();
+  };
+  /** Released: snap to the nearer edge (the frame loop eases it there). */
+  const ballRelease = () => {
+    if (!ballDragging()) return;
+    setBallDragging(false);
+    setBall(ballSnap(ballCur.x, ballCur.y));
   };
 
   // ---- tile pool ---------------------------------------------------------------
@@ -304,16 +386,20 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     jump(node, "opacity", c.alpha);
   };
 
+  /** A floating tile under the finger: its own geometry is the truth until
+   *  the daemon echoes the placement, so a snapshot must not yank it back. */
+  let placing: { a: string; dx: number; dy: number; sentAt: number } | null = null;
+
   /** Re-target the pool from a snapshot: keep slots by address, fade new
    *  windows in where they belong, fade vanished ones out in place. */
   const retarget = (s: HostState) => {
-    const fit = fitMonitor(s.mon);
+    const f = fitMonitor(s.mon);
     const shown = stageWindows(s);
     const seen = new Set<string>();
     batch(() => {
       for (const win of shown) {
         seen.add(win.a);
-        const rect = tileRect(win, fit);
+        const rect = tileRect(win, f);
         let slot = slotOf(win.a);
         if (!slot) {
           slot = slots.find((candidate) => candidate.a === null);
@@ -324,7 +410,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
           slot.setLive(true);
         }
         slot.dying = false;
-        slot.target = rect;
+        if (!(placing && placing.a === win.a)) slot.target = rect;
         slot.targetAlpha = 1;
         slot.setLabel(win.c);
         slot.setTitle(win.ti);
@@ -360,6 +446,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     }
     return out;
   };
+  const isFloating = (a: string): boolean => state()?.win.find((w) => w.a === a)?.f === 1;
 
   // ---- senders -------------------------------------------------------------------
   const send = (line: ClientLine) => {
@@ -416,6 +503,46 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     if (s) commit({ ...s, win: s.win.map((w) => (w.a === a ? { ...w, ws: n } : w)) });
     say(`moved to ${n}`);
   };
+  const floatWindow = (a: string) => {
+    send({ t: "win", op: "float", a });
+    say(isFloating(a) ? "tiled" : "floating");
+  };
+  const fullWindow = (a: string) => {
+    send({ t: "win", op: "full", a });
+    say("full screen");
+  };
+
+  /** Begin dragging a floating tile: remember where inside it the finger
+   *  landed so the tile does not jump to the fingertip. */
+  const placeBegin = (a: string, x: number, y: number) => {
+    const slot = slotOf(a);
+    if (!slot) return;
+    placing = { a, dx: x - slot.cur.x, dy: y - slot.cur.y, sentAt: 0 };
+  };
+  /** Move it: the tile follows the finger now; the laptop hears every third
+   *  frame and on release. */
+  const placeTo = (x: number, y: number, final = false) => {
+    if (!placing) return;
+    const slot = slotOf(placing.a);
+    const f = fit();
+    if (!slot || !f) return;
+    const nx = x - placing.dx;
+    const ny = y - placing.dy;
+    slot.target = { ...slot.target, x: nx, y: ny };
+    slot.cur = { ...slot.cur, x: nx, y: ny };
+    paintSlot(slot);
+    if (final || frameCount >= placing.sentAt + PLACE_SEND_EVERY) {
+      const at = stageToMonitor(nx, ny, f);
+      send({ t: "win", op: "place", a: placing.a, x: at.x, y: at.y });
+      placing.sentAt = frameCount;
+    }
+    if (final) placing = null;
+  };
+  const placeCancel = () => {
+    placing = null;
+    const s = state();
+    if (s) retarget(s);
+  };
 
   let levelSendAt = 0;
   let levelEchoHoldUntil = 0;
@@ -439,75 +566,154 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     setMute(!mute());
     send({ t: "mute" });
   };
-  const media = (op: "play" | "next" | "prev") => send({ t: "media", op });
+  const mediaOp = (op: "play" | "next" | "prev") => {
+    send({ t: "media", op });
+    const m = media();
+    if (op === "play" && m.st !== "none") setMedia({ ...m, st: m.st === "playing" ? "paused" : "playing" });
+  };
+  const wifiToggle = () => {
+    const w = wifi();
+    setWifi({ ...w, on: !w.on, ssid: w.on ? "" : w.ssid });
+    send({ t: "wifi", on: w.on ? 0 : 1 });
+    say(w.on ? "Wi-Fi off" : "Wi-Fi on");
+  };
   const typeText = (text: string) => send({ t: "type", text });
   const typeKey = (k: string, mods: Modifier[] = []) => send(mods.length ? { t: "key", k, mods } : { t: "key", k });
-  const chooseTheme = (name: string) => {
-    send({ t: "theme", name });
-    say(name);
+
+  /** Trackpad: motion and scroll accumulate and go out once per frame. */
+  let ptrDx = 0;
+  let ptrDy = 0;
+  let scrollDx = 0;
+  let scrollDy = 0;
+  const pointer = (dx: number, dy: number) => {
+    ptrDx += dx;
+    ptrDy += dy;
+  };
+  const scroll = (dx: number, dy: number) => {
+    scrollDx += dx;
+    scrollDy += dy;
+  };
+  const click = (b: "l" | "r" | "m") => send({ t: "click", b });
+  const dragButton = (on: boolean) => send({ t: "drag", on: on ? 1 : 0 });
+
+  /** Run a row of Omarchy's menu on the laptop. */
+  const menuRun = (id: string) => {
+    const item = menuItem(id);
+    if (!item) return;
+    send({ t: "menu", id });
+    say(item.kind === "action" ? item.label : `${item.label} — on the laptop`);
   };
 
-  // ---- card + flyouts --------------------------------------------------------------
-  const openCard = (mode: Card["mode"], row: 0 | 1 | null = null, refX = 0) => {
-    setCard({ mode, row, refX, refLevel: row === 0 ? bri() : row === 1 ? vol() : 0, until: 0 });
-    setCardT(0);
+  // ---- popups --------------------------------------------------------------------
+  const openPopup = (a: string, x: number, y: number) => {
+    setPopup({ a, place: placePopup(x, y, 3), floating: isFloating(a), hot: null });
+    setPopupT(0);
   };
-  const closeCard = () => setCard(null);
-  /** Release a held card: linger, then close on its own. */
-  const cardReleased = () => {
-    const c = card();
+  const popupHover = (hot: number | null) => {
+    const p = popup();
+    if (p && p.hot !== hot) setPopup({ ...p, hot });
+  };
+  const closePopup = () => setPopup(null);
+  /** Rows: float / tile, full screen, close. */
+  const popupRun = (row: number) => {
+    const p = popup();
+    if (!p) return;
+    closePopup();
+    if (row === 0) floatWindow(p.a);
+    else if (row === 1) fullWindow(p.a);
+    else if (row === 2) closeWindow(p.a);
+  };
+
+  const openCc = (ccMode: Cc["mode"], row: 0 | 1 | null = null, refX = 0) => {
+    setCc({ mode: ccMode, row, refX, refLevel: row === 0 ? bri() : row === 1 ? vol() : 0, until: 0 });
+    setCcT(0);
+  };
+  const closeCc = () => setCc(null);
+  /** A finger sliding over the card: the slider row under it is adjusted
+   *  relatively from where the finger entered the row. */
+  const ccFollow = (x: number, y: number) => {
+    const c = cc();
     if (!c) return;
-    if (c.mode === "hold") setCard({ ...c, row: null, until: frameCount + CARD_LINGER_FRAMES });
-    else setCard({ ...c, row: null });
-  };
-
-  const openFlyout = (fly: Flyout) => {
-    setFlyout(fly);
-    setFlyT(0);
-    setFlyT2(0);
-  };
-  const closeFlyout = () => setFlyout(null);
-
-  /** Menu cascade: move the finger. Column two follows the hot route and
-   *  restarts its entrance when the route changes. */
-  const menuHover = (hot: number | null, leaf: number | null) => {
-    const f = flyout();
-    if (!f || f.kind !== "menu") return;
-    let open = f.open;
-    if (hot !== null && hot !== f.open) {
-      open = hot;
-      setFlyT2(0);
-    }
-    if (hot !== f.hot || leaf !== f.leaf || open !== f.open) setFlyout({ kind: "menu", hot, leaf, open });
-  };
-
-  /** Menu cascade: release. A leaf runs; a route opens on the desktop. */
-  const menuRelease = () => {
-    const f = flyout();
-    if (!f || f.kind !== "menu") return;
-    closeFlyout();
-    if (f.leaf !== null && f.open !== null) {
-      const id = MENU_ROUTES[f.open]?.leaves[f.leaf];
-      if (id) act(id);
+    const row = ccRowAt(y);
+    if (c.row !== row) {
+      setCc({ ...c, row, refX: x, refLevel: row === 0 ? bri() : row === 1 ? vol() : 0 });
       return;
     }
-    if (f.hot !== null) {
-      const route = MENU_ROUTES[f.hot];
-      if (route) act(route.id);
+    if (row === null) return;
+    setLevel(row === 0 ? "bri" : "vol", clamp01(c.refLevel + trackDelta(x - c.refX)));
+  };
+  /** Release a held card: send the final level, linger, then close. */
+  const ccReleased = () => {
+    const c = cc();
+    if (!c) return;
+    if (c.row !== null) setLevel(c.row === 0 ? "bri" : "vol", c.row === 0 ? bri() : vol(), true);
+    if (c.mode === "hold") setCc({ ...c, row: null, until: frameCount + CC_LINGER_FRAMES });
+    else setCc({ ...c, row: null });
+  };
+  /** Sticky mode: a drag begins on a track. */
+  const ccGrabTrack = (row: 0 | 1, x: number) => {
+    const c = cc();
+    if (c) setCc({ ...c, row, refX: x, refLevel: row === 0 ? bri() : vol() });
+  };
+
+  const openSheet = () => {
+    setSheet({ at: MENU_ROOT, trail: [], hot: null });
+    setSheetT(0);
+    setSheetListT(1);
+    sheetScroller.scrollTo(0, { immediate: true });
+  };
+  const closeSheet = () => setSheet(null);
+  const sheetGo = (at: string, trail: string[]) => {
+    setSheet({ at, trail, hot: null });
+    setSheetListT(0);
+    sheetScroller.stop();
+    sheetScroller.scrollTo(0, { immediate: true });
+  };
+  const sheetPush = (id: string) => {
+    const s = sheet();
+    if (s) sheetGo(id, [...s.trail, s.at]);
+  };
+  const sheetBack = () => {
+    const s = sheet();
+    if (!s) return;
+    if (s.trail.length === 0) {
+      closeSheet();
+      return;
     }
+    const trail = s.trail.slice(0, -1);
+    sheetGo(s.trail[s.trail.length - 1] ?? menuParent(s.at), trail);
+  };
+  const sheetHover = (hot: number | null) => {
+    const s = sheet();
+    if (s && s.hot !== hot) setSheet({ ...s, hot });
+  };
+  /** A tapped row: a submenu opens here, anything else runs on the laptop
+   *  and the sheet goes away. */
+  const sheetTap = (i: number) => {
+    const item = sheetRows()[i];
+    if (!item) return;
+    if (item.kind === "menu") {
+      sheetPush(item.id);
+      return;
+    }
+    closeSheet();
+    menuRun(item.id);
   };
 
+  const openKeyFly = (fly: KeyFly) => {
+    setKeyFly(fly);
+    setFlyT(0);
+  };
+  const closeKeyFly = () => setKeyFly(null);
   const keyHover = (hot: number | null) => {
-    const f = flyout();
-    if (!f || f.kind !== "keyvar" || f.hot === hot) return;
-    setFlyout({ ...f, hot });
+    const f = keyFly();
+    if (f && f.hot !== hot) setKeyFly({ ...f, hot });
   };
-
-  /** Key variants: release. Returns the chosen variant, or null for none. */
+  /** Release: the chosen variant, or null for none. */
   const keyRelease = (): KeyVariant | null => {
-    const f = flyout();
-    if (!f || f.kind !== "keyvar") return null;
-    closeFlyout();
+    const f = keyFly();
+    if (!f) return null;
+    closeKeyFly();
     return f.hot !== null ? (f.variants[f.hot] ?? null) : null;
   };
 
@@ -526,7 +732,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
         commit(line);
         break;
       case "levels":
-        if (frameCount >= levelEchoHoldUntil && card()?.row == null) {
+        if (frameCount >= levelEchoHoldUntil && cc()?.row == null) {
           setVol(clamp01(line.vol));
           setMute(line.mute === 1);
           setBri(clamp01(line.bri));
@@ -540,9 +746,33 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
         setThemeName(line.name);
         if (Array.isArray(line.list)) setThemeList(line.list.filter((v): v is string => typeof v === "string"));
         break;
+      case "cc":
+        applyCc(line);
+        break;
+      case "menu":
+        setMenuHidden(new Set(Array.isArray(line.hide) ? line.hide.filter((v): v is string => typeof v === "string") : []));
+        setMenuChecked(new Set(Array.isArray(line.check) ? line.check.filter((v): v is string => typeof v === "string") : []));
+        break;
       case "toast":
         say(line.text);
         break;
+    }
+  };
+  const applyCc = (line: HostCc) => {
+    if (line.wifi && typeof line.wifi === "object") {
+      setWifi({
+        on: line.wifi.on === 1,
+        ssid: typeof line.wifi.ssid === "string" ? line.wifi.ssid : "",
+        sig: typeof line.wifi.sig === "number" ? line.wifi.sig : 0,
+      });
+    }
+    if (line.media && typeof line.media === "object") {
+      const st = line.media.st;
+      setMedia({
+        st: st === "playing" || st === "paused" ? st : "none",
+        title: typeof line.media.title === "string" ? line.media.title : "",
+        artist: typeof line.media.artist === "string" ? line.media.artist : "",
+      });
     }
   };
 
@@ -574,6 +804,16 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
       send({ t: rail, v: Math.round(v * 100) / 100 });
       levelSendAt = frameCount + LEVEL_SEND_EVERY;
     }
+    if (ptrDx !== 0 || ptrDy !== 0) {
+      send({ t: "ptr", dx: Math.round(ptrDx * 10) / 10, dy: Math.round(ptrDy * 10) / 10 });
+      ptrDx = 0;
+      ptrDy = 0;
+    }
+    if (scrollDx !== 0 || scrollDy !== 0) {
+      send({ t: "scroll", dx: Math.round(scrollDx), dy: Math.round(scrollDy) });
+      scrollDx = 0;
+      scrollDy = 0;
+    }
 
     for (const slot of slots) {
       if (slot.a === null) continue;
@@ -598,53 +838,72 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
       }
     }
 
-    const hold = closing();
-    if (hold) {
-      const progress = Math.min(1, hold.progress + 1 / (60 * CLOSE_HOLD_SECONDS));
-      setClosing({ a: hold.a, progress });
-      if (progress >= 1) {
-        closeWindow(hold.a);
-        setClosing(null);
+    if (!ballDragging()) {
+      const b = ball();
+      const nx = approach(ballCur.x, b.x);
+      const ny = approach(ballCur.y, b.y);
+      if (nx !== ballCur.x || ny !== ballCur.y) {
+        ballCur.x = nx;
+        ballCur.y = ny;
+        paintBall();
+        moved = true;
       }
+    }
+
+    if (popup() && popupT() < 1) {
+      setPopupT(easeProgress(popupT()));
+      moved = true;
+    }
+    if (keyFly() && flyT() < 1) {
+      setFlyT(easeProgress(flyT()));
+      moved = true;
+    }
+    const c = cc();
+    if (c) {
+      if (ccT() < 1) {
+        setCcT(easeProgress(ccT()));
+        moved = true;
+      }
+      if (c.mode === "hold" && c.row === null && c.until > 0 && frameCount >= c.until) setCc(null);
+    }
+    if (sheet()) {
+      if (sheetT() < 1) {
+        setSheetT(easeProgress(sheetT()));
+        moved = true;
+      }
+      if (sheetListT() < 1) {
+        setSheetListT(easeProgress(sheetListT()));
+        moved = true;
+      }
+      sheetScroller.step();
+    }
+
+    // Press depth: a quick attack while held, a soft release after.
+    const target = pressHeld ? 1 : 0;
+    const depth = pressT();
+    if (depth !== target) {
+      const next = target === 1 ? Math.min(1, depth + (1 - depth) * 0.55 + 0.02) : depth * 0.72;
+      if (next < 0.02 && target === 0) {
+        setPressT(0);
+        setPressed(null);
+      } else setPressT(next);
       moved = true;
     }
 
-    if (flyout()) {
-      if (flyT() < 1) {
-        setFlyT(easeProgress(flyT()));
-        moved = true;
-      }
-      if (flyT2() < 1) {
-        setFlyT2(easeProgress(flyT2()));
-        moved = true;
-      }
-    }
-    const c = card();
-    if (c) {
-      if (cardT() < 1) {
-        setCardT(easeProgress(cardT()));
-        moved = true;
-      }
-      if (c.mode === "hold" && c.row === null && c.until > 0 && frameCount >= c.until) setCard(null);
-    }
-
-    if (pressLinger > 0) {
-      pressLinger -= 1;
-      if (pressLinger === 0) setPressed(null);
-    }
     if (toast() !== "" && frameCount >= toastUntil) setToast("");
     if (moved) setFrame(frameCount);
   });
 
   // ---- press feedback ----------------------------------------------------------------------
   const pressDown = (id: string | null) => {
-    pressLinger = 0;
+    pressHeld = id !== null;
     setPressed(id);
+    if (id === null) setPressT(0);
   };
   const pressRelease = () => {
-    // Linger a few frames so a tap that lands and lifts inside one frame
-    // still shows.
-    if (pressed() !== null) pressLinger = 5;
+    // The depth eases back to zero and clears the target when it gets there,
+    // so a tap that lands and lifts inside one frame still shows.
+    pressHeld = false;
   };
 
   /** Ref for a tile slot's node: binds it and paints the current geometry. */
@@ -662,6 +921,7 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     state,
     tabs,
     layout,
+    fit,
     focusTitle,
     focusClass,
     vol,
@@ -670,37 +930,61 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     themeName,
     themeList,
     colors,
+    wifi,
+    media,
+    menuHidden,
+    menuChecked,
     slots,
     tilesForHit,
     windowAt: (x: number, y: number) => windowAt(x, y, tilesForHit()),
-    pad,
-    setPad,
-    kb,
-    setKb,
+    isFloating,
+    mode,
+    setMode,
     kbLayer,
     setKbLayer,
     kbMods,
     setKbMods,
     pressed,
+    pressT,
     pressDown,
     pressRelease,
     drag,
     setDrag,
-    closing,
-    setClosing,
-    card,
-    setCard,
-    openCard,
-    closeCard,
-    cardReleased,
-    cardT,
-    flyout,
-    openFlyout,
-    closeFlyout,
+    ball,
+    ballDragging,
+    bindBall,
+    ballGrab,
+    ballDragTo,
+    ballRelease,
+    ballSize: BALL,
+    popup,
+    popupT,
+    openPopup,
+    popupHover,
+    popupRun,
+    closePopup,
+    cc,
+    ccT,
+    openCc,
+    closeCc,
+    ccFollow,
+    ccReleased,
+    ccGrabTrack,
+    sheet,
+    sheetT,
+    sheetListT,
+    sheetRows,
+    sheetScroller,
+    openSheet,
+    closeSheet,
+    sheetPush,
+    sheetBack,
+    sheetHover,
+    sheetTap,
+    keyFly,
     flyT,
-    flyT2,
-    menuHover,
-    menuRelease,
+    openKeyFly,
+    closeKeyFly,
     keyHover,
     keyRelease,
     toast,
@@ -713,12 +997,22 @@ export function createRemoteStore(svc: Svc | null = connectSvc()) {
     closeWindow,
     swapWindows,
     moveWindow,
+    floatWindow,
+    fullWindow,
+    placeBegin,
+    placeTo,
+    placeCancel,
     setLevel,
     toggleMute,
-    media,
+    mediaOp,
+    wifiToggle,
     typeText,
     typeKey,
-    chooseTheme,
+    pointer,
+    scroll,
+    click,
+    dragButton,
+    menuRun,
     applyLine,
     send,
   };

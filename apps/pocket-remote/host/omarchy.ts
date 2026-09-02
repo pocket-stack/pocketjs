@@ -1,17 +1,20 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/host/omarchy.ts — the Omarchy side of the daemon: run
 // one whitelisted action, read and set the audio and display levels, read
 // the theme palette, type text. Everything here shells out to the same
 // commands Omarchy binds to its keys, so the OSD, the sink resolution and
 // the theme machinery are Omarchy's own.
 
-import { execFile, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { ActionDef } from "../actions.ts";
-import type { ThemeColors } from "../protocol.ts";
+import type { HostCc, ThemeColors } from "../protocol.ts";
 import { hyprDispatch } from "./hypr.ts";
+import { type MenuEntry, normalizeMenu, parseMenuJsonc } from "./menu-source.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -268,4 +271,262 @@ export function pressKey(key: string, log: Log, mods: readonly string[] = []): b
   if (!args) return false;
   runDetached(["wtype", ...args], log);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// network (the control centre's Wi-Fi tile)
+// ---------------------------------------------------------------------------
+
+/** Parse `omarchy-network-status`: `type\tssid\tsignal\tfreq`. */
+export function parseNetworkStatus(text: string): { type: string; ssid: string; sig: number } {
+  const [type = "", ssid = "", signal = ""] = text.trim().split("\n")[0]?.split("\t") ?? [];
+  const sig = Number(signal);
+  return { type: type || "disconnected", ssid, sig: Number.isFinite(sig) ? Math.max(0, Math.min(100, Math.round(sig))) : 0 };
+}
+
+/** Parse `nmcli -t radio wifi`: enabled / disabled. */
+export function parseRadio(text: string): boolean {
+  return /enabled/i.test(text);
+}
+
+export async function readWifi(): Promise<HostCc["wifi"]> {
+  const [radio, status] = await Promise.all([
+    capture("nmcli", ["-t", "radio", "wifi"]).catch(() => ""),
+    capture("omarchy-network-status", []).catch(() => ""),
+  ]);
+  const net = parseNetworkStatus(status);
+  const on = parseRadio(radio);
+  return {
+    on: on ? 1 : 0,
+    ssid: on && net.type === "wifi" ? net.ssid : net.type === "ethernet" ? "ethernet" : "",
+    sig: net.type === "wifi" ? net.sig : 0,
+  };
+}
+
+export function setWifi(on: boolean, log: Log): void {
+  runDetached(["nmcli", "radio", "wifi", on ? "on" : "off"], log);
+}
+
+// ---------------------------------------------------------------------------
+// now playing (MPRIS over the session bus, through busctl)
+// ---------------------------------------------------------------------------
+
+/** MPRIS bus names out of `busctl --user --json=short list`. */
+export function parseMprisNames(json: string): string[] {
+  try {
+    const rows = JSON.parse(json) as { name?: unknown }[];
+    return rows
+      .map((row) => (typeof row.name === "string" ? row.name : ""))
+      .filter((name) => name.startsWith("org.mpris.MediaPlayer2."));
+  } catch {
+    return [];
+  }
+}
+
+/** `busctl --json=short` encodes a variant as `{ type, data }`. */
+function variantData(value: unknown): unknown {
+  return value && typeof value === "object" && "data" in (value as Record<string, unknown>)
+    ? (value as { data: unknown }).data
+    : value;
+}
+
+/** Playback status and track out of `GetAll org.mpris.MediaPlayer2.Player`. */
+export function parseMprisPlayer(json: string): HostCc["media"] | null {
+  try {
+    const parsed = JSON.parse(json) as { data?: unknown[] };
+    const props = variantData(parsed.data?.[0]) as Record<string, unknown> | undefined;
+    if (!props || typeof props !== "object") return null;
+    const status = String(variantData(props.PlaybackStatus) ?? "");
+    const metadata = (variantData(props.Metadata) ?? {}) as Record<string, unknown>;
+    const title = variantData(metadata["xesam:title"]);
+    const artist = variantData(metadata["xesam:artist"]);
+    return {
+      st: status === "Playing" ? "playing" : status === "Paused" ? "paused" : "none",
+      title: typeof title === "string" ? title.slice(0, 60) : "",
+      artist: Array.isArray(artist) ? artist.filter((a): a is string => typeof a === "string").join(", ").slice(0, 60) : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+const NOTHING_PLAYING: HostCc["media"] = { st: "none", title: "", artist: "" };
+
+/** The playing player, else the first paused one, else nothing. */
+export async function readMedia(): Promise<HostCc["media"]> {
+  const names = parseMprisNames(await capture("busctl", ["--user", "--json=short", "list"]).catch(() => "[]"));
+  let paused: HostCc["media"] | null = null;
+  for (const name of names) {
+    const player = parseMprisPlayer(
+      await capture("busctl", [
+        "--user", "--json=short", "call", name, "/org/mpris/MediaPlayer2",
+        "org.freedesktop.DBus.Properties", "GetAll", "s", "org.mpris.MediaPlayer2.Player",
+      ]).catch(() => ""),
+    );
+    if (!player) continue;
+    if (player.st === "playing") return player;
+    if (player.st === "paused" && !paused) paused = player;
+  }
+  return paused ?? NOTHING_PLAYING;
+}
+
+// ---------------------------------------------------------------------------
+// Omarchy's menu
+// ---------------------------------------------------------------------------
+
+const MENU_ID = /^[a-z0-9][a-z0-9._-]*$/i;
+
+/** The menu as this machine defines it: Omarchy's default file, then the
+ *  user's extension. */
+export function loadMenu(env: NodeJS.ProcessEnv = process.env): MenuEntry[] {
+  const layers = [
+    join(env.OMARCHY_PATH ?? "/usr/share/omarchy", "default/omarchy/omarchy-menu.jsonc"),
+    join(homedir(), ".config/omarchy/extensions/omarchy-menu.jsonc"),
+  ]
+    .filter((path) => existsSync(path))
+    .map((path) => parseMenuJsonc(readFileSync(path, "utf8")));
+  return normalizeMenu(layers);
+}
+
+/** Run one row the way the shell runs it: an action's command under bash,
+ *  a provider or link summoned on the desktop. False for an unknown id. */
+export function runMenuEntry(entries: readonly MenuEntry[], id: string, log: Log): boolean {
+  if (!MENU_ID.test(id)) return false;
+  const entry = entries.find((candidate) => candidate.id === id);
+  if (!entry) return false;
+  if (entry.kind === "action" && entry.action) {
+    runDetached(["bash", "-lc", entry.action], log);
+    return true;
+  }
+  runDetached(["omarchy-menu", "summon", entry.kind === "link" && entry.target ? entry.target : entry.id], log);
+  return true;
+}
+
+/**
+ * Evaluate every `when` and `checked` in one bash run, the way the shell
+ * does at open time. Returns the rows hidden by a failing `when` and the
+ * rows whose `checked` holds.
+ */
+export async function evaluateMenuConditions(entries: readonly MenuEntry[]): Promise<{ hide: string[]; check: string[] }> {
+  const lines: string[] = [];
+  for (const entry of entries) {
+    if (!MENU_ID.test(entry.id)) continue;
+    if (entry.when) lines.push(`if ( ${entry.when} ) >/dev/null 2>&1; then :; else printf 'w %s\\n' '${entry.id}'; fi`);
+    if (entry.checked) lines.push(`if ( ${entry.checked} ) >/dev/null 2>&1; then printf 'c %s\\n' '${entry.id}'; fi`);
+  }
+  if (lines.length === 0) return { hide: [], check: [] };
+  const { stdout } = await execFileAsync("bash", ["-lc", lines.join("\n")], { timeout: 30_000, maxBuffer: 1 << 20 });
+  const hide: string[] = [];
+  const check: string[] = [];
+  for (const line of stdout.split("\n")) {
+    const [kind, id] = line.split(" ");
+    if (!id || !MENU_ID.test(id)) continue;
+    if (kind === "w") hide.push(id);
+    else if (kind === "c") check.push(id);
+  }
+  return { hide: hide.sort(), check: check.sort() };
+}
+
+// ---------------------------------------------------------------------------
+// the pointer (host/pointer/pocket-pointer.c)
+// ---------------------------------------------------------------------------
+
+const BUTTON_CODES = { l: 272, r: 273, m: 274 } as const;
+
+/** One long-lived virtual pointer, fed one command per line. Started on
+ *  first use, restarted after it dies, silent about it beyond the log. */
+export class Pointer {
+  private child: ChildProcess | null = null;
+  private ready = false;
+  private queue: string[] = [];
+  private failedAt = 0;
+  private scrolling = false;
+  private scrollEnd: ReturnType<typeof setTimeout> | null = null;
+  private readonly binary: string;
+  private readonly log: Log;
+
+  // No parameter properties: Node runs this file with type stripping, which
+  // erases annotations but cannot rewrite constructor(private x) syntax.
+  constructor(binary?: string, log?: Log) {
+    this.binary = binary ?? join(dirname(fileURLToPath(import.meta.url)), "pointer/pocket-pointer");
+    this.log = log ?? (() => {});
+  }
+
+  available(): boolean {
+    return existsSync(this.binary);
+  }
+
+  private start(): void {
+    if (this.child || Date.now() < this.failedAt) return;
+    if (!this.available()) {
+      if (!this.failedAt) this.log(`pointer: ${this.binary} is missing — redeploy with tools/pocket-remote.ts deploy-host`);
+      this.failedAt = Date.now() + 30_000;
+      return;
+    }
+    const child = spawn(this.binary, [], { stdio: ["pipe", "pipe", "pipe"] });
+    this.child = child;
+    child.stdout?.on("data", (chunk: Buffer) => {
+      if (chunk.toString().includes("ready") && !this.ready) {
+        this.ready = true;
+        this.log("pointer: virtual pointer ready");
+        for (const line of this.queue.splice(0)) child.stdin?.write(line);
+      }
+    });
+    child.stderr?.on("data", (chunk: Buffer) => this.log(`pointer: ${chunk.toString().trim()}`));
+    const gone = () => {
+      if (this.child === child) {
+        this.child = null;
+        this.ready = false;
+        this.failedAt = Date.now() + 2000;
+      }
+    };
+    child.on("exit", (code) => {
+      if (code !== 0) this.log(`pointer: exited ${code}`);
+      gone();
+    });
+    child.on("error", (error) => {
+      this.log(`pointer: ${error.message}`);
+      gone();
+    });
+  }
+
+  private write(line: string): void {
+    this.start();
+    if (this.child && this.ready) this.child.stdin?.write(line);
+    else if (this.queue.length < 64) this.queue.push(line);
+  }
+
+  move(dx: number, dy: number): void {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    this.write(`m ${dx.toFixed(2)} ${dy.toFixed(2)}\n`);
+  }
+
+  button(b: "l" | "r" | "m", down: boolean): void {
+    this.write(`b ${BUTTON_CODES[b]} ${down ? 1 : 0}\n`);
+  }
+
+  click(b: "l" | "r" | "m"): void {
+    this.button(b, true);
+    this.button(b, false);
+  }
+
+  /** Finger scrolling: a stream of deltas, ended a moment after the last. */
+  scroll(dx: number, dy: number): void {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    this.scrolling = true;
+    this.write(`s ${dy.toFixed(2)} ${dx.toFixed(2)}\n`);
+    if (this.scrollEnd) clearTimeout(this.scrollEnd);
+    this.scrollEnd = setTimeout(() => {
+      this.scrollEnd = null;
+      if (this.scrolling) {
+        this.scrolling = false;
+        this.write("e\n");
+      }
+    }, 120);
+  }
+
+  stop(): void {
+    this.child?.kill();
+    this.child = null;
+  }
 }

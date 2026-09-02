@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/theme.ts — the remote wears the desktop's theme. Omarchy
 // publishes its palette as colors.toml; the daemon forwards the keys the
 // remote uses (protocol ThemeColors) whenever the theme changes, and every
@@ -37,6 +38,8 @@ export type Role =
   | "surfaceDark" //   bgColor = bgDark
   | "surfaceMuted" //  bgColor = muted
   | "surfaceMutedDim" // bgColor = muted at 50%
+  | "surfaceRaised" //  bgColor = muted at 25% (a popup's body over the surface)
+  | "surfaceVeil" //    bgColor = bgDark at 70% (behind a sheet)
   | "accentFill" //    bgColor = accent
   | "accentTint" //    bgColor = accent at 25%
   | "dangerFill" //    bgColor = red
@@ -46,6 +49,10 @@ export type Role =
   | "textAccent" //    textColor = accent
   | "textOnAccent" //  textColor = bgDark
   | "textDanger" //    textColor = red
+  | "textOk" //        textColor = green
+  | "textWarn" //      textColor = yellow
+  | "okFillDot" //     bgColor = green (a status dot)
+  | "warnFill" //      bgColor = yellow
   | "fgFill" //        bgColor = fg (icon strokes)
   | "fgDimFill" //     bgColor = fgDim
   | "borderMuted" //   borderColor = muted
@@ -65,6 +72,10 @@ function paint(role: Role, c: ThemeColors): [Prop, string] {
       return ["bgColor", c.muted];
     case "surfaceMutedDim":
       return ["bgColor", c.muted + "80"];
+    case "surfaceRaised":
+      return ["bgColor", c.muted + "40"];
+    case "surfaceVeil":
+      return ["bgColor", c.bgDark + "b3"];
     case "accentFill":
       return ["bgColor", c.accent];
     case "accentTint":
@@ -83,6 +94,14 @@ function paint(role: Role, c: ThemeColors): [Prop, string] {
       return ["textColor", c.bgDark];
     case "textDanger":
       return ["textColor", c.red];
+    case "textOk":
+      return ["textColor", c.green];
+    case "textWarn":
+      return ["textColor", c.yellow];
+    case "okFillDot":
+      return ["bgColor", c.green];
+    case "warnFill":
+      return ["bgColor", c.yellow];
     case "fgFill":
       return ["bgColor", c.fg];
     case "fgDimFill":

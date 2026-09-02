@@ -20,6 +20,8 @@ import { connect } from "node:net";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { normalizeMenu, parseMenuJsonc, type MenuEntry } from "../apps/pocket-remote/host/menu-source.ts";
 import { REMOTE_APP, REMOTE_PROTO, type ClientLine, type HostLine, parseLines } from "../apps/pocket-remote/protocol.ts";
 import {
   encodeBeacon,
@@ -36,7 +38,18 @@ import {
 const REPOSITORY = fileURLToPath(new URL("..", import.meta.url));
 const APP_DIR = join(REPOSITORY, "apps/pocket-remote");
 /** Files the daemon needs on the Omarchy machine (no repository there). */
-const HOST_FILES = ["protocol.ts", "actions.ts", "host/wire.ts", "host/hypr.ts", "host/omarchy.ts", "host/serve.ts"];
+const HOST_FILES = [
+  "LICENSE",
+  "protocol.ts",
+  "actions.ts",
+  "host/wire.ts",
+  "host/hypr.ts",
+  "host/omarchy.ts",
+  "host/menu-source.ts",
+  "host/serve.ts",
+  "host/pointer/pocket-pointer.c",
+  "host/pointer/wlr-virtual-pointer-unstable-v1.xml",
+];
 const REMOTE_DIR = ".local/share/pocket-remote";
 const UNIT = "pocket-remote.service";
 
@@ -61,12 +74,21 @@ async function deployHost(host: string): Promise<void> {
   });
   if (tar.exitCode !== 0) throw new Error(tar.stderr.toString());
   const archive = Buffer.from(tar.stdout);
+  // The pointer helper is built on the machine: wayland-scanner turns the
+  // vendored protocol XML into a header and a stub, cc links them against
+  // libwayland-client. Both ship with Omarchy (base-devel, wayland).
+  const buildPointer =
+    `cd ~/${REMOTE_DIR}/host/pointer && ` +
+    "wayland-scanner client-header wlr-virtual-pointer-unstable-v1.xml wlr-virtual-pointer-unstable-v1-client-protocol.h && " +
+    "wayland-scanner private-code wlr-virtual-pointer-unstable-v1.xml wlr-virtual-pointer-unstable-v1-protocol.c && " +
+    "cc -O2 -o pocket-pointer pocket-pointer.c wlr-virtual-pointer-unstable-v1-protocol.c $(pkg-config --cflags --libs wayland-client) && cd ~";
   const install =
     `set -eu; mkdir -p ~/${REMOTE_DIR} ~/.config/systemd/user; ` +
     `tar -xf - -C ~/${REMOTE_DIR}; ` +
     `cp ~/${REMOTE_DIR}/host/${UNIT} ~/.config/systemd/user/${UNIT}; ` +
     `test -x ~/.local/share/mise/shims/node || { echo "node (mise) is missing on the host" >&2; exit 2; }; ` +
-    `systemctl --user daemon-reload; systemctl --user enable ${UNIT} >/dev/null 2>&1 || true; ` +
+    `if command -v wayland-scanner >/dev/null && command -v cc >/dev/null; then ${buildPointer}; else echo "no wayland-scanner/cc: the trackpad's pointer helper was not built" >&2; fi; ` +
+    `systemctl --user daemon-reload; systemctl --user enable ${UNIT} >/dev/null 2>&1 || true; systemctl --user reset-failed ${UNIT} >/dev/null 2>&1 || true; ` +
     `systemctl --user restart ${UNIT}; sleep 1; systemctl --user is-active ${UNIT}`;
   const result = Bun.spawnSync({ cmd: ["ssh", "-o", "BatchMode=yes", host, install], stdin: archive, stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new Error(`deploy failed (${result.exitCode}):\n${result.stderr.toString().trim()}`);
@@ -166,6 +188,229 @@ async function client(target: string, lines: string[], seconds: number): Promise
   });
 }
 
+// ---------------------------------------------------------------------------
+// menu: bake Omarchy's menu tree into the device
+// ---------------------------------------------------------------------------
+
+const MENU_DEFAULT_PATH = "/usr/share/omarchy/default/omarchy/omarchy-menu.jsonc";
+const MENU_OUT = join(APP_DIR, "menu.ts");
+
+/** Glyphs for rows whose icon lives in Omarchy's private logo font, which
+ *  the remote cannot carry: AI agents get the robot, the updater the update
+ *  arrows, anything else a dot. */
+const ROBOT = "\u{F06A9}";
+const UPDATE = "\u{F06B0}";
+const DOT = "\u{F0765}";
+
+function deviceIcon(entry: MenuEntry): string {
+  if (entry.iconFont === "omarchy") {
+    if (entry.id === "update.omarchy") return UPDATE;
+    if (entry.id.startsWith("setup.default.agent.") || entry.id.startsWith("install.ai.")) return ROBOT;
+    return DOT;
+  }
+  return entry.icon;
+}
+
+/**
+ * Read omarchy-menu.jsonc from an Omarchy machine (or a local copy) and write
+ * apps/pocket-remote/menu.ts: every row's id, parent, kind, icon, label and
+ * title in the shell's own order, plus whether it carries a `when` or a
+ * `checked` condition (the daemon evaluates those live). The device shows
+ * this table; the daemon runs actions from its own live parse by id, so a row
+ * the device names has to exist on the machine as well.
+ */
+function bakeMenu(source: string, omarchyVersion: string | undefined): void {
+  let text: string;
+  let version = omarchyVersion ?? "";
+  if (existsSync(source)) {
+    text = readFileSync(source, "utf8");
+  } else {
+    text = ssh(source, `cat ${MENU_DEFAULT_PATH}`);
+    if (!version) version = ssh(source, "omarchy-version").trim();
+  }
+  const entries = normalizeMenu([parseMenuJsonc(text)]);
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(text);
+  const digest = hasher.digest("hex").slice(0, 12);
+  const rows = entries.map((entry) => {
+    const fields = [
+      `id: ${JSON.stringify(entry.id)}`,
+      `parent: ${JSON.stringify(entry.parent)}`,
+      `kind: ${JSON.stringify(entry.kind)}`,
+      `icon: ${JSON.stringify(deviceIcon(entry))}`,
+      `label: ${JSON.stringify(entry.label)}`,
+    ];
+    if (entry.title) fields.push(`title: ${JSON.stringify(entry.title)}`);
+    if (entry.when) fields.push("when: true");
+    if (entry.checked) fields.push("checked: true");
+    return `  { ${fields.join(", ")} },`;
+  });
+  const out = `// SPDX-License-Identifier: GPL-3.0-or-later
+// apps/pocket-remote/menu.ts — GENERATED by \`bun tools/pocket-remote.ts menu\`
+// from Omarchy ${version || "?"}'s omarchy-menu.jsonc (sha256 ${digest}). Do not edit;
+// regenerate against the machine after an Omarchy update.
+//
+// The device's copy of Omarchy's menu tree: every row's id, parent, kind,
+// icon, label and title, in the shell's own order. Icons are the Nerd Font
+// glyphs the file spells (written literally so the build's codepoint scan
+// bakes them); rows whose icon lives in Omarchy's private logo font carry a
+// Material stand-in. \`when\` and \`checked\` mark rows the daemon evaluates
+// live — it sends the hidden and the checked ids, the table stays static.
+
+export type MenuKind = "action" | "menu" | "link" | "provider";
+
+export interface MenuItem {
+  id: string;
+  /** "root" for a top-level row. */
+  parent: string;
+  kind: MenuKind;
+  icon: string;
+  label: string;
+  /** Header when the submenu is open; defaults to label. */
+  title?: string;
+  /** Visibility depends on a condition the daemon reports. */
+  when?: true;
+  /** A tick depends on a condition the daemon reports. */
+  checked?: true;
+}
+
+export const MENU_OMARCHY_VERSION = ${JSON.stringify(version)};
+export const MENU_SOURCE_DIGEST = ${JSON.stringify(digest)};
+
+export const MENU: readonly MenuItem[] = [
+${rows.join("\n")}
+];
+`;
+  writeFileSync(MENU_OUT, out);
+  const kinds = new Map<string, number>();
+  for (const entry of entries) kinds.set(entry.kind, (kinds.get(entry.kind) ?? 0) + 1);
+  console.log(
+    `wrote ${MENU_OUT}: ${entries.length} rows from Omarchy ${version || "?"} (${[...kinds].map(([k, n]) => `${n} ${k}`).join(", ")})`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// shots: the screens, rendered in the headless sim
+// ---------------------------------------------------------------------------
+
+/**
+ * Boot the built bundle in the sim, feed it a desktop the way the daemon
+ * would, walk it through its states and write each as a PNG. What the README
+ * shows, and what a change is checked against by eye before it is flashed.
+ */
+async function shots(outDir: string): Promise<void> {
+  const { bootWorld } = await import("../hosts/sim/sim.ts");
+  const { encodePNG } = await import("../tests/png.ts");
+  const { STAGE, TAB_W, CC_BUTTON, MODE, MODE_HALF_W, SHEET_LIST, sheetRowRect, BALL_HOME } = await import("../apps/pocket-remote/layout.ts");
+  const { keyboardKeys } = await import("../apps/pocket-remote/keyboard-layout.ts");
+  type Store = import("../apps/pocket-remote/store.ts").RemoteStore;
+  const { mkdirSync } = await import("node:fs");
+  mkdirSync(outDir, { recursive: true });
+
+  const world = await bootWorld("pocket-remote-main", 60, undefined, undefined, { width: 480, height: 320 });
+  const store = (globalThis as { __pocketRemote?: Store }).__pocketRemote;
+  if (!store) throw new Error("the bundle did not publish its store");
+  const pack = (x: number, y: number, id = 0): number => (id << 18) | (y << 9) | x;
+  const frames = (n: number, touches: number[] = []) => {
+    for (let i = 0; i < n; i += 1) world.frame(0, undefined, touches);
+  };
+  const tap = (x: number, y: number) => {
+    frames(2, [pack(x, y)]);
+    frames(1);
+  };
+  const hold = (x: number, y: number, n = 30) => {
+    frames(n, [pack(x, y)]);
+  };
+  const shot = (name: string) => {
+    const pixels = world.render();
+    writeFileSync(join(outDir, `${name}.png`), encodePNG(Buffer.from(pixels), 480, 320));
+    console.log(`  ${name}.png`);
+  };
+
+  frames(1);
+  shot("connect");
+  store.applyLine({ t: "hello", proto: REMOTE_PROTO, name: "x1nano-omarchy", omarchy: "4.0.1-1", auth: "ok" });
+  store.applyLine({ t: "levels", vol: 0.55, bri: 0.7 });
+  store.applyLine({
+    t: "cc",
+    wifi: { on: 1, ssid: "Petite Auberge", sig: 54 },
+    media: { st: "playing", title: "Blue in Green", artist: "Miles Davis" },
+  });
+  store.applyLine({ t: "menu", hide: ["system.hibernate", "trigger.capture.screenrecord.stop"], check: ["setup.default.terminal.foot", "update.channel.stable"] });
+  store.applyLine({
+    t: "state",
+    mon: { w: 1440, h: 900 },
+    ws: [{ id: 1, n: 3 }, { id: 2, n: 1 }, { id: 3, n: 0 }],
+    active: 1,
+    focus: "0x1",
+    layout: "dwindle",
+    win: [
+      { a: "0x1", c: "foot", ti: "evan@x1nano-omarchy:~", ws: 1, x: 12, y: 38, w: 701, h: 850 },
+      { a: "0x2", c: "chromium", ti: "Omarchy Manual", ws: 1, x: 725, y: 38, w: 703, h: 420 },
+      { a: "0x3", c: "nautilus", ti: "Downloads", ws: 1, x: 725, y: 470, w: 703, h: 418 },
+      { a: "0x4", c: "mpv", ti: "Blue in Green", ws: 1, x: 900, y: 500, w: 420, h: 260, f: 1 },
+      { a: "0x5", c: "nvim", ti: "layout.ts", ws: 2, x: 12, y: 38, w: 1416, h: 850 },
+    ],
+  });
+  frames(40);
+  shot("stage");
+
+  // hold the floating tile: the popup
+  const fit = store.fit()!;
+  const px = Math.round(fit.ox + (900 + 210) * fit.s);
+  const py = Math.round(fit.oy + (500 + 130) * fit.s);
+  hold(px, py, 30);
+  frames(12, [pack(px, py)]);
+  shot("popup");
+  frames(1);
+  tap(px, STAGE.y + 8);
+  frames(10);
+
+  // the control centre, sticky
+  tap(CC_BUTTON.x + CC_BUTTON.w / 2, CC_BUTTON.y + CC_BUTTON.h / 2);
+  frames(20);
+  shot("control-centre");
+  tap(40, 300);
+  frames(10);
+
+  // the menu sheet: root, then Trigger
+  tap(BALL_HOME.x + 22, BALL_HOME.y + 22);
+  frames(20);
+  shot("menu-root");
+  const trigger = sheetRowRect(2);
+  tap(SHEET_LIST.x + trigger.x + 60, SHEET_LIST.y + trigger.y + 19);
+  frames(20);
+  shot("menu-trigger");
+  const toggle = sheetRowRect(7);
+  tap(SHEET_LIST.x + toggle.x + 60, SHEET_LIST.y + toggle.y + 19);
+  frames(20);
+  shot("menu-toggle");
+  tap(10, 300);
+  frames(10);
+
+  // the deck, with a key held
+  tap(MODE.x + MODE_HALF_W + 17, MODE.y + 11);
+  frames(15);
+  shot("deck");
+  const f = keyboardKeys("lower").find((k) => k.def.label === "f")!;
+  frames(4, [pack(f.x + f.w / 2, f.y + f.h / 2)]);
+  shot("deck-key");
+  frames(1);
+  frames(10);
+  hold(f.x + f.w / 2, f.y + f.h / 2, 30);
+  frames(12, [pack(f.x + f.w / 2, f.y + f.h / 2)]);
+  shot("deck-variants");
+  frames(1);
+
+  // back to the stage, then the empty workspace three
+  tap(MODE.x + 17, MODE.y + 11);
+  frames(10);
+  tap(6 + TAB_W * 2 + TAB_W / 2, 14);
+  frames(30);
+  shot("empty");
+  console.log(`wrote ${outDir}`);
+}
+
 function usage(): void {
   console.log(`Pocket Remote host tool
 
@@ -173,7 +418,9 @@ function usage(): void {
   bun tools/pocket-remote.ts logs <ssh host> [-n N]
   bun tools/pocket-remote.ts status <ssh host>
   bun tools/pocket-remote.ts relay <ssh host> [--name <beacon name>] [--local-port 8623]
-  bun tools/pocket-remote.ts client <host[:port]> [--for seconds] [-- <json line>...]`);
+  bun tools/pocket-remote.ts client <host[:port]> [--for seconds] [-- <json line>...]
+  bun tools/pocket-remote.ts menu <ssh host | omarchy-menu.jsonc> [--omarchy <version>]
+  bun tools/pocket-remote.ts shots <out dir>                     render the screens in the headless sim`);
 }
 
 async function main(args: string[]): Promise<void> {
@@ -202,6 +449,16 @@ async function main(args: string[]): Promise<void> {
         at >= 0 ? (args[at + 1] ?? hostname()) : `${target} via ${hostname().replace(/\.local$/, "")}`,
         portAt >= 0 ? Number(args[portAt + 1]) : RELAY_PORT,
       );
+      break;
+    }
+    case "shots":
+      if (!target) throw new Error("shots needs an output directory");
+      await shots(target);
+      break;
+    case "menu": {
+      if (!target) throw new Error("menu needs an ssh host or a path to omarchy-menu.jsonc");
+      const at = args.indexOf("--omarchy");
+      bakeMenu(target, at >= 0 ? args[at + 1] : undefined);
       break;
     }
     case "client": {

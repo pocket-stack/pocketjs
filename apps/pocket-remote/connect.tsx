@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/connect.tsx — what the remote shows before it has a
 // desktop to mirror: looking for the daemon's beacon, then waiting for the
 // laptop to approve this device (the daemon puts a dialog on the desktop),

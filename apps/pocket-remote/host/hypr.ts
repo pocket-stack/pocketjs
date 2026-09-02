@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // apps/pocket-remote/host/hypr.ts — Hyprland over its two Unix sockets:
 // requests (`j/clients`, `dispatch ...`) on .socket.sock, the event stream
 // on .socket2.sock. Plus the pure reduction from Hyprland's JSON to the
@@ -76,11 +77,11 @@ export function buildState(
 ): HostState {
   const monitor = monitors.find((m) => m.focused) ?? monitors[0];
   const scale = monitor && monitor.scale > 0 ? monitor.scale : 1;
-  const mon = monitor
-    ? { w: Math.round(monitor.width / scale), h: Math.round(monitor.height / scale) }
-    : { w: 1280, h: 800 };
   const monX = monitor?.x ?? 0;
   const monY = monitor?.y ?? 0;
+  const mon = monitor
+    ? { w: Math.round(monitor.width / scale), h: Math.round(monitor.height / scale), x: monX, y: monY }
+    : { w: 1280, h: 800, x: 0, y: 0 };
   const activeWs = monitor?.activeWorkspace.id ?? 1;
   const special = monitor?.specialWorkspace && monitor.specialWorkspace.id !== 0;
 

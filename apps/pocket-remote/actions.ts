@@ -1,23 +1,20 @@
-// apps/pocket-remote/actions.ts — the whole vocabulary the remote can ask the
-// laptop for, in one table read by BOTH ends: the device renders labels and
-// groups from it, the daemon runs exactly the command it names and nothing
-// else. The wire carries an action id, never a command string, so a device
-// on the LAN can only ever pick from this list.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// apps/pocket-remote/actions.ts — the fixed vocabulary the remote's own
+// controls ask the laptop for, in one table read by BOTH ends: the device
+// renders labels from it, the daemon runs exactly the command it names and
+// nothing else. The wire carries an action id, never a command string.
+//
+// Omarchy's menu is not in this table: the device carries the menu tree
+// (menu.ts) and names a row by id; the daemon runs that row from its own
+// parse of omarchy-menu.jsonc (host/menu-source.ts). This table is for the
+// controls the remote draws itself — the strip, the control centre, the
+// empty stage's launchers.
 //
 // Every command is the one Omarchy binds to the equivalent key
-// (/usr/share/omarchy/default/hypr/bindings/*.lua, Omarchy 4.0) or the one
-// its menu runs (omarchy-menu.jsonc), so the remote behaves exactly like the
-// keyboard would.
+// (/usr/share/omarchy/default/hypr/bindings/*.lua, Omarchy 4.0), so the
+// remote behaves exactly like the keyboard would.
 
-export type ActionGroup =
-  | "launch"
-  | "window"
-  | "workspace"
-  | "toggle"
-  | "capture"
-  | "style"
-  | "system"
-  | "media";
+export type ActionGroup = "launch" | "workspace" | "toggle" | "capture" | "media";
 
 export type ActionRun =
   /** argv, spawned directly (no shell). */
@@ -25,8 +22,7 @@ export type ActionRun =
   /** A Hyprland dispatcher as a Lua expression (Hyprland 0.5x's request
    *  socket takes `dispatch <lua>` and evaluates `hl.dispatch(<lua>)`; the
    *  old `dispatch workspace 1` grammar is gone). Constructors are the ones
-   *  Omarchy's own bindings use: hl.dsp.window.*, hl.dsp.focus(...),
-   *  hl.dsp.layout(...), hl.dsp.workspace.*, hl.dsp.group.*. */
+   *  Omarchy's own bindings use. */
   | { dispatch: string };
 
 export interface ActionDef {
@@ -34,163 +30,50 @@ export interface ActionDef {
   label: string;
   group: ActionGroup;
   run: ActionRun;
-  /** Destructive: the device requires a press-and-hold, not a tap. */
-  hold?: true;
 }
 
 export type ActionId =
   // launch
-  | "menu"
-  | "apps"
-  | "menuStyle"
-  | "menuCapture"
-  | "menuToggle"
-  | "menuSystem"
-  | "menuLearn"
   | "terminal"
   | "browser"
   | "files"
-  | "editor"
-  | "keybindings"
-  | "emoji"
-  | "clipboard"
-  // window
-  | "close"
-  | "fullscreen"
-  | "maximize"
-  | "float"
-  | "pseudo"
-  | "split"
-  | "pop"
-  | "group"
-  | "cycle"
-  | "focusL"
-  | "focusR"
-  | "focusU"
-  | "focusD"
-  | "swapL"
-  | "swapR"
-  | "swapU"
-  | "swapD"
-  | "widen"
-  | "narrow"
   // workspace
   | "wsPrev"
   | "wsNext"
-  | "wsBack"
-  | "scratchpad"
-  | "toScratchpad"
   | "layout"
   // toggle
   | "nightlight"
-  | "awake"
-  | "bar"
-  | "silence"
-  | "gaps"
-  | "transparency"
-  | "dismiss"
   // capture
   | "screenshot"
-  | "record"
-  | "recordStop"
-  | "ocr"
-  | "color"
-  | "qr"
-  // style
-  | "bgNext"
-  | "themePicker"
-  // system
-  | "lock"
-  | "screensaver"
-  | "suspend"
-  | "closeAll"
   // media
   | "play"
   | "next"
-  | "prev"
-  | "outputSwitch";
+  | "prev";
 
 const omarchy = (...argv: string[]): ActionRun => ({ exec: argv });
 const dispatch = (line: string): ActionRun => ({ dispatch: line });
 
 export const ACTIONS: readonly ActionDef[] = [
-  // -- launch (SUPER + ...) --------------------------------------------------
-  { id: "menu", label: "Menu", group: "launch", run: omarchy("omarchy-menu", "toggle") },
-  { id: "apps", label: "Apps", group: "launch", run: omarchy("omarchy-menu", "toggle", "apps") },
-  { id: "menuStyle", label: "Style menu", group: "launch", run: omarchy("omarchy-menu", "toggle", "style") },
-  { id: "menuCapture", label: "Capture menu", group: "launch", run: omarchy("omarchy-menu", "toggle", "capture") },
-  { id: "menuToggle", label: "Toggle menu", group: "launch", run: omarchy("omarchy-menu", "toggle", "toggle") },
-  { id: "menuSystem", label: "System menu", group: "launch", run: omarchy("omarchy-menu", "toggle", "system") },
-  { id: "menuLearn", label: "Learn menu", group: "launch", run: omarchy("omarchy-menu", "toggle", "learn") },
+  // -- launch (SUPER + Return / B / F) -----------------------------------------
   { id: "terminal", label: "Terminal", group: "launch", run: omarchy("omarchy-launch-terminal") },
   { id: "browser", label: "Browser", group: "launch", run: omarchy("omarchy-launch-browser") },
   { id: "files", label: "Files", group: "launch", run: omarchy("omarchy-launch-nautilus") },
-  { id: "editor", label: "Editor", group: "launch", run: omarchy("omarchy-launch-editor") },
-  { id: "keybindings", label: "Keys", group: "launch", run: omarchy("omarchy-menu-keybindings") },
-  { id: "emoji", label: "Emoji", group: "launch", run: omarchy("omarchy-shell", "shell", "toggle", "omarchy.emojis") },
-  { id: "clipboard", label: "Clipboard", group: "launch", run: omarchy("omarchy-menu-clipboard") },
-
-  // -- window ----------------------------------------------------------------
-  { id: "close", label: "Close", group: "window", run: dispatch("hl.dsp.window.close()"), hold: true },
-  { id: "fullscreen", label: "Full screen", group: "window", run: dispatch('hl.dsp.window.fullscreen({ mode = "fullscreen" })') },
-  { id: "maximize", label: "Full width", group: "window", run: dispatch('hl.dsp.window.fullscreen({ mode = "maximized" })') },
-  { id: "float", label: "Float", group: "window", run: dispatch('hl.dsp.window.float({ action = "toggle" })') },
-  { id: "pseudo", label: "Pseudo", group: "window", run: dispatch("hl.dsp.window.pseudo()") },
-  { id: "split", label: "Split", group: "window", run: dispatch('hl.dsp.layout("togglesplit")') },
-  { id: "pop", label: "Pop out", group: "window", run: omarchy("omarchy-hyprland-window-pop") },
-  { id: "group", label: "Group", group: "window", run: dispatch("hl.dsp.group.toggle()") },
-  { id: "cycle", label: "Next window", group: "window", run: dispatch("hl.dsp.window.cycle_next()") },
-  { id: "focusL", label: "Focus left", group: "window", run: dispatch('hl.dsp.focus({ direction = "l" })') },
-  { id: "focusR", label: "Focus right", group: "window", run: dispatch('hl.dsp.focus({ direction = "r" })') },
-  { id: "focusU", label: "Focus up", group: "window", run: dispatch('hl.dsp.focus({ direction = "u" })') },
-  { id: "focusD", label: "Focus down", group: "window", run: dispatch('hl.dsp.focus({ direction = "d" })') },
-  { id: "swapL", label: "Swap left", group: "window", run: dispatch('hl.dsp.window.swap({ direction = "l" })') },
-  { id: "swapR", label: "Swap right", group: "window", run: dispatch('hl.dsp.window.swap({ direction = "r" })') },
-  { id: "swapU", label: "Swap up", group: "window", run: dispatch('hl.dsp.window.swap({ direction = "u" })') },
-  { id: "swapD", label: "Swap down", group: "window", run: dispatch('hl.dsp.window.swap({ direction = "d" })') },
-  { id: "widen", label: "Wider", group: "window", run: dispatch("hl.dsp.window.resize({ x = 100, y = 0, relative = true })") },
-  { id: "narrow", label: "Narrower", group: "window", run: dispatch("hl.dsp.window.resize({ x = -100, y = 0, relative = true })") },
 
   // -- workspace -------------------------------------------------------------
   { id: "wsPrev", label: "Previous", group: "workspace", run: dispatch('hl.dsp.focus({ workspace = "e-1" })') },
   { id: "wsNext", label: "Next", group: "workspace", run: dispatch('hl.dsp.focus({ workspace = "e+1" })') },
-  { id: "wsBack", label: "Former", group: "workspace", run: dispatch('hl.dsp.focus({ workspace = "previous" })') },
-  { id: "scratchpad", label: "Scratchpad", group: "workspace", run: dispatch('hl.dsp.workspace.toggle_special("scratchpad")') },
-  { id: "toScratchpad", label: "To scratchpad", group: "workspace", run: dispatch('hl.dsp.window.move({ workspace = "special:scratchpad", follow = false })') },
   { id: "layout", label: "Layout", group: "workspace", run: omarchy("omarchy-hyprland-workspace-layout-toggle") },
 
   // -- toggle ----------------------------------------------------------------
   { id: "nightlight", label: "Nightlight", group: "toggle", run: omarchy("omarchy-toggle-nightlight") },
-  { id: "awake", label: "Stay awake", group: "toggle", run: omarchy("omarchy-toggle-idle") },
-  { id: "bar", label: "Menu bar", group: "toggle", run: omarchy("omarchy-toggle-bar") },
-  { id: "silence", label: "Silence", group: "toggle", run: omarchy("omarchy-toggle-notification-silencing") },
-  { id: "gaps", label: "Gaps", group: "toggle", run: omarchy("omarchy-hyprland-window-gaps-toggle") },
-  { id: "transparency", label: "Transparency", group: "toggle", run: omarchy("omarchy-hyprland-window-transparency-toggle") },
-  { id: "dismiss", label: "Dismiss alerts", group: "toggle", run: omarchy("omarchy-shell", "notifications", "dismissAll") },
 
   // -- capture ---------------------------------------------------------------
   { id: "screenshot", label: "Screenshot", group: "capture", run: omarchy("omarchy-capture-screenshot") },
-  { id: "record", label: "Record", group: "capture", run: omarchy("omarchy-capture-screenrecording") },
-  { id: "recordStop", label: "Stop record", group: "capture", run: omarchy("omarchy-capture-screenrecording", "--stop-recording") },
-  { id: "ocr", label: "Copy text", group: "capture", run: omarchy("omarchy-capture-text") },
-  { id: "color", label: "Pick colour", group: "capture", run: omarchy("hyprpicker", "-a") },
-  { id: "qr", label: "Read QR", group: "capture", run: omarchy("omarchy-capture-qr") },
-
-  // -- style -----------------------------------------------------------------
-  { id: "bgNext", label: "Next wallpaper", group: "style", run: omarchy("omarchy-theme-bg-next") },
-  { id: "themePicker", label: "Theme menu", group: "style", run: omarchy("omarchy-menu", "toggle", "theme") },
-
-  // -- system ----------------------------------------------------------------
-  { id: "lock", label: "Lock", group: "system", run: omarchy("omarchy-system-lock") },
-  { id: "screensaver", label: "Screensaver", group: "system", run: omarchy("omarchy-launch-screensaver", "force") },
-  { id: "suspend", label: "Suspend", group: "system", run: omarchy("systemctl", "suspend"), hold: true },
-  { id: "closeAll", label: "Close all", group: "system", run: omarchy("omarchy-hyprland-window-close-all"), hold: true },
 
   // -- media -----------------------------------------------------------------
   { id: "play", label: "Play / pause", group: "media", run: omarchy("omarchy-shell", "media", "playPause") },
   { id: "next", label: "Next track", group: "media", run: omarchy("omarchy-shell", "media", "next") },
   { id: "prev", label: "Previous track", group: "media", run: omarchy("omarchy-shell", "media", "previous") },
-  { id: "outputSwitch", label: "Audio output", group: "media", run: omarchy("omarchy-audio-output-switch") },
 ];
 
 const BY_ID = new Map<ActionId, ActionDef>(ACTIONS.map((action) => [action.id, action]));
@@ -203,66 +86,5 @@ export function actionsOf(group: ActionGroup): ActionDef[] {
   return ACTIONS.filter((action) => action.group === group);
 }
 
-/**
- * The Menu key's hold-and-slide flyout: Omarchy's root menu as routes
- * (bottom = nearest the finger), each with the leaves the remote can run
- * directly. Releasing on a route opens that route on the desktop; releasing
- * on a leaf runs it. Leaves are capped at six so the column fits the stage.
- */
-export interface MenuRoute {
-  id: ActionId;
-  label: string;
-  leaves: ActionId[];
-}
-
-export const MENU_ROUTES: readonly MenuRoute[] = [
-  { id: "apps", label: "Apps", leaves: ["terminal", "browser", "files", "editor", "emoji", "clipboard"] },
-  { id: "menuCapture", label: "Capture", leaves: ["screenshot", "record", "recordStop", "ocr", "color", "qr"] },
-  { id: "menuToggle", label: "Toggle", leaves: ["nightlight", "awake", "bar", "silence", "gaps", "transparency"] },
-  { id: "menuStyle", label: "Style", leaves: ["themePicker", "bgNext"] },
-  { id: "menuSystem", label: "System", leaves: ["lock", "screensaver", "dismiss"] },
-  { id: "menuLearn", label: "Learn", leaves: ["keybindings"] },
-];
-
-/** The dock: the things a remote is reached for, in reading order. Slots
- *  eight to ten are the levels card, the keyboard and the pad. */
-export const DOCK: readonly ActionId[] = [
-  "menu",
-  "terminal",
-  "browser",
-  "files",
-  "editor",
-  "fullscreen",
-  "float",
-  "screenshot",
-];
-
-/** Pad pages, in tab order, with the actions each shows. */
-export const PAD_PAGES: readonly { id: ActionGroup | "theme"; label: string; actions: ActionId[] }[] = [
-  {
-    id: "window",
-    label: "Window",
-    actions: ["fullscreen", "maximize", "float", "pseudo", "split", "pop", "group", "cycle", "widen", "narrow", "close"],
-  },
-  {
-    id: "workspace",
-    label: "Desk",
-    actions: ["wsPrev", "wsNext", "wsBack", "scratchpad", "toScratchpad", "layout", "apps", "keybindings", "emoji", "clipboard"],
-  },
-  {
-    id: "toggle",
-    label: "Toggle",
-    actions: ["nightlight", "awake", "bar", "silence", "gaps", "transparency", "dismiss", "outputSwitch"],
-  },
-  {
-    id: "capture",
-    label: "Capture",
-    actions: ["screenshot", "record", "recordStop", "ocr", "color", "qr"],
-  },
-  { id: "theme", label: "Theme", actions: ["bgNext", "themePicker"] },
-  {
-    id: "system",
-    label: "System",
-    actions: ["lock", "screensaver", "suspend", "closeAll"],
-  },
-];
+/** The empty stage's launch chips, in reading order. */
+export const LAUNCHERS: readonly ActionId[] = ["terminal", "browser", "files"];
