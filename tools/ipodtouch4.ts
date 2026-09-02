@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractHostBuildInputs } from "../framework/src/manifest/host-build-inputs.ts";
 import {
@@ -62,8 +62,16 @@ const ACTION_NAME = "clear_gesture";
  */
 export interface IPodTouch4App {
   readonly id: string;
-  /** Repository-relative pocket.json. */
+  /** pocket.json, relative to `root`. */
   readonly manifest: string;
+  /**
+   * The project the app's sources live in. Absent for an app inside this
+   * repository; set for an EXTERNAL one, whose descriptor is read from a
+   * file (see selectIPodTouch4App) and whose build runs with
+   * `--project-root` pointed here — the same out-of-tree shape the 3DS
+   * pipeline uses.
+   */
+  readonly root?: string;
   readonly bundleId: string;
   readonly bundleName: string;
   readonly executable: string;
@@ -81,6 +89,19 @@ export interface IPodTouch4App {
   readonly keepAwake: boolean;
 }
 
+/** The fields an external app's descriptor file must carry. */
+const EXTERNAL_FIELDS = [
+  "id",
+  "manifest",
+  "bundleId",
+  "bundleName",
+  "executable",
+  "title",
+  "scheme",
+  "receiptSlug",
+  "actionName",
+] as const;
+
 export const IPODTOUCH4_APPS: Readonly<Record<string, IPodTouch4App>> = {
   clear: {
     id: "clear",
@@ -95,33 +116,60 @@ export const IPODTOUCH4_APPS: Readonly<Record<string, IPodTouch4App>> = {
     svcWire: false,
     keepAwake: false,
   },
-  "pocket-remote": {
-    id: "pocket-remote",
-    manifest: "apps/pocket-remote/pocket.json",
-    bundleId: "dev.pocket-stack.remote",
-    bundleName: "PocketJSRemote.app",
-    executable: "PocketJSRemote",
-    title: "Pocket Remote",
-    scheme: "pocketjs-remote",
-    receiptSlug: "pocketjs-remote",
-    actionName: "remote_action",
-    svcWire: true,
-    keepAwake: true,
-  },
 };
 
-export function selectIPodTouch4App(name: string | undefined): IPodTouch4App {
+/**
+ * Read an app that lives in another project: a JSON descriptor beside its
+ * sources carrying the fields above (`manifest` relative to the descriptor).
+ * The guest then builds with `--project-root` set to the descriptor's own
+ * directory, so a product repository can own its app and its history while
+ * the toolchain, the host and the deployment transaction stay here.
+ */
+export function readExternalIPodTouch4App(descriptorPath: string): IPodTouch4App {
+  const file = resolvePath(descriptorPath);
+  const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  for (const field of EXTERNAL_FIELDS) {
+    if (typeof parsed[field] !== "string" || (parsed[field] as string).trim() === "") {
+      throw new Error(`pocket ipodtouch4: ${file} is missing a string ${field}`);
+    }
+  }
+  const root = dirname(file);
+  const manifest = parsed.manifest as string;
+  if (!existsSync(join(root, manifest))) {
+    throw new Error(`pocket ipodtouch4: ${file} names a manifest that is not there: ${manifest}`);
+  }
+  return {
+    id: parsed.id as string,
+    root,
+    manifest,
+    bundleId: parsed.bundleId as string,
+    bundleName: parsed.bundleName as string,
+    executable: parsed.executable as string,
+    title: parsed.title as string,
+    scheme: parsed.scheme as string,
+    receiptSlug: parsed.receiptSlug as string,
+    actionName: parsed.actionName as string,
+    svcWire: parsed.svcWire === true,
+    keepAwake: parsed.keepAwake === true,
+  };
+}
+
+export function selectIPodTouch4App(name: string | undefined, descriptor?: string): IPodTouch4App {
+  if (descriptor?.trim()) return readExternalIPodTouch4App(descriptor.trim());
   const key = name?.trim() || "clear";
   const app = IPODTOUCH4_APPS[key];
   if (!app) {
     throw new Error(
-      `pocket ipodtouch4: unknown app ${JSON.stringify(key)}; POCKETJS_IPODTOUCH4_APP must be one of ${Object.keys(IPODTOUCH4_APPS).join(", ")}`,
+      `pocket ipodtouch4: unknown app ${JSON.stringify(key)}; POCKETJS_IPODTOUCH4_APP must be one of ` +
+        `${Object.keys(IPODTOUCH4_APPS).join(", ")}, or POCKETJS_IPODTOUCH4_APP_FILE must name an external app's descriptor`,
     );
   }
   return app;
 }
 
-const APP = selectIPodTouch4App(process.env.POCKETJS_IPODTOUCH4_APP);
+const APP = selectIPodTouch4App(process.env.POCKETJS_IPODTOUCH4_APP, process.env.POCKETJS_IPODTOUCH4_APP_FILE);
+/** Where the app's own sources live: this repository, or another project. */
+const APP_ROOT = APP.root ?? REPOSITORY;
 /**
  * The machine the iPod is plugged into, when it is not this one: an ssh host
  * (alias) with usbmuxd + libimobiledevice. Device discovery and the iproxy
@@ -298,7 +346,7 @@ function check(label: string, ok: boolean, detail: string): boolean {
 }
 
 function manifestPath(): string {
-  return join(REPOSITORY, APP.manifest);
+  return join(APP_ROOT, APP.manifest);
 }
 
 function planPath(): string {
@@ -583,7 +631,7 @@ async function build(): Promise<void> {
   mustRun("bun", [
     "tools/build.ts",
     `--plan=${planPath()}`,
-    `--project-root=${REPOSITORY}`,
+    `--project-root=${APP_ROOT}`,
     `--outdir=${guestDirectory()}`,
   ]);
   const guestJavaScript = join(guestDirectory(), `${inputs.appOutput}.js`);
@@ -1219,7 +1267,7 @@ function tunnel(): never {
 }
 
 function usage(): void {
-  console.log(`PocketJS iPod touch 4 tool  (app: ${APP.id}; POCKETJS_IPODTOUCH4_APP=${Object.keys(IPODTOUCH4_APPS).join("|")}; POCKETJS_IPODTOUCH4_VIA=<ssh host the iPod is plugged into>${VIA ? ` = ${VIA}` : ""})
+  console.log(`PocketJS iPod touch 4 tool  (app: ${APP.id}${APP.root ? ` from ${APP.root}` : ""}; POCKETJS_IPODTOUCH4_APP=${Object.keys(IPODTOUCH4_APPS).join("|")} or POCKETJS_IPODTOUCH4_APP_FILE=<external app's ipodtouch4.json>; POCKETJS_IPODTOUCH4_VIA=<ssh host the iPod is plugged into>${VIA ? ` = ${VIA}` : ""})
 
   bun ipodtouch4 doctor
   bun ipodtouch4 setup-sources

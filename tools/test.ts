@@ -54,7 +54,6 @@ const SUITE: readonly Stage[] = [
       "tests/iphone4s-profile.test.ts",
       "tests/ipodtouch-profile.test.ts",
       "tests/ipodtouch4-profile.test.ts",
-      "tests/pocket-remote.test.ts",
       "tests/meizu-m8-profile.test.ts",
       "tests/blackberry-classic.test.ts",
       "tests/pocket-input.test.ts",
@@ -138,12 +137,6 @@ const SUITE: readonly Stage[] = [
     prep: [["bun", "tools/build.ts", "cafe-main"]],
     browser: true,
     tests: ["tests/sim.test.ts"],
-  },
-  {
-    name: "pocket-remote sim",
-    prep: [["bun", "tools/build.ts", "pocket-remote-main"]],
-    browser: true,
-    tests: ["tests/pocket-remote-sim.test.ts"],
   },
   {
     name: "deepzoom sim",
