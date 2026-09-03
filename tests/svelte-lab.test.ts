@@ -26,8 +26,21 @@ describe("Svelte feature lab", () => {
     expect(treeHasText(initial, "bound: 0")).toBe(true);
     expect(treeHasText(initial, "Reactive through runes.")).toBe(true);
     expect(treeHasText(initial, "module presses: 0")).toBe(true);
+    // The sprite frame is painted as an image, never as its file name.
+    expect(treeHasText(initial, "spinner-00.svg")).toBe(false);
 
-    // FocusScope autoFocus put the first toggle under CIRCLE.
+    // The screen-level FocusScope covers every control, so autoFocus lands on
+    // the first one and CIRCLE drives the child's $bindable prop.
+    await step(world, BTN.CIRCLE);
+    await step(world, 0);
+
+    const bound = world.getTree();
+    expect(treeHasText(bound, "bound: 1")).toBe(true);
+    expect(treeHasText(bound, "3/3 ON")).toBe(true);
+
+    // ...and the toggles below it are reachable from there.
+    await step(world, BTN.DOWN);
+    await step(world, 0);
     await step(world, BTN.CIRCLE);
     await step(world, 0);
 
@@ -35,6 +48,7 @@ describe("Svelte feature lab", () => {
     expect(treeHasText(toggled, "2/3 ON")).toBe(true);
     // State that lives in a .svelte.ts module, not in the component.
     expect(treeHasText(toggled, "module presses: 1")).toBe(true);
+    expect(treeHasText(toggled, "bound: 1")).toBe(true);
   });
 
   test("TRIANGLE rotates the keyed list without losing a row", async () => {

@@ -1,6 +1,12 @@
 <script lang="ts">
   import { BTN } from "@pocketjs/framework/svelte/input";
-  import { ActionHandler, FocusScope, Text, View } from "@pocketjs/framework/svelte/components";
+  import {
+    ActionHandler,
+    FocusScope,
+    Image,
+    Text,
+    View,
+  } from "@pocketjs/framework/svelte/components";
   import { createSpriteAnimation } from "@pocketjs/framework/svelte/lifecycle";
   import CounterButton from "./CounterButton.svelte";
   import FeatureCard from "./FeatureCard.svelte";
@@ -52,31 +58,33 @@
     <Text class="text-xs text-blue-600 font-bold">{enabledCount}/3 ON</Text>
   </View>
 
-  <FeatureCard title="COMPONENT BIND">
-    {#snippet badge()}
-      <Text class="text-xs text-blue-600">$bindable()</Text>
-    {/snippet}
-    <View class="flex-row items-center gap-2">
-      <CounterButton bind:value={bound} />
-      <Text class="text-xs text-slate-600">bound: {bound}</Text>
-      <Text class="text-xs text-slate-400">frame: {spinner.current}</Text>
-    </View>
-  </FeatureCard>
+  <FocusScope class="flex-col gap-2" autoFocus>
+    <FeatureCard title="COMPONENT BIND">
+      {#snippet badge()}
+        <Text class="text-xs text-blue-600">$bindable()</Text>
+      {/snippet}
+      <View class="flex-row items-center gap-2">
+        <CounterButton bind:value={bound} />
+        <Text class="text-xs text-slate-600">bound: {bound}</Text>
+        <Image class="w-8 h-8" src={spinner.current} />
+      </View>
+    </FeatureCard>
 
-  <FeatureCard title="KEYED EACH · TRIANGLE ROTATES">
-    <FocusScope class="flex-row gap-2" autoFocus>
-      {#each features as feature (feature.id)}
-        <FeatureToggle
-          label={feature.label}
-          enabled={feature.enabled}
-          onToggle={() => {
-            toggle(feature.id);
-            recordPress();
-          }}
-        />
-      {/each}
-    </FocusScope>
-  </FeatureCard>
+    <FeatureCard title="KEYED EACH · TRIANGLE ROTATES">
+      <View class="flex-row gap-2">
+        {#each features as feature (feature.id)}
+          <FeatureToggle
+            label={feature.label}
+            enabled={feature.enabled}
+            onToggle={() => {
+              toggle(feature.id);
+              recordPress();
+            }}
+          />
+        {/each}
+      </View>
+    </FeatureCard>
+  </FocusScope>
 
   <View class="flex-row items-center justify-between">
     {#if enabledCount === 0}
