@@ -1,6 +1,6 @@
 ---
 name: pocketjs-video-outro
-description: Append a PocketJS-branded, animated end card to a local video (screen recording, demo capture, phone clip). Renders the dark brand card — logo glyph, "PocketJS" wordmark, "Bare Metal Modern Web" tagline, pocketjs.dev — with headless Chrome, then composites it with a crossfade and a staggered text entrance while preserving the source's original audio. Use when asked to add an outro / end card / 片尾 to a video, brand a recording, or produce a shareable clip with the PocketJS sign-off.
+description: Append the current PocketJS animated end card to a local video (screen recording, demo capture, phone clip). Renders the dark brand card with the logo, wordmark, landing-page VT323 headline and pocketjs.dev, then crossfades it over the source while preserving and fading the original audio. Use when asked to add an outro / end card / 片尾, brand a recording, or produce a shareable PocketJS clip.
 ---
 
 # PocketJS Video Outro
@@ -8,11 +8,13 @@ description: Append a PocketJS-branded, animated end card to a local video (scre
 ## Overview
 
 Turns any local video into a shareable clip that ends on the PocketJS brand card.
-The card is built from the same visual system as `site/assets/og-image.svg` — dark
-`#171226` field, faint blueprint grid, yellow/pink corner glows, the lens/viewfinder
-logo glyph, the wordmark, and the hero tagline. It is rendered by headless Chrome
-(full gradient/shadow/font fidelity; the site font stack falls back to system SF),
-then `ffmpeg` crossfades the source into the card and animates the text in.
+The card uses the current landing-page treatment: a dark `#171226` field, faint
+blueprint grid, yellow/pink corner glows, the lens/viewfinder logo glyph, the
+wordmark, and the uppercase VT323 headline. The default positioning is rendered on
+three deliberate lines: `UI FOR` / `EVERY KIND OF` / `COMPUTER`. The exact VT323
+font file is bundled with the skill, so card rendering does not depend on a network
+font request. Headless Chrome renders the layers, then `ffmpeg` crossfades the
+source into the card and animates the text in.
 
 Design choices baked into the pipeline:
 
@@ -21,6 +23,9 @@ Design choices baked into the pipeline:
   never fights the crossfade.
 - **Staggered entrance.** Logo → tagline → URL, each fades in and eases up
   (~20-30px, ease-out cubic), ~0.35s apart, then holds.
+- **Landing-page headline.** The positioning uses the same VT323 face, uppercase
+  transform, `0.92` line height and `0.005em` tracking as the site hero. Preserve
+  explicit line breaks instead of letting the browser choose the default lockup.
 - **Audio is the source's, never synthesized.** The card is silent; the original
   track is preserved and gently faded out under the transition (no voiceover).
 - **Shareable SDR output.** HLG/PQ phone footage is perceptually tone-mapped to
@@ -42,7 +47,17 @@ repo keeps command wrappers in Bun, not shell scripts):
 ```bash
 bun skills/pocketjs-video-outro/scripts/make-outro.ts -i ~/Downloads/clip.mov
 # writes ~/Downloads/clip_outro.mp4  (H.264 high, yuv420p, +faststart, AAC 192k)
+# default card: UI FOR / EVERY KIND OF / COMPUTER
 # prints the output path on stdout; progress/summary on stderr
+```
+
+If the user supplies different positioning, preserve that copy exactly. Pass
+explicit line breaks when the lockup requires them; the template keeps them:
+
+```bash
+bun skills/pocketjs-video-outro/scripts/make-outro.ts \
+  -i ~/Downloads/clip.mov \
+  --tagline $'UI runtime for\nevery kind of\ncomputer'
 ```
 
 For an X upload, enable the compatibility mode. It produces 30 fps CFR video,
@@ -63,18 +78,32 @@ ffprobe -v error -select_streams v:0 \
   -of default=nw=1 ~/Downloads/clip_outro_x.mp4
 ```
 
-Then **verify visually** — extract a frame near the end and eyeball the card, and
-confirm the tail is silent while the body kept its audio (the animation is the
-whole point; always look):
+Do not report a finished video from command success alone. Verify four independent
+properties: full-file decode, delivery metadata, the visible card and its entrance,
+and body-versus-tail audio. Choose a body sample that contains source sound.
 
 ```bash
-V=~/Downloads/clip_outro.mp4
-ffmpeg -y -sseof -0.6 -i "$V" -frames:v 1 /tmp/card.png            # final card
-ffmpeg -nostats -sseof -2 -i "$V" -af volumedetect -f null - 2>&1 | grep mean_volume
+OUTRO_VIDEO=~/Downloads/clip_outro.mp4
+ffmpeg -v error -i "$OUTRO_VIDEO" -f null -                       # full decode
 ffprobe -v error -select_streams v:0 \
-  -show_entries stream=color_range,color_space,color_transfer,color_primaries \
-  -of default=nw=1 "$V" # HDR inputs must finish as tv + bt709/bt709/bt709
+  -show_entries \
+  stream=codec_name,profile,width,height,pix_fmt,r_frame_rate,avg_frame_rate,time_base,color_range,color_space,color_transfer,color_primaries \
+  -of default=nw=1 "$OUTRO_VIDEO"
+ffmpeg -v error -y -sseof -0.6 -i "$OUTRO_VIDEO" \
+  -frames:v 1 /tmp/pocketjs-outro-final.png
+ffmpeg -v error -y -sseof -6 -i "$OUTRO_VIDEO" \
+  -vf 'fps=4/3,scale=480:-2,tile=4x2' -frames:v 1 /tmp/pocketjs-outro-motion.jpg
+ffmpeg -hide_banner -ss 10 -t 5 -i "$OUTRO_VIDEO" \
+  -af volumedetect -f null - 2>&1 | rg 'mean_volume|max_volume'
+ffmpeg -hide_banner -sseof -2 -i "$OUTRO_VIDEO" \
+  -af volumedetect -f null - 2>&1 | rg 'mean_volume|max_volume'
 ```
+
+Inspect both images. The final frame must use the bundled VT323 face and show the
+requested copy without clipping; the motion sheet must show a clean crossfade and
+the logo → headline → URL stagger. HDR inputs must finish as `tv`, `yuv420p`, and
+`bt709/bt709/bt709`. The body sample must retain audio and the final two seconds
+must be effectively silent.
 
 ## Options
 
@@ -82,7 +111,7 @@ ffprobe -v error -select_streams v:0 \
 |------|---------|---------|
 | `-i` / `--input` | — (required) | input video |
 | `-o` / `--output` | `<input>_outro.mp4` next to input | output path (`_outro_x.mp4` with `--x`) |
-| `--tagline` | `Bare Metal Modern Web` | hero line (wraps on narrow/portrait frames) |
+| `--tagline` | `UI for` / `every kind of` / `computer` | hero line; explicit newlines are preserved |
 | `--brand` | `PocketJS` | wordmark next to the glyph |
 | `--url` | `pocketjs.dev` | footer line; pass `--url ""` to hide it |
 | `--outro` | `5.5` | end-card length in seconds |
@@ -103,7 +132,8 @@ ffprobe -v error -select_streams v:0 \
   HLG base layer in iPhone Dolby Vision clips) are tone-mapped to 8-bit BT.709 SDR;
   Dolby Vision metadata is intentionally not carried into the shareable H.264 file.
 - **Type scales** with `scale = min(W,H)/1080`, so 720p, 1080p, and 4K all look
-  proportional. On portrait/narrow frames the tagline wraps to two lines (verified).
+  proportional. The default headline keeps its three authored lines; custom copy
+  preserves explicit newlines and still wraps before the frame edge.
 - **Audio:** maps the source's *first* audio stream (`0:a:0`) and downmixes to
   stereo. This is deliberate — iPhone `.mov` captures carry an extra multi-channel
   spatial-audio track plus several data streams; `a:0` is the standard stereo mix.
@@ -136,8 +166,10 @@ under the 25 MiB per-asset limit):
 
 - The card is `assets/outro.html`, parameterized via query string
   (`?layer=…&scale=…&brand=…&tagline=…&url=…`). Edit it to restyle; every dimension
-  is in `rem` and the script sets root font-size to `10px * scale`.
-- Entrance/animation is entirely in `ffmpeg`, orchestrated by `tools/make-outro.ts`
+  is in `rem` and the script sets root font-size to `10px * scale`. The landing
+  headline face and its OFL licence are `assets/VT323-Regular.ttf` and
+  `assets/OFL-VT323.txt`; keep the template local-font path intact.
+- Entrance/animation is entirely in `ffmpeg`, orchestrated by `scripts/make-outro.ts`
   (Bun TypeScript, `import { $ } from "bun"`): each element is screenshotted as its
   **own transparent layer** with the *others kept in place via `visibility: hidden`*
   (so absolute positions never shift), then composited with per-layer `fade` (alpha)

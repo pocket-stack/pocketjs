@@ -3,6 +3,14 @@
 <head>
 <meta charset="utf-8">
 <style>
+  @font-face {
+    font-family: "VT323";
+    src: url("./VT323-Regular.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+  }
+
   /* Root font-size is rescaled by JS to (10px * scale) so every rem-based
      dimension below tracks the video resolution. scale = min(W,H)/1080. */
   :root { font-size: 10px; }
@@ -51,8 +59,10 @@
 
   /* hero tagline */
   .tagline {
-    font-size: 13.2rem; font-weight: 800; letter-spacing: -0.02em;
-    line-height: 1.02; text-align: center; max-width: 92vw;
+    font-family: "VT323", ui-monospace, monospace;
+    font-size: 14rem; font-weight: 400; letter-spacing: 0.005em;
+    line-height: 0.92; text-align: center; text-transform: uppercase;
+    white-space: pre-line; max-width: 92vw;
     background: linear-gradient(100deg, #ffd23f 0%, #ff5f9e 52%, #3fd0e8 100%);
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -92,7 +102,7 @@
       <div class="wordmark" id="brand">PocketJS</div>
     </div>
 
-    <div class="tagline" id="tagline">Bare Metal Modern Web</div>
+    <div class="tagline" id="tagline">UI for<br>every kind of<br>computer</div>
   </div>
 
   <div class="url" id="url">pocketjs.dev</div>
