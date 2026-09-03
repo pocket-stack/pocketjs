@@ -26,6 +26,16 @@ use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime};
 // Surface crates implement ops against the same rquickjs the guest uses.
 pub use rquickjs as qjs;
 
+/// QuickJS heap summary for receipts (`malloc_bytes` includes allocator
+/// overhead; `used_bytes` is net payload).
+#[derive(Clone, Copy, Debug)]
+pub struct QuickjsMemory {
+    pub malloc_bytes: i64,
+    pub used_bytes: i64,
+    pub obj_count: i64,
+    pub str_bytes: i64,
+}
+
 /// One QuickJS realm hosting one guest program.
 pub struct Guest {
     rt: Runtime,
@@ -52,6 +62,21 @@ impl Guest {
         ctx.with(|ctx| install_console(&ctx))
             .map_err(|e| anyhow!("pocket-mod: installing console: {e}"))?;
         Ok(Guest { rt, ctx })
+    }
+
+    /// Collect garbage, then return the realm's QuickJS heap stats
+    /// (`malloc_bytes` = payload + allocator overhead, `used_bytes` = net
+    /// payload). Receipts want the settled number: a busy guest can hold
+    /// cyclic garbage the collector has not run on yet.
+    pub fn gc_and_memory(&self) -> QuickjsMemory {
+        self.rt.run_gc();
+        let m = self.rt.memory_usage();
+        QuickjsMemory {
+            malloc_bytes: m.malloc_size,
+            used_bytes: m.memory_used_size,
+            obj_count: m.obj_count,
+            str_bytes: m.str_size,
+        }
     }
 
     /// Run `f` with the realm's [`Ctx`]. Surface crates use this to build

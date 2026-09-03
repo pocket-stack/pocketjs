@@ -1351,6 +1351,56 @@ impl PocketRoot {
                 self.frames.get(),
                 self.frames.get() as f64 / self.ticks.max(1) as f64 * 100.0
             );
+            self.print_memory_receipt();
+        }
+    }
+
+    /// Advisory memory breakdown behind the RSS number: the QuickJS guest
+    /// heap (after a full GC) and each mounted core's retained state. Pairs
+    /// with `tools/bench-desktop.ts`, whose RSS medians are the outside view
+    /// of exactly these numbers.
+    fn print_memory_receipt(&self) {
+        const KB: f64 = 1024.0;
+        let kb = |b: u64| format!("{:.0}KB", (b as f64 / KB).round());
+        let core = |r: &pocketjs_core::MemoryReceipt| {
+            format!(
+                "nodes={}/{} taffy={} heap={} fonts={} styles={} tex={}/{} drawlist={}/{}w anims={}",
+                r.tree_alive,
+                r.tree_slots,
+                r.taffy_nodes,
+                kb(r.tree_heap_bytes),
+                kb(r.font_bytes),
+                kb(r.style_bytes),
+                r.texture_slots,
+                kb(r.texture_bytes),
+                r.drawlist_words,
+                r.drawlist_capacity_words,
+                r.anim_tracks,
+            )
+        };
+        let qjs = |g: &Guest| {
+            let m = g.gc_and_memory();
+            format!(
+                "qjs malloc={:.0}KB used={:.0}KB objs={} strs={:.0}KB",
+                m.malloc_bytes as f64 / KB,
+                m.used_bytes as f64 / KB,
+                m.obj_count,
+                m.str_bytes as f64 / KB,
+            )
+        };
+        println!("pocket-desktop-host: mem shell {}", {
+            let c = self.surface.with_ui(|ui| core(&ui.memory_receipt()));
+            format!("{} {}", qjs(&self.guest), c)
+        });
+        for instance in &self.app_supervisor.borrow().instances {
+            let c = instance.surface.with_ui(|ui| core(&ui.memory_receipt()));
+            println!(
+                "pocket-desktop-host: mem {}({}) {} {}",
+                instance.package.plan.app.title,
+                instance.package.plan.app.output,
+                qjs(&instance.guest),
+                c
+            );
         }
     }
 

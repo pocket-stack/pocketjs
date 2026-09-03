@@ -240,6 +240,30 @@ struct AuxiliarySurface {
     inspect_drawn: Option<(f32, f32, f32, f32)>,
 }
 
+/// Advisory memory breakdown of the retained state, for host receipts and
+/// diagnostics. NOT a wire contract: fields are estimates (heap capacity,
+/// not live payload) and may change between releases.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MemoryReceipt {
+    pub tree_slots: u32,
+    pub tree_alive: u32,
+    /// children/overrides/anim_values/text heap capacity over all slots.
+    pub tree_heap_bytes: u64,
+    /// Nodes currently mirrored into the taffy layout tree.
+    pub taffy_nodes: u32,
+    /// Baked font atlases: cmap records + coverage bitmaps.
+    pub font_bytes: u64,
+    /// Baked style table: prop lists + animation tracks/segments.
+    pub style_bytes: u64,
+    pub texture_slots: u32,
+    /// Pixel planes + T8 palettes.
+    pub texture_bytes: u64,
+    pub drawlist_words: u32,
+    pub drawlist_capacity_words: u32,
+    /// Live explicit animation tracks (transition tracks excluded).
+    pub anim_tracks: u32,
+}
+
 /// The retained UI core. One per AppInstance, with an optional independent
 /// auxiliary output root sharing the same resources and frame clock.
 pub struct Ui {
@@ -1598,6 +1622,51 @@ impl Ui {
     pub fn set_text_measure(&mut self, f: Option<text::MeasureFn>) {
         self.fonts.set_native_measure(f);
         self.mark_layout_dirty();
+    }
+
+    /// [`MemoryReceipt`] — the advisory breakdown behind this core's resident
+    /// state. Hosts print it in exit receipts; it is a diagnostic, not a
+    /// contract, and walking the tree costs O(slots).
+    pub fn memory_receipt(&self) -> MemoryReceipt {
+        use core::mem::size_of;
+        let mut r = MemoryReceipt::default();
+        for node in &self.tree.slots {
+            r.tree_slots += 1;
+            r.tree_alive += node.alive as u32;
+            r.taffy_nodes += node.taffy.is_some() as u32;
+            r.tree_heap_bytes += (node.children.capacity() * size_of::<i32>()
+                + node.overrides.capacity() * size_of::<(u8, u32)>()
+                + node.anim_values.capacity() * size_of::<(u8, u32)>()
+                + node.text.capacity()) as u64;
+        }
+        for slot in 0..spec::MAX_FONT_SLOTS as u8 {
+            if let Some(atlas) = self.fonts.atlas(slot) {
+                r.font_bytes +=
+                    (atlas.bitmap.len() + atlas.glyph_count as usize * size_of::<text::CmapEntry>())
+                        as u64;
+            }
+        }
+        for record in &self.styles.records {
+            r.style_bytes += (record.base.capacity() * size_of::<(u8, u32)>()
+                + record.focus.capacity() * size_of::<(u8, u32)>()
+                + record.active.capacity() * size_of::<(u8, u32)>()) as u64;
+        }
+        for timeline in &self.styles.anims {
+            for track in &timeline.tracks {
+                r.style_bytes += (track.segments.capacity() * size_of::<style::Segment>()) as u64;
+            }
+        }
+        r.texture_slots = self.textures.len() as u32;
+        for slot in &self.textures {
+            if let Some(tex) = &slot.tex {
+                r.texture_bytes +=
+                    (tex.byte_len + tex.palette.as_ref().map_or(0, |p| p.len() * 16)) as u64;
+            }
+        }
+        r.drawlist_words = self.draw_list.words.len() as u32;
+        r.drawlist_capacity_words = self.draw_list.words.capacity() as u32;
+        r.anim_tracks = self.anims.tracks.len() as u32;
+        r
     }
 
     /// Install (or clear) a native line wrapper (text::WrapFn) next to the
