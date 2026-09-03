@@ -109,7 +109,7 @@ jobs:
           if npm view "$name@$version" version >/dev/null 2>&1; then
             echo "$name@$version already published — skipping"
           else
-            npm publish --access public --provenance
+            bun tools/publish-manifest.ts npm publish --access public --provenance
           fi
 
       - name: Publish @pocketjs/cli

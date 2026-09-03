@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -315,5 +315,39 @@ describe("published npm artifacts", () => {
     } finally {
       rmSync(scratch, { recursive: true, force: true });
     }
+  }, 30_000);
+
+  // Svelte's custom-renderer build is unreleased, so the tarball has to carry
+  // it: the framework pins a vendored tarball and bundles it, and a consumer
+  // never installs svelte themselves.
+  test("bundles the vendored custom-renderer svelte build", async () => {
+    const manifest = await Bun.file(`${root}package.json`).json();
+    expect(manifest.bundleDependencies).toEqual(["svelte"]);
+    expect(manifest.dependencies.svelte).toMatch(/^file:vendor\/svelte-.*\.tgz$/);
+
+    const files = packedFiles(root);
+    expect(files).toContain("node_modules/svelte/package.json");
+    expect(files).toContain("node_modules/svelte/src/renderer/index.js");
+    expect(files.some((file) => file.startsWith("framework/src/svelte/"))).toBe(true);
+    // The vendored tarball itself stays git-only; the bundled copy is what ships.
+    expect(files.some((file) => file.startsWith("vendor/"))).toBe(false);
+  }, 30_000);
+
+  // Bun resolves a bundled dependency's spec before honouring the bundle, so a
+  // published `file:vendor/…` would break every consumer's install.
+  test("the published manifest carries a resolvable svelte spec", () => {
+    const result = Bun.spawnSync({
+      cmd: ["bun", "tools/publish-manifest.ts", "node", "-p", "require('./package.json').dependencies.svelte"],
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(result.exitCode, result.stderr.toString()).toBe(0);
+    expect(result.stdout.toString().trim()).not.toStartWith("file:");
+
+    const after = JSON.parse(readFileSync(`${root}package.json`, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(after.dependencies.svelte).toStartWith("file:vendor/");
   }, 30_000);
 });

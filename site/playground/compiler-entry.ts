@@ -13,6 +13,7 @@ import { transformAsync, type PluginObj } from "@babel/core";
 import solidPreset from "babel-preset-solid";
 import tsPreset from "@babel/preset-typescript";
 import { transformVueJsxVapor } from "vue-jsx-vapor/api";
+import { compile as compileSvelteSource } from "svelte/compiler";
 import { parse as parseFont, type Font } from "opentype.js";
 
 import { compileClasses, fontSlotInfo } from "../../framework/compiler/tailwind.ts";
@@ -49,6 +50,10 @@ import { PSM } from "../../contracts/spec/spec.ts";
  *  runtime helpers from. The playground import-map points it at runtime.js. */
 const SOLID_RENDERER_MODULE = "@pocketjs/framework/solid/renderer";
 
+/** Mirrors framework/compiler/svelte-compile.ts SVELTE_RENDERER_MODULE; the
+ *  import map points the specifier at runtime-svelte.js. */
+const SVELTE_RENDERER_MODULE = "@pocketjs/framework/svelte/renderer";
+
 /** Octane universal-renderer descriptor — mirrors framework/compiler/jsx-plugin.ts
  *  OCTANE_RENDERER_DESCRIPTOR; the import map points the module id at
  *  runtime-octane.js. */
@@ -61,7 +66,7 @@ const OCTANE_RENDERER = {
   capabilities: ["portal"],
 } as const;
 
-type PlaygroundFramework = "solid" | "vue-vapor" | "octane";
+type PlaygroundFramework = "solid" | "vue-vapor" | "octane" | "svelte";
 
 interface SpriteMeta {
   cols: number;
@@ -208,6 +213,28 @@ export async function transformAppSource(
       filename: "app.tsx",
       presets: [[tsPreset, {}]],
       parserOpts: { plugins: ["jsx"] },
+      babelrc: false,
+      configFile: false,
+      sourceMaps: false,
+    });
+  } else if (framework === "svelte") {
+    // Svelte owns the whole template lowering, so the collector runs over its
+    // OUTPUT — the same order framework/compiler/svelte-compile.ts uses, where
+    // static classes and text survive as ordinary string literals.
+    const compiled = compileSvelteSource(source, {
+      filename: "app.svelte",
+      generate: "client",
+      runes: true,
+      css: "external",
+      dev: false,
+      discloseVersion: false,
+      experimental: { customRenderer: SVELTE_RENDERER_MODULE },
+    });
+    res = await transformAsync(compiled.js.code, {
+      filename: "app.svelte",
+      presets: [],
+      parserOpts: { plugins: ["jsx"] },
+      plugins: [collectorPlugin(collected, framework)],
       babelrc: false,
       configFile: false,
       sourceMaps: false,

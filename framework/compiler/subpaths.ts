@@ -18,12 +18,12 @@
 // npm export exists, but vue-vapor/octane builds must not silently walk (or
 // resolve) their Solid-flavored implementations. gesture/kinetics keep their
 // recognizer/scroller machinery in framework-neutral core modules and list a
-// per-framework shim for solid and vue-vapor (octane still does not resolve
-// them).
+// per-framework shim for solid, vue-vapor and svelte (octane still does not
+// resolve them).
 
 import type { PocketFramework } from "../src/config.ts";
 
-export const POCKET_FRAMEWORKS = ["solid", "vue-vapor", "octane"] as const;
+export const POCKET_FRAMEWORKS = ["solid", "vue-vapor", "octane", "svelte"] as const;
 
 export interface SubpathDecl {
   /** Repo-relative module file. A plain string = the same file for every
@@ -43,7 +43,7 @@ export interface SubpathDecl {
 const ALL = POCKET_FRAMEWORKS;
 /** The non-Solid twins: modules that are framework-agnostic but published
  *  under prefixed aliases so twin app variants read uniformly. */
-const TWINS = ["vue-vapor", "octane"] as const;
+const TWINS = ["vue-vapor", "octane", "svelte"] as const;
 
 export const SUBPATHS: Record<string, SubpathDecl> = {
   "": {
@@ -51,6 +51,7 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
       solid: "framework/src/index.ts",
       "vue-vapor": "framework/src/index-vue-vapor.ts",
       octane: "framework/src/index-octane.ts",
+      svelte: "framework/src/index-svelte.ts",
     },
     aliases: ALL,
   },
@@ -64,6 +65,7 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
       solid: "framework/src/components.ts",
       "vue-vapor": "framework/src/components-vue-vapor.ts",
       octane: "framework/src/components-octane.tsx",
+      svelte: "framework/src/components-svelte.ts",
     },
     aliases: ALL,
   },
@@ -75,8 +77,9 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
     file: {
       solid: "framework/src/gesture.ts",
       "vue-vapor": "framework/src/gesture.vue-vapor.ts",
+      svelte: "framework/src/gesture.svelte.ts",
     },
-    aliases: ["vue-vapor"],
+    aliases: ["vue-vapor", "svelte"],
   },
   host: { file: "framework/src/host.ts" },
   lifecycle: {
@@ -84,6 +87,7 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
       solid: "framework/src/lifecycle.ts",
       "vue-vapor": "framework/src/lifecycle-vue-vapor.ts",
       octane: "framework/src/lifecycle-octane.ts",
+      svelte: "framework/src/lifecycle-svelte.ts",
     },
     aliases: ALL,
   },
@@ -93,8 +97,9 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
     file: {
       solid: "framework/src/kinetics.ts",
       "vue-vapor": "framework/src/kinetics.vue-vapor.ts",
+      svelte: "framework/src/kinetics.svelte.ts",
     },
-    aliases: ["vue-vapor"],
+    aliases: ["vue-vapor", "svelte"],
   },
   launcher: { file: "framework/src/launcher.ts" },
   manifest: { file: "framework/src/manifest/index.ts" },
@@ -108,9 +113,11 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
     file: {
       solid: "framework/src/prelude.ts",
       "vue-vapor": "framework/src/prelude.ts",
-      // Octane's prelude IS the scheduler polyfill; the neutral prelude.ts
-      // stays the npm-visible spelling.
+      // Octane and Svelte need the scheduler polyfill but not the DOM shim,
+      // so their prelude IS that polyfill; the neutral prelude.ts stays the
+      // npm-visible spelling.
       octane: "framework/src/scheduler-polyfill.ts",
+      svelte: "framework/src/scheduler-polyfill.ts",
     },
   },
   renderer: {
@@ -118,6 +125,7 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
       solid: "framework/src/renderer-solid.ts",
       "vue-vapor": "framework/src/renderer-vue-vapor.ts",
       octane: "framework/src/renderer-octane.ts",
+      svelte: "framework/src/renderer-svelte.ts",
     },
     npmFile: "framework/src/renderer.ts",
     aliases: ALL,

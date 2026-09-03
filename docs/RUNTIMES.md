@@ -103,7 +103,7 @@ Raw surfaces are wire protocols. Each surface ships an SDK that expresses it
 in the *algebra natural to its domain*:
 
 - The `ui` surface's natural algebra is a reactive tree → its SDK is **JSX**
-  (Solid, Vue Vapor or Octane through the universal renderer, Tailwind
+  (Solid, Vue Vapor, Octane or Svelte through the universal renderer, Tailwind
   classes, `animate()`).
 - An FPS's natural algebra is rules and policies over events → its SDK is a
   **mod API**: `strike.on("kill", …)`, `strike.rules.roundTime = 90`,

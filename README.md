@@ -12,8 +12,8 @@
 [Changelog](https://pocketjs.dev/changelog/)
 
 PocketJS is a portable application runtime that turns modern component code into
-native pixels across radically different hardware. Solid, Vue Vapor and Octane
-components compile to one native tree, and a QuickJS guest drives a Rust core
+native pixels across radically different hardware. Solid, Vue Vapor, Octane and
+Svelte components compile to one native tree, and a QuickJS guest drives a Rust core
 that performs flexbox layout and draws every pixel **in one thread inside one
 process**. There is **no DOM, no CSS engine and no WebView**.
 
@@ -39,7 +39,7 @@ process**. There is **no DOM, no CSS engine and no WebView**.
 
 ### Frameworks
 
-Three frameworks compile to the same native tree and run on the same QuickJS
+Four frameworks compile to the same native tree and run on the same QuickJS
 guest. The choice changes application code and nothing below it.
 
 | Framework | State and lifecycle | Source forms |
@@ -47,8 +47,10 @@ guest. The choice changes application code and nothing below it.
 | **Solid** | `solid-js` | JSX |
 | **Vue Vapor** | `vue` | JSX and `<script setup>` single-file components |
 | **Octane** | `octane` | Compiled hooks and JSX, with no virtual DOM |
+| **Svelte** | `svelte` | `.svelte` components and `.svelte.ts` runes modules, through Svelte's custom-renderer API |
 
-Framework primitives are imported directly from `solid-js`, `vue`, or `octane`.
+Framework primitives are imported directly from `solid-js`, `vue`, `octane`, or
+`svelte`.
 PocketJS owns the runtime, host components, lifecycle wiring, input, animation,
 assets, and the native boundary.
 

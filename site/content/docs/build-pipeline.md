@@ -35,7 +35,7 @@ target-specific: PSP and Vita compile from the same source and logical layout,
 but Vita receives density-2 atlases/assets plus an embedded target/HostOps-ABI
 handshake. Do not copy one target's pair into another target's native package.
 
-Solid is the default framework. Vue Vapor and Octane build beside the Solid
+Solid is the default framework. Vue Vapor, Octane and Svelte build beside the Solid
 artifacts by adding a suffix:
 
 ```sh
@@ -98,7 +98,8 @@ The output name is derived from the entry path, and both artifacts share it:
 | `apps/hero/main.tsx` | `hero-main.js`, `hero-main.pak` | the mounted entry — calls `mount()` |
 | `foo/bar.tsx` | `bar.js`, `bar.pak` | non‑demo path: basename |
 | `--framework=vue-vapor` | `<name>.vue-vapor.js`, `<name>.vue-vapor.pak` | Vue Vapor artifacts coexist with Solid artifacts |
-| `--framework=octane` | `<name>.octane.js`, `<name>.octane.pak` | Octane artifacts coexist with the other two |
+| `--framework=octane` | `<name>.octane.js`, `<name>.octane.pak` | Octane artifacts coexist with the others |
+| `--framework=svelte` | `<name>.svelte.js`, `<name>.svelte.pak` | Svelte artifacts coexist with the others |
 
 A demo typically has `app.tsx` (the exported UI) and `main.tsx` (a tiny file
 that imports the app and mounts it). You build `hero-main` when you want a
@@ -125,6 +126,9 @@ transformVueJsxVapor(source, path)
 
 // Octane
 octaneCompile(source, path, { mode: "client", renderer: OCTANE_RENDERER_DESCRIPTOR })
+
+// Svelte
+compileSvelte(source, path)   // svelte/compiler, experimental.customRenderer
 ```
 
 Solid compiles JSX into calls against `framework/src/renderer-solid.ts`. Vue Vapor
@@ -135,14 +139,18 @@ the Octane universal compiler, which lowers JSX and hooks to static host plans
 plus dynamic slots against the "pocket" renderer descriptor — the compiled
 output's runtime imports retarget to `@pocketjs/framework/octane/renderer`
 (`framework/src/renderer-octane.ts`), whose driver maps host command batches
-onto the native `ui.*` tree with no DOM shim. `@babel/preset-typescript`
+onto the native `ui.*` tree with no DOM shim. Svelte compiles each `.svelte`
+component (and each `.svelte.ts` runes module) first, then runs the collector
+over that output — the same order the Vue SFC path uses, and the reason static
+classes must survive as string literals. `@babel/preset-typescript`
 still strips types in every case, and the same collector/lints run before JSX is
 lowered.
 
 Package imports are framework-aware during both pass 1 and pass 2. For example,
 `@pocketjs/framework/components` resolves to `framework/src/components.ts` for Solid,
 `framework/src/components-vue-vapor.ts` for Vue Vapor, and
-`framework/src/components-octane.tsx` for Octane. The mapping is centralized in
+`framework/src/components-octane.tsx` for Octane, and
+`framework/src/components-svelte.ts` for Svelte. The mapping is centralized in
 `framework/compiler/jsx-plugin.ts`; see [Frameworks](/docs/frameworks/) for the public
 contract.
 

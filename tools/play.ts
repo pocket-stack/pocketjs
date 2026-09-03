@@ -49,7 +49,7 @@ function demos(): string[] {
 function usage(message?: string): never {
   if (message) console.error(`play: ${message}\n`);
   console.error(
-    "usage: bun play vita <demo> [--fullscreen] [--no-build] [--no-launch] [--framework=solid|vue-vapor|octane]\n" +
+    "usage: bun play vita <demo> [--fullscreen] [--no-build] [--no-launch] [--framework=solid|vue-vapor|octane|svelte]\n" +
       "       bun play ios <demo>  [ios flags — see `bun tools/ios.ts --help`]\n" +
       `demos: ${demos().join(", ")}`,
   );
@@ -159,9 +159,12 @@ if (!existsSync(sourceConfig)) {
   throw new Error(`Vita3K config not found at ${sourceConfig}; run Vita3K once or set VITA3K_CONFIG`);
 }
 
+const SUFFIX_FRAMEWORKS = ["vue-vapor", "octane", "svelte"] as const;
+
 const requestedFramework =
   framework?.slice("--framework=".length) ||
-  (demo.endsWith("vue-vapor") ? "vue-vapor" : demo.endsWith("octane") ? "octane" : "solid");
+  SUFFIX_FRAMEWORKS.find((name) => demo.endsWith(name)) ||
+  "solid";
 
 if (!noBuild) {
   const manifest = demoManifestFor(ROOT, demo, requestedFramework) as Record<string, any>;

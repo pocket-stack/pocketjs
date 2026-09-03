@@ -16,7 +16,7 @@ import { BuildInputs } from "../framework/compiler/build-inputs.ts";
 //         minify false) -> dist/<app>.js.
 //
 // Flags:
-//   --framework=solid|vue-vapor|octane  select the framework for this build
+//   --framework=solid|vue-vapor|octane|svelte  select the framework for this build
 //   --config=<path>              load a Pocket config file (default: pocket.config.ts)
 //   --no-config                  ignore pocket.config.ts
 //   --extra-chars=<string>       force extra codepoints into every atlas
@@ -123,7 +123,7 @@ if (planPath) {
 }
 
 if (!appArg) {
-  console.error("usage: bun tools/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor|octane] [--extra-chars=...] [--density=N] [--hz=N]");
+  console.error("usage: bun tools/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor|octane|svelte] [--extra-chars=...] [--density=N] [--hz=N]");
   process.exit(1);
 }
 
@@ -261,7 +261,11 @@ function resolveImport(fromFile: string, spec: string): string | null {
   } catch {
     return null;
   }
-  return (/\.tsx?$/.test(resolved) || resolved.endsWith(".vue")) && !resolved.endsWith(".d.ts") ? frameworkVariantPath(resolved, framework) : null;
+  const walkable =
+    /\.tsx?$/.test(resolved) || resolved.endsWith(".vue") || resolved.endsWith(".svelte");
+  return walkable && !resolved.endsWith(".d.ts")
+    ? frameworkVariantPath(resolved, framework)
+    : null;
 }
 
 const classStrings: string[] = [];
@@ -498,7 +502,9 @@ const result = await Bun.build({
   // silently no-op. See tests/renderer.test.ts for the fail-fast guard.
   // Bun's bundler otherwise also enables the "development" condition, which
   // pulls Solid's dev builds and duplicates the root + universal runtimes.
-  conditions: ["browser"],
+  // Svelte's runtime branches on esm-env, which lists "development" first: without
+  // "production" the bundle carries Svelte's dev-only checks and warnings.
+  conditions: framework === "svelte" ? ["browser", "custom-renderer", "production"] : ["browser"],
   define: {
     "process.env.NODE_ENV": '"production"',
     __POCKET_TARGET__: JSON.stringify(buildPlan?.target.id ?? ""),

@@ -3,7 +3,8 @@
 PocketJS uses the selected framework's reactive system directly. Solid apps
 import signals and lifecycle from `solid-js`; Vue Vapor apps import refs,
 computed values, watchers, and lifecycle from `vue`; Octane apps import hooks
-from `octane`. There is no PocketJS
+from `octane`; Svelte apps use the `$state`/`$derived`/`$effect` runes the
+compiler provides and import lifecycle from `svelte`. There is no PocketJS
 reactivity wrapper.
 
 :::framework-code
@@ -39,21 +40,35 @@ import {
   useEffectEvent,
 } from "octane";
 ```
+
+```svelte svelte
+<script lang="ts">
+  // $state, $derived and $effect are compiler runes — no import.
+  import { onMount, onDestroy } from "svelte";
+
+  let count = $state(0);
+  const doubled = $derived(count * 2);
+</script>
+```
 :::
 
-If you already know the framework, you know the API. Solid and Vue Vapor are
-fine-grained
+If you already know the framework, you know the API. Solid, Vue Vapor and
+Svelte are fine-grained
 reactive primitives, not React hooks: they aren't dependency-array driven, and a
 state write updates the native nodes that read it. Octane *is* React's hooks
 model, compiled: dependency arrays may be omitted (the compiler infers them
 from captures), and hooks are tracked by call site — a hook inside an `if`
 block is fine, hooks in loops are not.
 
+Svelte's runes are compiler syntax rather than imports, and shared reactive
+state lives in a **`.svelte.ts` module**, which is one instance per program —
+state kept there outlives anything that remounts the tree.
+
 ## The no-VDOM model
 
 React re-renders a component, builds a new virtual tree, and diffs it against the
-old one. PocketJS's supported frameworks avoid that virtual-tree path. Solid and
-Vue Vapor never re-run a component after
+old one. PocketJS's supported frameworks avoid that virtual-tree path. Solid,
+Vue Vapor and Svelte never re-run a component after
 setup: setup wires reactive reads to native mutations, and after that the work is
 limited to the effects or bindings whose dependencies changed. Octane keeps
 React's re-render model but compiles it: a state write re-executes the

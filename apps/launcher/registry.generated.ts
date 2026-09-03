@@ -33,6 +33,7 @@ export const REGISTRY: readonly RegistryApp[] = [
   { output: "notifications-main", id: "dev.pocket-stack.notifications", title: "PocketJS: Notifications", cover: "covers/cover-notifications-main.png", refl: "covers/refl-notifications-main.png" },
   { output: "music-main", id: "dev.pocket-stack.music", title: "PocketJS: Now Playing", cover: "covers/cover-music-main.png", refl: "covers/refl-music-main.png" },
   { output: "settings-main", id: "dev.pocket-stack.settings", title: "PocketJS: Settings", cover: "covers/cover-settings-main.png", refl: "covers/refl-settings-main.png" },
+  { output: "svelte-lab-main", id: "dev.pocket-stack.svelte.lab", title: "PocketJS: Svelte Feature Lab", cover: "covers/cover-svelte-lab-main.png", refl: "covers/refl-svelte-lab-main.png" },
   { output: "im-main", id: "dev.pocket-stack.im", title: "PocketJS: Talk", cover: "covers/cover-im-main.png", refl: "covers/refl-im-main.png" },
   { output: "vue-sfc-lab-main", id: "dev.pocket-stack.vue.sfc.lab", title: "PocketJS: Vue SFC Feature Lab", cover: "covers/cover-vue-sfc-lab-main.png", refl: "covers/refl-vue-sfc-lab-main.png" },
   { output: "iphone16-demo-main", id: "dev.pocket-stack.iphone16-demo", title: "PocketJS: iPhone 16 Hero", cover: "covers/cover-iphone16-demo-main.png", refl: "covers/refl-iphone16-demo-main.png" },

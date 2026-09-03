@@ -36,7 +36,7 @@ pocketjs/
 │  ├─ web/        browser dev + Pocket System host (wasm core, isolated iframe Realms)
 │  └─ sim/        deterministic headless simulation host (docs/DETERMINISM.md)
 ├─ framework/    Guest: @pocketjs/framework
-│  ├─ src/        the TS runtime (Solid + Vue Vapor renderers, components, input, osk…)
+│  ├─ src/        the TS runtime (Solid/Vue Vapor/Octane/Svelte renderers, components, input, osk…)
 │  └─ compiler/   the interpreted-path build pipeline (jsx-plugin, tailwind, pak)
 ├─ vapor/        Pocket Vapor: the AOT compiler family (Vue Vapor subset → GBA/GB/NES)
 ├─ contracts/    single sources of truth binding the layers

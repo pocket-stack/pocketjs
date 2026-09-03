@@ -1,16 +1,17 @@
 # Frameworks
 
-PocketJS supports three app frameworks over the same native tree and Rust
+PocketJS supports four app frameworks over the same native tree and Rust
 core:
 
-| Framework | Build id | JSX transform | Runtime renderer | Output suffix |
+| Framework | Build id | Component transform | Runtime renderer | Output suffix |
 |---|---|---|---|---|
 | Solid | `solid` | `babel-preset-solid` universal mode | `renderer-solid.ts` | none |
 | Vue Vapor | `vue-vapor` | `vue-jsx-vapor` | `renderer-vue-vapor.ts` | `.vue-vapor` |
 | Octane | `octane` | Octane universal compiler (host plans + slots) | `renderer-octane.ts` (pocket universal driver over the native tree) | `.octane` |
+| Svelte | `svelte` | Svelte's custom-renderer compiler (`experimental.customRenderer`) | `renderer-svelte.ts` | `.svelte` |
 
 Solid is the default so existing apps keep building to `dist/<app>.js` and
-`dist/<app>.pak`. Vue Vapor and Octane build next to it:
+`dist/<app>.pak`. The others build next to it:
 
 ```sh
 bun tools/build.ts hero-main                    # dist/hero-main.js
@@ -18,6 +19,8 @@ bun tools/build.ts hero-vue-vapor-main --framework=vue-vapor
 # dist/hero-vue-vapor-main.vue-vapor.js
 bun tools/build.ts hero-main --framework=octane
 # dist/hero-main.octane.js
+bun tools/build.ts hero-main --framework=svelte
+# dist/hero-main.svelte.js
 ```
 
 Sibling variant files select automatically: an `app.octane.tsx` (or
@@ -25,7 +28,9 @@ Sibling variant files select automatically: an `app.octane.tsx` (or
 matching `--framework`, which is how one demo directory carries all of its
 ports — all eight showcase demos (`hero`, `cards`, `stats`, `library`,
 `settings`, `notifications`, `music`, `gallery`) ship an `app.octane.tsx` and
-`main.octane.tsx` beside the Solid originals.
+`main.octane.tsx` beside the Solid originals. **Svelte's variant of a TypeScript
+module is `<name>.svelte.ts`**, which is also Svelte's own spelling for a runes
+module, so `apps/hero/` carries `app.svelte` and `main.svelte.ts`.
 
 There is no environment-variable switch for framework selection. Product
 builds declare it in `pocket.json`; low-level compiler work can still use a
@@ -41,7 +46,8 @@ project config or one-command override.
 }
 ```
 
-Use `"vue-vapor"` for the Vue adapter and `"octane"` for Octane.
+Use `"vue-vapor"` for the Vue adapter, `"octane"` for Octane and `"svelte"`
+for Svelte.
 `pocket check|compile|build --target …`
 resolves this value once and all framework/compiler/native stages consume the same plan.
 Do not also put `framework` in `pocket.config.ts` for a manifest build.
@@ -72,9 +78,15 @@ export default definePocketConfig({
 });
 ```
 
+```ts
+export default definePocketConfig({
+  framework: "svelte",
+});
+```
+
 The direct framework/compiler/dev scripts read the config by default. Use
-`--framework=solid`, `--framework=vue-vapor`, or `--framework=octane` to
-override it for one invocation. `--config=<path>` selects a different config
+`--framework=solid`, `--framework=vue-vapor`, `--framework=octane` or
+`--framework=svelte` to override it for one invocation. `--config=<path>` selects a different config
 file, and `--no-config` ignores config entirely.
 
 The same flag works through the dev and PSP entry points:
@@ -82,13 +94,14 @@ The same flag works through the dev and PSP entry points:
 ```sh
 bun tools/dev.ts --framework=vue-vapor hero-vue-vapor-main
 bun tools/dev.ts --framework=octane hero-main
+bun tools/dev.ts --framework=svelte hero-main
 bun tools/psp.ts hero-vue-vapor --framework=vue-vapor --release
 ```
 
 ## Framework app imports
 
 Apps import state and component lifecycle from the selected framework directly.
-PocketJS does not wrap `createSignal`, `ref`, `useState`, `onMount`,
+PocketJS does not wrap `createSignal`, `ref`, `useState`, `$state`, `onMount`,
 `onMounted`, or `useEffect`.
 
 Solid app:
@@ -190,14 +203,49 @@ export default function App() {
 mount(App);
 ```
 
+Svelte app:
+
+```svelte
+<script lang="ts">
+  import { frameworkName } from "@pocketjs/framework/svelte";
+  import { Text, View, type NodeMirror } from "@pocketjs/framework/svelte/components";
+  import { onMount } from "svelte";
+
+  let count = $state(0);
+  let marker: NodeMirror | undefined;
+
+  onMount(() => console.log(frameworkName(), marker?.id));
+</script>
+
+<View class="p-4 flex-col gap-2">
+  <Text class="text-base text-slate-950">Framework: {frameworkName()}</Text>
+  <View nodeRef={(node: NodeMirror) => (marker = node)} focusable onPress={() => count++}>
+    <Text class="text-sm text-blue-600">Count: {count}</Text>
+  </View>
+  {#if count > 2}
+    <Text class="text-sm text-emerald-600">Svelte, native tree.</Text>
+  {/if}
+</View>
+```
+
+Its entry is an ordinary TypeScript module, because a manifest's `app.entry`
+takes `.ts`/`.tsx` only:
+
+```ts
+import { mount } from "@pocketjs/framework/svelte";
+import App from "./app.svelte";
+
+mount(App);
+```
+
 The generic public subpaths remain Solid-first defaults. Use explicit framework
 subpaths when an example or app is tied to a framework:
 
-| Import | Solid build | Vue Vapor build | Octane build |
-|---|---|---|---|
-| `@pocketjs/framework` | `framework/src/index.ts` | `framework/src/index-vue-vapor.ts` | `framework/src/index-octane.ts` |
-| `@pocketjs/framework/components` | `framework/src/components.ts` | `framework/src/components-vue-vapor.ts` | `framework/src/components-octane.tsx` |
-| `@pocketjs/framework/lifecycle` | Solid lifecycle hooks | Vue Vapor lifecycle hooks | Octane lifecycle hooks (`useFrame`, `useButtonPress`, `useSpriteAnimation`) |
+| Import | Solid build | Vue Vapor build | Octane build | Svelte build |
+|---|---|---|---|---|
+| `@pocketjs/framework` | `framework/src/index.ts` | `framework/src/index-vue-vapor.ts` | `framework/src/index-octane.ts` | `framework/src/index-svelte.ts` |
+| `@pocketjs/framework/components` | `framework/src/components.ts` | `framework/src/components-vue-vapor.ts` | `framework/src/components-octane.tsx` | `framework/src/components-svelte.ts` |
+| `@pocketjs/framework/lifecycle` | Solid lifecycle hooks | Vue Vapor lifecycle hooks | Octane lifecycle hooks (`useFrame`, `useButtonPress`, `useSpriteAnimation`) | Svelte lifecycle hooks |
 
 Use `nodeRef` when a component should look similar across framework examples. Solid still supports
 `ref`, but `nodeRef` avoids framework-specific ref semantics.
@@ -219,6 +267,11 @@ import { View } from "@pocketjs/framework/vue-vapor/components";
 ```tsx
 import { mount } from "@pocketjs/framework/octane";
 import { View } from "@pocketjs/framework/octane/components";
+```
+
+```ts
+import { mount } from "@pocketjs/framework/svelte";
+import { View } from "@pocketjs/framework/svelte/components";
 ```
 
 Explicit subpaths are useful for framework-specific examples, tests, and
@@ -291,9 +344,59 @@ Authoring rules specific to Octane apps:
   upstream work on Octane's replay cost itself, which today makes a single
   press noticeably heavier on PSP than in Solid or Vue Vapor.
 
+## Svelte notes
+
+Svelte compiles against its **custom-renderer API**
+([sveltejs/svelte#18511](https://github.com/sveltejs/svelte/pull/18511)), which
+replaces the DOM with a renderer object. PocketJS supplies that object in
+`framework/src/renderer-svelte.ts`, a thin adapter over the same native mirror
+tree the other three frameworks write to. The build is unreleased, so the
+framework **vendors a tarball of the pull request head** in `vendor/` and ships
+it inside the npm package; `bun tools/vendor-svelte.ts` moves the pin.
+
+Svelte's own reactivity comes from `svelte` (`$state`, `$derived`, `$effect`,
+`onMount`, snippets); PocketJS supplies the host components, lifecycle, input
+and animation APIs.
+
+Authoring rules specific to Svelte apps:
+
+- **Component files are `.svelte`, shared reactive state lives in `.svelte.ts`
+  runes modules.** A runes module is one instance per program, so state in one
+  outlives anything that remounts the tree.
+- **The entry is a `.ts` file that imports the component**, because a manifest's
+  `app.entry` accepts `.ts`/`.tsx` only. `mount(App)` takes the component
+  itself, never a thunk.
+- **`class` stays full literals or ternaries of full literals**, exactly as in
+  the other frameworks. `class:` directives, interpolated class strings and the
+  `clsx` object/array forms are **compile errors** — the class table is built at
+  build time.
+- **Style objects are a component prop, not an attribute.** A `style` attribute
+  in Svelte is CSS text, which the native tree has no parser for, so
+  `<View style={{ width: 10 }} />` is the supported spelling and a raw
+  `style="…"` is refused at compile time. `style:` directives are refused too.
+- **`<style>` blocks are refused.** Styling is the Tailwind subset.
+- **`onPress` is the only event.** Host elements expose the native press
+  channel; everything else about input comes from `onFrame`/`onButtonPress` in
+  `@pocketjs/framework/svelte/lifecycle`.
+- **`nodeRef` hands you the `NodeMirror`** for `animate()`, `jump()` and
+  `setTextContent()`. `{@attach}` and `use:` receive the same node.
+- **`svelte/motion`, `svelte/transition` and `svelte/animate` are refused**:
+  they reach for `requestAnimationFrame` and `performance.now`, which the
+  QuickJS guest does not have. Use `animate()` and baked keyframe timelines.
+- **`bind:` on a host element is refused** by Svelte itself under a custom
+  renderer; `bind:` on a component is ordinary prop plumbing and works.
+  `<svelte:window>`, `<svelte:document>`, `<svelte:body>`, `<svelte:head>` and
+  `{@html}` are refused for the same reason.
+- **A state write in a press handler lands in that frame.** The frame handler
+  calls Svelte's `flushSync()` after input handling and before the end-of-frame
+  sweep, so effects commit before detached subtrees are destroyed.
+- **Continuous motion still rides the native channels** — sprite atlases, baked
+  keyframe timelines, `animate()`/`jump()` and `setTextContent()` — rather than
+  per-frame state, the same rule the other frameworks follow.
+
 ## What stays shared
 
-All three frameworks use the same Tailwind-subset compiler, generated style table,
+All four frameworks use the same Tailwind-subset compiler, generated style table,
 font atlas baker, `.pak` asset container, host detection, input/focus system,
 overlay layer, animation API, PSP/Vita native build paths, browser dev host, and
 PPSSPP/Vita3K capture paths. Switching frameworks changes only the JS

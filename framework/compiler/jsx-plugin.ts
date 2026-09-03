@@ -8,6 +8,7 @@ import { transformVueJsxVapor } from "vue-jsx-vapor/api";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { compileVueSfc } from "./vue-sfc-compile.ts";
+import { compileSvelte, compileSvelteModule } from "./svelte-compile.ts";
 import {
   propsHelperCode,
   propsHelperId,
@@ -25,6 +26,7 @@ import compilerSfcPkg from "@vue/compiler-sfc/package.json";
 import vuePkg from "vue/package.json";
 import vueJsxVaporPkg from "vue-jsx-vapor/package.json";
 import octanePkg from "octane/package.json";
+import sveltePkg from "svelte/package.json";
 import babelCorePkg from "@babel/core/package.json";
 import tsPresetPkg from "@babel/preset-typescript/package.json";
 import type { PocketFramework } from "../src/config.ts";
@@ -36,6 +38,7 @@ export const RENDERER_PATH = fileURLToPath(new URL("../src/renderer.ts", import.
 export const RENDERER_SOLID_PATH = fileURLToPath(new URL("../src/renderer-solid.ts", import.meta.url));
 export const RENDERER_VUE_VAPOR_PATH = fileURLToPath(new URL("../src/renderer-vue-vapor.ts", import.meta.url));
 export const RENDERER_OCTANE_PATH = fileURLToPath(new URL("../src/renderer-octane.ts", import.meta.url));
+export const RENDERER_SVELTE_PATH = fileURLToPath(new URL("../src/renderer-svelte.ts", import.meta.url));
 
 /**
  * subpath -> absolute module file, per framework — derived once from the
@@ -50,6 +53,7 @@ const RESOLVED: Record<PocketFramework, Record<string, string>> = (() => {
     solid: {},
     "vue-vapor": {},
     octane: {},
+    svelte: {},
   };
   for (const [name, decl] of Object.entries(SUBPATHS)) {
     for (const fw of POCKET_FRAMEWORKS) {
@@ -129,6 +133,10 @@ export const FRAMEWORKS: Record<
   {
     label: string;
     outputSuffix: string;
+    /** Extension the sibling-variant file uses when it differs from the
+     *  original's. Svelte has no JSX, and `<name>.svelte.ts` is also Svelte's
+     *  own runes-module spelling, so one variant file serves both roles. */
+    variantExtension?: string;
     rendererPath: string;
     rootPath: string;
   }
@@ -150,6 +158,13 @@ export const FRAMEWORKS: Record<
     outputSuffix: ".octane",
     rendererPath: RESOLVED.octane.renderer,
     rootPath: RESOLVED.octane[""],
+  },
+  svelte: {
+    label: "Svelte",
+    outputSuffix: ".svelte",
+    variantExtension: ".ts",
+    rendererPath: RESOLVED.svelte.renderer,
+    rootPath: RESOLVED.svelte[""],
   },
 };
 
@@ -192,8 +207,12 @@ const VAPOR_HELPERS = new Map([
 
 export function parseFramework(value: string | undefined, source: string): PocketFramework {
   if (value === undefined || value === "") return "solid";
-  if (value === "solid" || value === "vue-vapor" || value === "octane") return value;
-  throw new Error(`PocketJS ${source}: framework must be "solid", "vue-vapor" or "octane"`);
+  if (value === "solid" || value === "vue-vapor" || value === "octane" || value === "svelte") {
+    return value;
+  }
+  throw new Error(
+    `PocketJS ${source}: framework must be "solid", "vue-vapor", "octane" or "svelte"`,
+  );
 }
 
 export interface TransformResult {
@@ -353,6 +372,8 @@ async function hashKey(
       "\0" +
       octanePkg.version +
       "\0" +
+      sveltePkg.version +
+      "\0" +
       babelCorePkg.version +
       "\0" +
       tsPresetPkg.version +
@@ -411,7 +432,10 @@ function isNodeModuleFile(path: string): boolean {
 
 export function frameworkVariantPath(path: string, framework: PocketFramework): string {
   if (framework === "solid" || isNodeModuleFile(path) || path.endsWith(".d.ts")) return path;
-  const variant = path.replace(/(\.tsx?)$/, `${FRAMEWORKS[framework].outputSuffix}$1`);
+  const { outputSuffix, variantExtension } = FRAMEWORKS[framework];
+  const variant = variantExtension
+    ? path.replace(/\.tsx?$/, outputSuffix + variantExtension)
+    : path.replace(/(\.tsx?)$/, `${outputSuffix}$1`);
   return variant !== path && existsSync(variant) ? variant : path;
 }
 
@@ -444,6 +468,14 @@ export async function transformFile(
         `(set app.framework in pocket.json or pass --framework=vue-vapor)`,
     );
   }
+  const isSvelte = path.endsWith(".svelte");
+  const isSvelteModule = /\.svelte\.[jt]s$/.test(path);
+  if ((isSvelte || isSvelteModule) && framework !== "svelte") {
+    throw new Error(
+      `PocketJS: ${path} is a Svelte module and requires framework \"svelte\" ` +
+        `(set app.framework in pocket.json or pass --framework=svelte)`,
+    );
+  }
   const key = await hashKey(path, src, framework, options.features);
   const cacheFile = CACHE_DIR + key + ".json";
   const cached = (await Bun.file(cacheFile).json().catch(() => null)) as CacheEntry | null;
@@ -472,6 +504,37 @@ export async function transformFile(
     });
     if (!transformed?.code && transformed?.code !== "") {
       throw new Error(`PocketJS Vue SFC transform produced no output for ${path}`);
+    }
+    const entry: CacheEntry = {
+      code: transformed.code!,
+      classStrings: collected.classStrings,
+      textCodepoints: [...collected.textCodepoints],
+    };
+    await Bun.write(cacheFile, JSON.stringify(entry));
+    return {
+      code: entry.code,
+      classStrings: entry.classStrings,
+      textCodepoints: new Set(entry.textCodepoints),
+    };
+  }
+
+  if (isSvelte || isSvelteModule) {
+    const result = isSvelte ? compileSvelte(src, path) : compileSvelteModule(src, path);
+    const collected: Collected = { classStrings: [], textCodepoints: new Set() };
+    const transformed = await transformAsync(result.code, {
+      filename: path,
+      presets: [],
+      parserOpts: JSX_PARSER_OPTS,
+      plugins: [
+        ...(options.features === undefined ? [] : [makeFeatureFolder(options.features)]),
+        makeCollector(collected, framework),
+      ],
+      babelrc: false,
+      configFile: false,
+      sourceMaps: false,
+    });
+    if (!transformed?.code && transformed?.code !== "") {
+      throw new Error(`PocketJS Svelte transform produced no output for ${path}`);
     }
     const entry: CacheEntry = {
       code: transformed.code!,
@@ -630,8 +693,21 @@ export function jsxPlugin(
           return { contents, loader: "js" };
         });
       }
+      if (framework === "svelte") {
+        build.onLoad({ filter: /\.svelte(?:\.[jt]s)?$/ }, async (args) => {
+          const src = await Bun.file(args.path).text();
+          const { code } = await transformFile(args.path, src, framework, {
+            features: opts.features,
+          });
+          return { contents: code, loader: "js" };
+        });
+      }
       build.onLoad({ filter: /\.tsx?$/ }, async (args) => {
         if (isNodeModuleFile(args.path) || args.path.endsWith(".d.ts")) return undefined;
+        // A .svelte.ts runes module also matches this filter; its own rule above
+        // is registered first, but Bun runs every matching rule until one
+        // returns, so bail out explicitly.
+        if (/\.svelte\.[jt]s$/.test(args.path)) return undefined;
         let src = args.path === GENERATED_STYLES_PATH &&
             opts.generatedStyles !== undefined
           ? opts.generatedStyles

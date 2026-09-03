@@ -120,7 +120,8 @@
           "enum": [
             "solid",
             "vue-vapor",
-            "octane"
+            "octane",
+            "svelte"
           ]
         },
         "surfaces": {

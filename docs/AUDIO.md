@@ -91,7 +91,7 @@ registration are deliberately deferred until a second format needs them.
 ## The demo (and the golden-safety property)
 
 `apps/music` streams a real WAV per track on hosts with the module — all
-three framework variants (solid / vue-vapor / octane) wire the same
+four framework variants (solid / vue-vapor / octane / svelte) wire the same
 `createWavPlayer`: load on select/skip, play/pause slaved to the UI state,
 one `pump()` per frame.
 

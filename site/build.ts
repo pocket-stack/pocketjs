@@ -118,6 +118,7 @@ async function bundle(
     shims?: boolean;
     prelude?: string;
     external?: string[];
+    conditions?: string[];
     plugins?: import("bun").BunPlugin[];
   } = {},
 ) {
@@ -125,7 +126,7 @@ async function bundle(
     entrypoints: [SITE + entry],
     target: "browser",
     format: "esm",
-    conditions: ["browser"],
+    conditions: ["browser", ...(opts.conditions ?? [])],
     define: { "process.env.NODE_ENV": '"production"', "process.env.BABEL_ENV": '"production"', "process.platform": '"browser"' },
     external: opts.external,
     minify: true,
@@ -267,7 +268,7 @@ function writeStaticHeaders(): void {
 
 // --- editable demos (mostly single-file; gallery inlines generated tile data)
 type SpriteMeta = Record<string, { cols: number; rows: number; frames: number; step: number; psm?: number }>;
-type DemoVariant = { framework: "solid" | "vue-vapor" | "octane"; source: string; spriteMeta?: SpriteMeta };
+type DemoVariant = { framework: "solid" | "vue-vapor" | "octane" | "svelte"; source: string; spriteMeta?: SpriteMeta };
 type DemoEntry = { name: string; title: string; variants: DemoVariant[] };
 
 function inlinePlaygroundImports(name: string, source: string): string | null {
@@ -311,6 +312,7 @@ function demoManifest() {
     const app = dir + name + "/app.tsx";
     const vueApp = dir + name + "/app.vue-vapor.tsx";
     const octaneApp = dir + name + "/app.octane.tsx";
+    const svelteApp = dir + name + "/app.svelte";
     const main = dir + name + "/main.tsx";
     if (!existsSync(app)) continue;
     // The playground (and every demo shelf on the site) shows only
@@ -343,6 +345,12 @@ function demoManifest() {
       const octaneSource = inlinePlaygroundImports(name, readFileSync(octaneApp, "utf8"));
       if (octaneSource !== null) {
         variants.push({ framework: "octane", source: octaneSource, spriteMeta });
+      }
+    }
+    if (existsSync(svelteApp)) {
+      const svelteSource = inlinePlaygroundImports(name, readFileSync(svelteApp, "utf8"));
+      if (svelteSource !== null) {
+        variants.push({ framework: "svelte", source: svelteSource, spriteMeta });
       }
     }
     out.push({ name, title, variants });
@@ -506,6 +514,22 @@ async function main() {
   const { jsxPlugin } = await import("../framework/compiler/jsx-plugin.ts");
   await bundle("playground/runtime-octane-entry.ts", "pg/runtime-octane.js", {
     plugins: [jsxPlugin("octane")],
+  });
+  // One Svelte instance for the whole page: the runtime bundle keeps svelte
+  // external so it resolves through the import map to pg/svelte.js, exactly as
+  // the Vue Vapor pair does.
+  await bundle("playground/svelte-entry.ts", "pg/svelte.js", {
+    conditions: ["custom-renderer", "production"],
+  });
+  await bundle("playground/runtime-svelte-entry.ts", "pg/runtime-svelte.js", {
+    conditions: ["custom-renderer", "production"],
+    external: [
+      "svelte",
+      "svelte/renderer",
+      "svelte/internal/client",
+      "svelte/internal/flags/custom-renderer",
+    ],
+    plugins: [jsxPlugin("svelte")],
   });
   await bundle("playground/playground.js", "pg/playground.bundle.js");
   await bundle("assets/pocket-stage-web.js", "assets/pocket-stage-web.js");
@@ -871,6 +895,17 @@ const PLAYGROUND_IMPORTS: Record<string, string> = {
   "@pocketjs/framework/octane/input": "/pg/runtime-octane.js",
   "@pocketjs/framework/octane/lifecycle": "/pg/runtime-octane.js",
   "@pocketjs/framework/octane/renderer": "/pg/runtime-octane.js",
+  svelte: "/pg/svelte.js",
+  "svelte/renderer": "/pg/svelte.js",
+  "svelte/internal/client": "/pg/svelte.js",
+  "svelte/internal/flags/custom-renderer": "/pg/svelte.js",
+  "@pocketjs/framework/svelte": "/pg/runtime-svelte.js",
+  "@pocketjs/framework/svelte/animation": "/pg/runtime-svelte.js",
+  "@pocketjs/framework/svelte/audio": "/pg/runtime-svelte.js",
+  "@pocketjs/framework/svelte/components": "/pg/runtime-svelte.js",
+  "@pocketjs/framework/svelte/input": "/pg/runtime-svelte.js",
+  "@pocketjs/framework/svelte/lifecycle": "/pg/runtime-svelte.js",
+  "@pocketjs/framework/svelte/renderer": "/pg/runtime-svelte.js",
 };
 const IMPORT_MAP = `<script type="importmap">${JSON.stringify({ imports: PLAYGROUND_IMPORTS })}</script>`;
 
@@ -882,7 +917,7 @@ type Highlight = (text: string, rawLang: string) => string;
 async function setupMarkdown(): Promise<Highlight> {
   const highlighter = await createHighlighter({
     themes: ["one-dark-pro"],
-    langs: ["tsx", "typescript", "jsx", "javascript", "json", "bash", "rust", "toml", "html", "css", "diff", "c", "cpp"],
+    langs: ["tsx", "typescript", "jsx", "javascript", "svelte", "json", "bash", "rust", "toml", "html", "css", "diff", "c", "cpp"],
   });
   const LANG_ALIAS: Record<string, string> = { ts: "typescript", js: "javascript", sh: "bash", shell: "bash", console: "bash", jsonc: "json", rs: "rust", text: "text", txt: "text" };
   const loaded = new Set(highlighter.getLoadedLanguages());
@@ -921,7 +956,7 @@ async function buildDocs(highlight: Highlight) {
   let frameworkCodeId = 0;
   const renderFrameworkCode = (markdown: string) =>
     markdown.replace(/:::framework-code\n([\s\S]*?)\n:::/g, (_match, body: string) => {
-      const FW_LABELS = { solid: "Solid", "vue-vapor": "Vue Vapor", octane: "Octane" } as const;
+      const FW_LABELS = { solid: "Solid", "vue-vapor": "Vue Vapor", octane: "Octane", svelte: "Svelte" } as const;
       const variants: { framework: keyof typeof FW_LABELS; code: string; lang: string; label: string }[] = [];
       body.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_fence, meta: string, code: string) => {
         const parts = meta.trim().split(/\s+/);

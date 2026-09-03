@@ -47,7 +47,15 @@
       "@pocketjs/framework/octane/components": ["./framework/src/components-octane.tsx"],
       "@pocketjs/framework/octane/input": ["./framework/src/input-api.ts"],
       "@pocketjs/framework/octane/lifecycle": ["./framework/src/lifecycle-octane.ts"],
-      "@pocketjs/framework/octane/renderer": ["./framework/src/renderer-octane.ts"]
+      "@pocketjs/framework/octane/renderer": ["./framework/src/renderer-octane.ts"],
+      "@pocketjs/framework/svelte": ["./framework/src/index-svelte.ts"],
+      "@pocketjs/framework/svelte/animation": ["./framework/src/animation.ts"],
+      "@pocketjs/framework/svelte/components": ["./framework/src/components-svelte.ts"],
+      "@pocketjs/framework/svelte/gesture": ["./framework/src/gesture.svelte.ts"],
+      "@pocketjs/framework/svelte/input": ["./framework/src/input-api.ts"],
+      "@pocketjs/framework/svelte/kinetics": ["./framework/src/kinetics.svelte.ts"],
+      "@pocketjs/framework/svelte/lifecycle": ["./framework/src/lifecycle-svelte.ts"],
+      "@pocketjs/framework/svelte/renderer": ["./framework/src/renderer-svelte.ts"]
     }
   },
   "include": ["framework", "apps", "tests", "contracts", "hosts/web"]

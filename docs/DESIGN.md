@@ -161,12 +161,17 @@ PocketJS/
                        [@babel/preset-typescript]], Vue Vapor gets vue-jsx-vapor +
                        preset-typescript, Octane gets the octane universal compiler
                        (static host plans + dynamic slots) retargeted at
-                       renderer-octane.ts; ALSO collects, per file, class strings + text
+                       renderer-octane.ts, Svelte gets svelte/compiler with
+                       experimental.customRenderer pointed at renderer-svelte.ts;
+                       ALSO collects, per file, class strings + text
                        codepoints FROM THE AST (StringLiteral + TemplateLiteral quasis —
                        JSX text compiles to template literals [R]); lints: classList attr,
                        interpolated class, HTML entities in JSX text, solid
                        createResource/transition imports
     vue-sfc-compile.ts .vue → inline Vapor render function via @vue/compiler-sfc
+    svelte-compile.ts  .svelte / .svelte.ts → custom-renderer client output via
+                       svelte/compiler; owns the PocketJS lints (<style>, class:/style:,
+                       interpolated class, style attr, svelte/motion|transition|animate)
                        (comments stripped at the SFC parse [R]); the emitted template is
                        ordinary string literals, so the collector above needs no
                        template-specific walk

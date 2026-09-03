@@ -33,13 +33,13 @@ PSP_SDK=/path/to/mipsel-sony-psp BENCH_PPSSPP_TIMEOUT=60 \
   bun tools/bench-ppsspp.ts --apps=all --samples=3 --memory-scan
 ```
 
-5. For a cross-framework comparison (Solid vs Vue Vapor vs Octane), pass a
+5. For a cross-framework comparison (Solid vs Vue Vapor vs Octane vs Svelte), pass a
    framework axis; the first framework is the ratio baseline and
    `--bootstrap=N` adds 95% percentile CIs to the geomean ratios:
 
 ```bash
 BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts \
-  --apps=all --frameworks=solid,vue-vapor,octane --samples=7 --bootstrap=5000
+  --apps=all --frameworks=solid,vue-vapor,octane,svelte --samples=7 --bootstrap=5000
 ```
 
    The summary JSON then nests per-framework metrics (`apps[app][framework]`)

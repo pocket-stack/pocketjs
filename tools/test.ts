@@ -10,8 +10,9 @@
 // captured, replayed only on failure); `script` runs a self-reporting bun
 // script as-is (tests/contract.ts prints its own ok-lines); `tests` run as
 // ONE `bun test` invocation, with `browser: true` adding
-// `--conditions=browser` (stages that eval wasm-host bundles). On failure
-// the exact repro command is printed before exiting 1.
+// `--conditions=browser` (stages that eval wasm-host bundles) and
+// `conditions` naming extra ones. On failure the exact repro command is
+// printed before exiting 1.
 
 interface Stage {
   readonly name: string;
@@ -23,6 +24,9 @@ interface Stage {
   readonly tests?: readonly string[];
   /** Run `tests` under --conditions=browser (wasm-host module resolution). */
   readonly browser?: boolean;
+  /** Extra resolve conditions, one --conditions flag each (Bun ignores a
+   *  comma-separated list). */
+  readonly conditions?: readonly string[];
 }
 
 const SUITE: readonly Stage[] = [
@@ -163,6 +167,23 @@ const SUITE: readonly Stage[] = [
     tests: ["tests/audio-sim.test.ts"],
   },
   {
+    name: "svelte unit",
+    // svelte's exports resolve to its server build by default, where mount()
+    // does not exist; `production` keeps its dev-only code out of the graph.
+    conditions: ["custom-renderer", "production"],
+    browser: true,
+    tests: ["tests/svelte-compile.test.ts", "tests/renderer-svelte.test.ts"],
+  },
+  {
+    name: "svelte journeys",
+    prep: [
+      ["bun", "tools/build.ts", "hero-main", "--framework=svelte"],
+      ["bun", "tools/build.ts", "svelte-lab-main", "--framework=svelte"],
+    ],
+    browser: true,
+    tests: ["tests/svelte-smoke.test.ts", "tests/svelte-lab.test.ts"],
+  },
+  {
     name: "launcher sim",
     prep: [["bun", "tools/launcher.ts", "covers"]],
     browser: true,
@@ -236,6 +257,7 @@ for (const stage of selected) {
       "bun",
       "test",
       ...(stage.browser ? ["--conditions=browser"] : []),
+      ...(stage.conditions ?? []).map((name) => `--conditions=${name}`),
       ...stage.tests,
     ];
     const p = Bun.spawnSync(cmd, {

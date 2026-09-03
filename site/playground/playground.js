@@ -201,11 +201,9 @@ async function main() {
       globalThis.__pgPak = result.pak;
 
       const appUrl = URL.createObjectURL(new Blob([result.code], { type: "text/javascript" }));
-      const runtime = activeFramework === "vue-vapor"
-        ? "@pocketjs/framework/vue-vapor"
-        : activeFramework === "octane"
-          ? "@pocketjs/framework/octane"
-          : "@pocketjs/framework/solid";
+      const runtime = activeFramework === "solid"
+        ? "@pocketjs/framework/solid"
+        : `@pocketjs/framework/${activeFramework}`;
       const mountExpr = activeFramework === "solid" ? "() => App()" : "App";
       const boot =
         `import App from ${JSON.stringify(appUrl)};\n` +
@@ -222,7 +220,9 @@ async function main() {
         // HUD timing cannot masquerade as an input result.
         if (verifyMode) host.stop();
         const ms = Math.round(performance.now() - t0);
-        const fwLabel = { "vue-vapor": "Vue Vapor", octane: "Octane" }[activeFramework] || "Solid";
+        const fwLabel =
+          { "vue-vapor": "Vue Vapor", octane: "Octane", svelte: "Svelte" }[activeFramework] ||
+          "Solid";
         setStatus(
           `${fwLabel} · ok · ${result.classCount} styles · ${result.slotCount} atlases` +
             (result.imageNames.length ? ` · ${result.imageNames.length} img` : "") +
@@ -268,7 +268,7 @@ async function main() {
   const bootFramework = query.get("framework");
   if (boot && demos.some((d) => d.name === boot)) demoSel.value = boot;
   if (
-    (bootFramework === "vue-vapor" || bootFramework === "octane") &&
+    ["vue-vapor", "octane", "svelte"].includes(bootFramework) &&
     variantFor(currentDemo(), bootFramework)
   ) {
     framework = bootFramework;

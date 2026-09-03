@@ -122,6 +122,7 @@ const typeResult = checkAppTypes({
   declarationFiles: [
     resolve(frameworkRoot, "framework/src/jsx.d.ts"),
     resolve(frameworkRoot, "framework/src/vue-sfc.d.ts"),
+    resolve(frameworkRoot, "framework/src/svelte.d.ts"),
   ],
 });
 if (!typeResult.ok) {

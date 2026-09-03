@@ -2,7 +2,7 @@
 
 PocketJS is a portable application runtime that turns modern component code
 into native pixels across radically different hardware. You write **Solid**,
-**Vue Vapor**, or **Octane** components; the runtime compiles class strings and
+**Vue Vapor**, **Octane** or **Svelte** components; the runtime compiles class strings and
 font glyphs at build time, then renders flexbox layout, sub-pixel text and
 native animation through a compact `no_std` Rust core. One application manifest
 resolves into target-specific artifacts, from Sony PSP and PS Vita packages to
@@ -55,7 +55,8 @@ callback for you.
 **1. Framework adapters over one native tree.** Solid is the default adapter and
 uses `babel-preset-solid` universal mode. Vue Vapor uses `vue-jsx-vapor`.
 Octane — React's programming model, compiled — uses the Octane universal
-compiler, which lowers JSX to static host plans plus dynamic slots. All three
+compiler, which lowers JSX to static host plans plus dynamic slots. Svelte
+compiles `.svelte` components against its custom-renderer API. All four
 target the same retained native tree and HostOps surface, so switching framework
 changes the JS component/reactivity layer, not the Rust core, styling pipeline,
 input model, or asset pack. See [Frameworks](/docs/frameworks/) and
@@ -148,6 +149,23 @@ export default function App() {
   );
 }
 ```
+```svelte svelte
+<!-- app.svelte -->
+<script lang="ts">
+  import { Text, View } from "@pocketjs/framework/svelte/components";
+
+  let count = $state(0);
+</script>
+
+<View class="flex-col items-center gap-4 p-4 bg-slate-50">
+  <Text class="text-xl text-slate-950">Count: {count}</Text>
+  <View
+    class="p-2 rounded-md bg-blue-600 focus:bg-blue-500 transition-colors duration-150"
+    focusable
+    onPress={() => count++}
+  />
+</View>
+```
 :::
 
 The mount entry is ordinary bootstrap code — the framework detects the host,
@@ -178,6 +196,14 @@ import App from "./app.tsx";
 
 mount(App);
 ```
+
+```ts svelte
+// main.ts
+import { mount } from "@pocketjs/framework/svelte";
+import App from "./app.svelte";
+
+mount(App);
+```
 :::
 
 Build it with Bun:
@@ -195,6 +221,11 @@ bun tools/build.ts hero --framework=vue-vapor
 ```sh octane
 bun tools/build.ts hero --framework=octane
 # -> dist/hero.octane.js + dist/hero.octane.pak
+```
+
+```sh svelte
+bun tools/build.ts hero --framework=svelte
+# -> dist/hero.svelte.js + dist/hero.svelte.pak
 ```
 :::
 
@@ -255,8 +286,8 @@ list in the [Tailwind subset](/docs/tailwind/) reference.
 
 - [Getting started](/docs/getting-started/) — install, build, and run your first
   app.
-- [Frameworks](/docs/frameworks/) — switch between Solid, Vue Vapor, and
-  Octane without environment-variable hacks.
+- [Frameworks](/docs/frameworks/) — switch between Solid, Vue Vapor, Octane
+  and Svelte without environment-variable hacks.
 - [Architecture](/docs/architecture/) — how the JS runtime, Rust core, and
   target backends fit together.
 - [Components](/docs/components/) — `View`, `Text`, `Image`, control flow, and

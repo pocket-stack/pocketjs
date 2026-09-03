@@ -14,6 +14,7 @@ here. For conceptual walkthroughs see [Components](/docs/components/),
 | `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
 | `vue` | `defineComponent`, `ref`, `computed`, `watchEffect`, `onMounted`, `onScopeDispose` |
 | `octane` | `useState`, `useEffect`, `useMemo`, `useRef`, `useLayoutEffect`, `useEffectEvent` |
+| `svelte` | `onMount`, `onDestroy`, `getContext`, `setContext`, `tick`, `flushSync` (`$state`, `$derived`, `$effect` are compiler runes) |
 | `@pocketjs/framework/animation` | `animate`, `spring`, `cancelAnim` |
 | `@pocketjs/framework/lifecycle` | `onFrame`, `onButtonPress`, `analogX`, `analogY`, `analogRaw`, `createSpriteAnimation`, `pushButtonHandlerBlock` (Octane builds: `useFrame`, `useButtonPress`, `useSpriteAnimation`) |
 | `@pocketjs/framework/input` | `BTN`, `touches`, `auxiliaryTouches`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
@@ -466,6 +467,24 @@ compiler infers them from captures — and hooks are tracked by call site
 (conditional hooks in `if` blocks are fine, hooks in loops are not). Use
 `@pocketjs/framework/octane/components` explicitly, or set
 `framework: "octane"` and import generic `@pocketjs/framework/components`.
+
+## `svelte`
+
+Svelte apps write `.svelte` components and use the compiler's runes (`$state`,
+`$derived`, `$effect`, `$props`, `$bindable`) with lifecycle imported from
+`svelte`; PocketJS does not wrap them. Shared reactive state goes in a
+`.svelte.ts` runes module, which is one instance per program. Use
+`@pocketjs/framework/svelte/components` explicitly, or set
+`framework: "svelte"` and import generic `@pocketjs/framework/components`.
+
+`createSpriteAnimation` returns `{ current }` in Svelte builds, matching the
+`svelte/reactivity` convention: read it as `spinner.current`.
+
+The authoring rules Svelte adds — class literals only, style objects as a
+component prop, `onPress` as the one event, and the refused constructs — are in
+[Frameworks](/docs/frameworks/).
+
+---
 
 PocketJS's per-frame lifecycle hooks are use-prefixed in Octane builds —
 `useFrame`, `useButtonPress`, and `useSpriteAnimation` from

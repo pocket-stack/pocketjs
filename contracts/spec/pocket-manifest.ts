@@ -64,7 +64,7 @@ export interface PocketManifestV2 {
   readonly app: {
     readonly entry: string;
     readonly output?: string;
-    readonly framework: "solid" | "vue-vapor" | "octane";
+    readonly framework: "solid" | "vue-vapor" | "octane" | "svelte";
     readonly viewport: ManifestViewport;
     /** Additional UI output intent. Physical geometry remains target-owned. */
     readonly surfaces?: {
@@ -195,7 +195,7 @@ export const pocketManifestV2Schema = {
           maxLength: 64,
           pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
         },
-        framework: { enum: ["solid", "vue-vapor", "octane"] },
+        framework: { enum: ["solid", "vue-vapor", "octane", "svelte"] },
         surfaces: {
           type: "object",
           additionalProperties: false,

@@ -64,7 +64,7 @@ the canonical resolver; `pocket dev|psp|vita|hw|psplink` retain the low-level
 host-development paths; and `pocket devtools [app]` opens the
 [DevTools](/docs/devtools/) panel with the USB debug bridge.
 
-That pulls `solid-js`, the Vue Vapor and Octane dependencies, and the
+That pulls `solid-js`, the Vue Vapor, Octane and Svelte dependencies, and the
 build-time tooling (the
 Babel + Tailwind-subset compiler, the font baker, and the dev host). There is no
 separate runtime to install — the framework is the `@pocketjs/framework` package
@@ -116,10 +116,10 @@ compiler runs.
 A component returns JSX. You lay out with `View`, draw text with `Text`, and
 style with `class` — a **build-time subset of Tailwind**, not runtime CSS.
 State comes directly from the selected framework: `createSignal` in Solid,
-`ref` in Vue Vapor, `useState` in Octane.
+`ref` in Vue Vapor, `useState` in Octane, `$state` in Svelte.
 
 Solid is the default low-level framework. Manifest builds select Solid, Vue
-Vapor, or Octane with `app.framework` in `pocket.json`; see
+Vapor, Octane or Svelte with `app.framework` in `pocket.json`; see
 [Frameworks](/docs/frameworks/) for the full selection model.
 
 Here's a focusable counter. Put it in the scaffolded
@@ -205,6 +205,29 @@ export default function App() {
   );
 }
 ```
+```svelte svelte
+<script lang="ts">
+  import { Text, View } from "@pocketjs/framework/svelte/components";
+
+  let count = $state(0);
+</script>
+
+<View class="w-full h-full flex-col items-center gap-4 p-4 bg-slate-50">
+  <Text class="text-xl text-slate-950 font-bold">Count: {count}</Text>
+
+  <View
+    class="px-4 py-2 rounded-xl shadow-md bg-blue-600 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"
+    focusable
+    onPress={() => count++}
+  >
+    <Text class="text-base text-white font-bold">Press Circle</Text>
+  </View>
+
+  {#if count > 3}
+    <Text class="text-sm text-emerald-600">Reactive on real hardware.</Text>
+  {/if}
+</View>
+```
 :::
 
 What's happening:
@@ -258,6 +281,14 @@ import { mount } from "@pocketjs/framework/octane";
 // (mount(() => <App />)) is a compile error.
 mount(App);
 ```
+
+```ts svelte
+// @title PocketJS: My App
+import App from "./app.svelte";
+import { mount } from "@pocketjs/framework/svelte";
+
+mount(App);
+```
 :::
 
 `mount` comes from the selected framework runtime subpath. It handles host
@@ -307,6 +338,10 @@ bun tools/build.ts hero --framework=vue-vapor
 ```sh octane
 bun tools/build.ts hero --framework=octane
 ```
+
+```sh svelte
+bun tools/build.ts hero --framework=svelte
+```
 :::
 
 That density-1 development command produces two files in `dist/`:
@@ -318,7 +353,8 @@ That density-1 development command produces two files in `dist/`:
 
 Vue Vapor builds use the `.vue-vapor` suffix, for example
 `dist/hero.vue-vapor.js` and `dist/hero.vue-vapor.pak`; Octane builds use the
-`.octane` suffix, for example `dist/hero.octane.js` and `dist/hero.octane.pak`.
+`.octane` suffix, for example `dist/hero.octane.js` and `dist/hero.octane.pak`;
+Svelte builds use the `.svelte` suffix.
 
 A few notes on the low-level command:
 
@@ -357,6 +393,10 @@ bun tools/dev.ts --framework=vue-vapor hero-main
 ```sh octane
 bun tools/dev.ts --framework=octane hero-main
 ```
+
+```sh svelte
+bun tools/dev.ts --framework=svelte hero-main
+```
 :::
 
 Open the printed URL, **http://127.0.0.1:8130/**. Pass demo names to build
@@ -390,7 +430,7 @@ for toolchain setup, key mappings, real-device installation, and the golden E2E.
 ### In the Playground
 
 No local build at all: open the [Playground](/playground/), which loads the same
-wasm core in your browser. Pick Solid, Vue Vapor, or Octane in the toolbar,
+wasm core in your browser. Pick Solid, Vue Vapor, Octane or Svelte in the toolbar,
 edit JSX in the editor, and it renders live — the quickest way to explore the component and
 styling surface before wiring up a local project.
 
@@ -399,7 +439,8 @@ styling surface before wiring up a local project.
 `bun tools/build.ts` is a **two-pass** build:
 
 1. **Transform & collect.** The selected framework's JSX transform — Solid's
-   universal Babel preset, `vue-jsx-vapor`, or the Octane universal compiler —
+   universal Babel preset, `vue-jsx-vapor`, the Octane universal compiler, or
+   Svelte's custom-renderer compiler —
    plus TypeScript runs
    over every module reachable from your entry, content-hash cached in `.cache/`.
    As it goes it collects every class literal and every text codepoint from the

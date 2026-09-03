@@ -5,7 +5,7 @@
 import { createServer } from "node:net";
 import { join } from "node:path";
 
-type Framework = "solid" | "vue-vapor" | "octane";
+type Framework = "solid" | "vue-vapor" | "octane" | "svelte";
 
 interface DemoVariant {
   framework: Framework;
@@ -137,7 +137,7 @@ const EXPECTED_VARIANTS: Record<string, Framework[]> = {
   chrome: ["solid"],
   cursor: ["solid"],
   gallery: ["solid", "vue-vapor", "octane"],
-  hero: ["solid", "vue-vapor", "octane"],
+  hero: ["solid", "vue-vapor", "octane", "svelte"],
   launcher: ["solid"],
   library: ["solid", "vue-vapor", "octane"],
   motions: ["solid"],
@@ -151,6 +151,7 @@ const FRAMEWORK_LABEL: Record<Framework, string> = {
   solid: "Solid",
   "vue-vapor": "Vue Vapor",
   octane: "Octane",
+  svelte: "Svelte",
 };
 
 function matrixFromManifest(demos: Demo[]) {

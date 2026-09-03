@@ -543,6 +543,7 @@ describe("semantic resolution", () => {
       notifications: [true, true, false, true],
       settings: [true, true, false, true],
       stats: [true, true, false, true],
+      "svelte-lab": [true, true, false, true],
       "vue-sfc-lab": [true, true, false, true],
       zoomlab: [true, true, false, true],
     };

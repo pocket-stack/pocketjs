@@ -2,7 +2,7 @@
 
 The core's output is one contract: the DrawList, a flat `Vec<u32>` of draw
 ops pinned in `contracts/spec/spec.ts` ("DRAWLIST op format"). Everything
-above it — JSX + Tailwind, the Solid/Vue Vapor/Octane renderers, the frame
+above it — JSX + Tailwind, the Solid/Vue Vapor/Octane/Svelte renderers, the frame
 transaction (docs/DETERMINISM.md), the animation engine — is identical on
 every backend. Backends differ in **how the DrawList becomes pixels**, and
 in exactly one capability: **who measures and shapes text**.

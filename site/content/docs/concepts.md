@@ -49,7 +49,7 @@ work happens only there, and the core never calls into the guest. The
 statements for `db`, `file()` and the node:fs sync subset for `fs`, `fetch`
 and buffered responses for `net`, a mod API for OpenStrike's `strike`. The
 two sides can be replaced independently because the **spec** between them
-does not move: swap Solid for Vue Vapor, or rewrite the layout engine, and
+does not move: swap Solid for Svelte, or rewrite the layout engine, and
 the other side cannot tell.
 
 `ui` (pocketjs-core + the `ui.*` ops + the JSX SDK) was the first module.

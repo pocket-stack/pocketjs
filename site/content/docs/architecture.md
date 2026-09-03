@@ -6,7 +6,7 @@ Vita units, PPSSPP and Vita3K, desktop and browser hosts, and headless Bun. It
 gets there with one principle:
 **one Rust core, framework-specific JS adapters, one layout engine everywhere.**
 
-The JavaScript side can be Solid, Vue Vapor, or Octane. Solid uses its
+The JavaScript side can be Solid, Vue Vapor, Octane or Svelte. Solid uses its
 universal renderer;
 Vue Vapor uses a Vapor renderer adapter and a tiny DOM-shaped facade for Vue's
 helpers; Octane compiles JSX and hooks to static host plans plus dynamic slots
@@ -20,7 +20,7 @@ This page explains how the pieces fit together and why each choice was made.
 ## The pipeline
 
 ```
-        app.tsx  (Solid, Vue Vapor or Octane + Tailwind-subset classes)
+        app.tsx  (Solid, Vue Vapor, Octane or Svelte + Tailwind-subset classes)
            │
            │  framework JSX transform   (two-pass build)
            ▼
@@ -85,8 +85,10 @@ complete software renderer. See [ESP-IDF](/docs/esp-idf/).
 PocketJS keeps framework code above a small renderer adapter boundary. Solid
 uses `babel-preset-solid` with `generate: 'universal'`; Vue Vapor uses
 `vue-jsx-vapor` and `renderer-vue-vapor.ts`; Octane uses its universal
-compiler against the "pocket" renderer descriptor and `renderer-octane.ts`.
-All three adapters target the same JS
+compiler against the "pocket" renderer descriptor and `renderer-octane.ts`;
+Svelte compiles `.svelte` components with `experimental.customRenderer` pointed
+at `renderer-svelte.ts`.
+All four adapters target the same JS
 mirror tree and `ui.*` HostOps, so the Rust core, input manager, style table,
 animation system, `.pak` format, and native targets do not fork by framework.
 
@@ -182,7 +184,7 @@ codepoints during the build. See [Styling](/docs/styling/) and
 PocketJS is three layers with narrow contracts between them.
 
 **1. The app + framework runtime (JavaScript).** Your components and reactive
-state. The Solid/Vue/Octane adapters keep a lightweight JS *mirror* of the tree —
+state. The Solid/Vue/Octane/Svelte adapters keep a lightweight JS *mirror* of the tree —
 `{ id, parent, children[], … }` — so the reconciler can *read* tree structure
 without crossing the FFI boundary.
 Only *mutations* cross into native. `setProperty` runs through a dispatch table:
