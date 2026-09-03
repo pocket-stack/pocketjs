@@ -2,13 +2,25 @@
   import type { Snippet } from "svelte";
   import { Text, View } from "@pocketjs/framework/svelte/components";
 
-  let { title, badge, children }: { title: string; badge?: Snippet; children?: Snippet } = $props();
+  // Svelte's answer to named slots: snippets, passed like any other prop.
+  let {
+    title,
+    badge,
+    footer,
+    children,
+  }: { title: string; badge?: Snippet; footer?: Snippet; children?: Snippet } = $props();
 </script>
 
-<View class="flex-col gap-1 px-2 py-1 rounded-lg bg-white border-slate-200">
+<View
+  debugName="FeatureCard"
+  class="flex-1 flex-col gap-2 p-3 rounded-xl shadow-md bg-white border-slate-200"
+>
   <View class="flex-row items-center justify-between">
-    <Text class="text-xs text-slate-500 tracking-wide">{title}</Text>
+    <Text class="text-sm text-slate-950 font-bold">{title}</Text>
     {@render badge?.()}
   </View>
   {@render children?.()}
+  <View class="flex-row items-center justify-between">
+    {@render footer?.()}
+  </View>
 </View>

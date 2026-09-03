@@ -1,28 +1,30 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { frameworkName } from "@pocketjs/framework/svelte";
-  import { animate, jump } from "@pocketjs/framework/svelte/animation";
-  import {
-    Image,
-    Sprite,
-    Text,
-    View,
-    type NodeMirror,
-  } from "@pocketjs/framework/svelte/components";
+  import { animate } from "@pocketjs/framework/svelte/animation";
+  import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/svelte/components";
+  import { createSpriteAnimation } from "@pocketjs/framework/svelte/lifecycle";
 
-  let underline: NodeMirror | undefined;
+  const SPINNER_FRAME_STEP = 3;
+  const SPINNER_FRAMES = [
+    "spinner-00.svg",
+    "spinner-01.svg",
+    "spinner-02.svg",
+    "spinner-03.svg",
+    "spinner-04.svg",
+    "spinner-05.svg",
+    "spinner-06.svg",
+    "spinner-07.svg",
+  ];
+
   let count = $state(0);
+  const spinner = createSpriteAnimation(SPINNER_FRAMES, { frameStep: SPINNER_FRAME_STEP });
+  let underline: NodeMirror | undefined;
 
   onMount(() => {
+    // Underline sweeps in once on mount — native tween, zero steady-state JS.
     if (underline) animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
   });
-
-  function press(): void {
-    count += 1;
-    // The underline leaves the render path with the count: jump() writes the
-    // native transform directly, so a press costs one op, not a re-render.
-    if (underline) jump(underline, "translateX", count * 2);
-  }
 </script>
 
 {#snippet stat(label: string, value: string, cls: string)}
@@ -52,13 +54,11 @@
     <Text class="text-xs text-blue-600 tracking-wide">ONE RUST CORE - ONE SVELTE APP</Text>
     <View class="flex-row items-center justify-between">
       <Text class="text-4xl text-slate-950 font-bold">Runes at 60 FPS.</Text>
-      <!-- The spinner rides the native sprite channel (sprites.json atlas, host
-           auto-play), so continuous motion costs no JS per frame. -->
-      <Sprite class="w-10 h-10" sprite="spinner-atlas.svg" />
+      <Image class="w-10 h-10" src={spinner.current} />
     </View>
     <View
       class="h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"
-      style={{ translateX: 0 }}
+      style={{ translateX: count * 2 }}
       nodeRef={(node: NodeMirror) => (underline = node)}
     />
     <Text class="text-sm text-slate-600">
@@ -70,7 +70,7 @@
     <View
       class="px-4 py-2 rounded-xl shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"
       focusable
-      onPress={press}
+      onPress={() => count++}
     >
       <Text class="text-base text-white font-bold">Press Circle</Text>
     </View>
