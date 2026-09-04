@@ -24,4 +24,6 @@ bool input_devmenu_blocks_guest(bool menu_visible);
  * 1 while down and writes one legacy-packed touch word, else 0. */
 size_t input_touch(uint32_t *packed);
 
+bool input_offload_exit_requested(void);
+
 #endif

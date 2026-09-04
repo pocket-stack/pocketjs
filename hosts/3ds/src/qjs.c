@@ -19,6 +19,8 @@
  */
 
 #include "qjs.h"
+#include "offload.h"
+#include "offload_coverage.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +43,7 @@
 #define POCKETJS_JS_STACK_SIZE (192 * 1024)
 
 typedef enum {
+  HostOffloadSession, HostOffloadSubmit, HostOffloadTake, HostOffloadCoverage,
   HostCreateNode,
   HostDestroyNode,
   HostInsertBefore,
@@ -89,6 +92,8 @@ static const uint8_t *installed_pack;
 static size_t installed_pack_length;
 static char last_error[512];
 static char debug_poll_buffer[32 * 1024];
+static uint8_t coverage_pixels[512 * 16 * 4];
+static bool coverage_used;
 
 static void set_error(const char *message) {
   size_t length = message == NULL ? 0 : strlen(message);
@@ -419,6 +424,37 @@ static JSValue host_operation(
         JS_FreeCString(ctx, text);
       }
       return JS_UNDEFINED;
+    case HostOffloadCoverage: {
+      if (coverage_used || argc < 4 || !JS_IsString(argv[0])) return JS_NewInt32(ctx, -1);
+      JSValue length_value = JS_GetPropertyStr(ctx, argv[0], "length");
+      int32_t chars = 0; JS_ToInt32(ctx, &chars, length_value); JS_FreeValue(ctx, length_value);
+      if (chars > 2732) return JS_NewInt32(ctx, -1);
+      coverage_used = true;
+      text = JS_ToCStringLen2(ctx, &text_length, argv[0], 0);
+      int height = argument_int(ctx, argc, argv, 2);
+      int envelope = text ? coverage_decode(text, text_length, argument_int(ctx, argc, argv, 1), height,
+          (uint32_t)argument_int(ctx, argc, argv, 3), coverage_pixels) : 0;
+      if (text) JS_FreeCString(ctx, text);
+      if (!envelope) return JS_NewInt32(ctx, -1);
+      unsigned padded_height = 8; while (padded_height < (unsigned)height) padded_height *= 2;
+      return JS_NewInt32(ctx, ui_upload_texture(coverage_pixels, envelope * padded_height * 4, envelope, padded_height, 3));
+    }
+    case HostOffloadSession: return JS_NewInt32(ctx, offload_session());
+    case HostOffloadSubmit: {
+      if (argc < 1 || !JS_IsString(argv[0])) return JS_FALSE;
+      /* Reject before UTF-8 flattening: string length is a constant-time op. */
+      JSValue length_value = JS_GetPropertyStr(ctx, argv[0], "length");
+      int32_t chars = 0; JS_ToInt32(ctx, &chars, length_value); JS_FreeValue(ctx, length_value);
+      if (chars > 4096) return JS_FALSE;
+      text = JS_ToCStringLen2(ctx, &text_length, argv[0], 0);
+      bool ok = text && offload_submit(text, text_length);
+      if (text) JS_FreeCString(ctx, text);
+      return JS_NewBool(ctx, ok);
+    }
+    case HostOffloadTake: {
+      size_t length = offload_take(debug_poll_buffer);
+      return length ? JS_NewStringLen(ctx, debug_poll_buffer, length) : JS_UNDEFINED;
+    }
     case HostDbgShot:
       return JS_NewBool(ctx, devserver_request_screenshot());
   }
@@ -461,6 +497,14 @@ static void set_named_property(JSValueConst object, const uint8_t *name, size_t 
 }
 
 static void install_host(void) {
+#ifdef POCKETJS_OFFLOAD
+  JSValue offload = JS_NewObject(context);
+  add_operation(offload, "uploadCoverage", 4, HostOffloadCoverage);
+  add_operation(offload, "session", 0, HostOffloadSession);
+  add_operation(offload, "submit", 1, HostOffloadSubmit);
+  add_operation(offload, "take", 0, HostOffloadTake);
+  JS_SetPropertyStr(context, global, "offload", offload);
+#endif
   JSValue ui = JS_NewObject(context);
 
   add_operation(ui, "createNode", 1, HostCreateNode);
@@ -668,6 +712,8 @@ bool qjs_frame(
   size_t touch_count
 ) {
   if (context == NULL) return false;
+  offload_frame();
+  coverage_used = false;
   JSValue arguments[5] = {
     JS_NewInt32(context, buttons),
     JS_NewInt32(context, analog),

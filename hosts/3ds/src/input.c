@@ -127,3 +127,8 @@ size_t input_touch(uint32_t *packed) {
   *packed = ((uint32_t)touch.py << 9) | (uint32_t)touch.px;
   return 1;
 }
+
+bool input_offload_exit_requested(void) {
+  const uint32_t keys = KEY_L | KEY_R | KEY_START;
+  return (hidKeysHeld() & keys) == keys;
+}

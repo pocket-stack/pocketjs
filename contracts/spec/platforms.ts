@@ -174,6 +174,7 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // namespace (`globalThis.net`, contracts/spec/net.ts). Transport adapters
   // remain host-owned; the browser dev host, deterministic sim and reference
   // core exercise the contract without granting network access to every host.
+  "io.offload",
   "net.http",
   // SQLite behind the db module's own namespace (`globalThis.db`,
   // contracts/spec/db.ts): five synchronous ops, rows as one JSON line per

@@ -31,7 +31,7 @@ export class BuildInputs {
     }
   }
   async compiler(entrypoints: string[], frameworkRoot: string): Promise<void> {
-    const result = await Bun.build({ entrypoints, root: process.cwd(), target: "bun", packages: "external", metafile: true, write: false });
+    const result = await Bun.build({ entrypoints, root: process.cwd(), target: "bun", packages: "external", metafile: true });
     if (!result.success) throw new Error("cannot resolve compiler dependency graph: " + result.logs.join("\n"));
     this.metafile(result.metafile);
     for (const [path, input] of Object.entries(result.metafile!.inputs)) {
