@@ -63,6 +63,10 @@ serialize it. Providers return equally bounded strings. Pagination and resource
 chunking belong to the capability contract, not to an unbounded accumulator in
 the guest.
 
+`work.session()` exposes the authenticated generation (nonpositive when
+offline). Applications can revalidate cached revisions when it changes, even
+if a reconnect happens between two UI frames without an observed offline frame.
+
 `uploadCoverage(base64, width, height, foreground)` uploads a bounded 2-bit alpha
 mask when a host implements it. Width must be a multiple of four and at most
 512; height is 1–16. Foreground is ABGR. The texture uses the next power-of-two

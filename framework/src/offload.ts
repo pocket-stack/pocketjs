@@ -23,6 +23,7 @@ export function createOffloadClient(ops: OffloadOps) {
   };
   return {
     connected: () => !disposed && ops.session() > 0,
+    session: () => disposed ? 0 : ops.session(),
     pending: () => pending.size,
     request(method: string, payload: string, callback: Pending["callback"]): number {
       if (disposed || pending.size >= OFFLOAD.pending) return 0;

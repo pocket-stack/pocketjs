@@ -40,6 +40,7 @@ describe("offload budgets and failure delivery", () => {
     r.client.step(); r.disconnect(); r.client.step();
     expect(results).toHaveLength(1); expect(results[0]).toMatchObject({ ok: false });
     r.reconnect(); r.replies.push(JSON.stringify({ id, payload: "saved" })); r.client.step();
+    expect(r.client.session()).toBe(2);
     expect(results).toHaveLength(1); expect(r.sent).toHaveLength(1);
   });
   test("cancellation, timeout and malformed records leave bounded state", () => {
