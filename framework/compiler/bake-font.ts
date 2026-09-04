@@ -61,6 +61,8 @@ export interface BakedAtlas {
 }
 
 export interface BakeOptions {
+  /** File read reporting for incremental package builds. */
+  onRead?: (path: string) => void;
   /** Codepoints collected by the pass-1 AST scan. */
   codepoints: Iterable<number>;
   /** Slots to bake (indices per framework/compiler/tailwind.ts fontSlotFor). */
@@ -439,13 +441,13 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
     }
     const { px, bold, mono } = fontSlotInfo(slot);
     const key = mono ? "mono" : bold ? "bold" : "regular";
-    fonts[key] ??= await loadFont(
-      mono
+    const path = mono
         ? (opts.monoTtf ?? DEFAULT_MONO)
         : bold
           ? (opts.boldTtf ?? DEFAULT_BOLD)
-          : (opts.regularTtf ?? DEFAULT_REGULAR),
-    );
+          : (opts.regularTtf ?? DEFAULT_REGULAR);
+    opts.onRead?.(path);
+    fonts[key] ??= await loadFont(path);
     results.push(bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity));
   }
   return results;

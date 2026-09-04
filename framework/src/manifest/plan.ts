@@ -1,3 +1,4 @@
+import type { HostExtension } from "./host-extension.ts";
 import { createHash } from "node:crypto";
 import type { PocketManifestV2 } from "../../../contracts/spec/pocket-manifest.ts";
 import type { PresentationMode, Viewport } from "../../../contracts/spec/platforms.ts";
@@ -39,6 +40,8 @@ export interface ResolvedBuildPlanContent {
    *  svcOpen strings the app's adapters speak. Hosts build their svc
    *  allowlist from this list (issue #295). */
   readonly companions: readonly string[];
+  /** Versioned, content-verified adapter payload. */
+  readonly hostExtension?: HostExtension;
 }
 
 export interface ResolvedBuildPlan extends ResolvedBuildPlanContent {

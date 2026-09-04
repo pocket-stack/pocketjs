@@ -261,4 +261,6 @@ list in the [Tailwind subset](/docs/tailwind/) reference.
   target backends fit together.
 - [Components](/docs/components/) — `View`, `Text`, `Image`, control flow, and
   the app-shell primitives.
+- [ESP-IDF](/docs/esp-idf/) — compose the package, QuickJS guest, UI core,
+  RGB565 renderer, P4 accelerator, and optional task runner in native firmware.
 - [Playground](/playground/) — run the demos in your browser.

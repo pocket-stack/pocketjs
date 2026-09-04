@@ -1,4 +1,4 @@
-// Deterministic codegen: contracts/spec/spec.ts -> hosts/iphone2g/pocket_spec.h,
+// Deterministic codegen: contracts/spec/spec.ts -> contracts/generated/pocket_spec.h,
 // the C header every native host includes for the cross-language input
 // constants (button bitmask, analog center). Hosts keep their own platform
 // key codes; the portable mask they map onto comes only from here.
@@ -40,7 +40,7 @@ export function generateC(): string {
 }
 
 if (import.meta.main) {
-  const out = new URL("../../hosts/iphone2g/pocket_spec.h", import.meta.url).pathname;
+  const out = new URL("../generated/pocket_spec.h", import.meta.url).pathname;
   await Bun.write(out, generateC());
   console.log(`wrote ${out}`);
 }

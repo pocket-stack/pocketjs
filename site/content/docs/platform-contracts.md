@@ -175,6 +175,13 @@ vita: {
 }
 ```
 
+An ESP-IDF library cannot enumerate every product board. Its firmware project
+therefore supplies a schema-validated `pocket.host.json` containing the same
+display and capability fields plus the exact tick rate. The resolver treats
+that single record as the selected target and embeds its canonical SHA-256 in
+the build plan. **The device rejects a package when the compiled host contract
+and package profile hash differ.** See [ESP-IDF](/docs/esp-idf/#host-profile).
+
 DrawList is intentionally absent. It is PocketJS's internal core-to-backend IR,
 not behavior an application can observe or request. GE, GXM, WGPU, and software
 raster hosts may consume that IR while offering the same public UI semantics.

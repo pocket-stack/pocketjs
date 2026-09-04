@@ -1,10 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_TAGLINE,
   parseArgs,
   parseProbeOutput,
   resolveOutputSpec,
   xCompatibilityArgs,
 } from "../skills/pocketjs-video-outro/scripts/make-outro.ts";
+
+describe("branding defaults", () => {
+  test("uses the current three-line PocketJS positioning", () => {
+    const result = parseArgs(["-i", import.meta.path]);
+    expect(result.tagline).toBe(DEFAULT_TAGLINE);
+    expect(result.tagline.split("\n")).toEqual(["UI for", "every kind of", "computer"]);
+  });
+
+  test("keeps an explicitly supplied tagline unchanged", () => {
+    const tagline = "A custom line\nwith an intentional break";
+    expect(parseArgs(["-i", import.meta.path, "--tagline", tagline]).tagline).toBe(tagline);
+  });
+});
 
 describe("parseProbeOutput", () => {
   test("reads an iPhone HDR MOV with audio and data streams", () => {

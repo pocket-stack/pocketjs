@@ -3,13 +3,13 @@
 PocketJS runs on the BlackBerry Classic (SQC100, BlackBerry 10.3) through two
 hosts that share everything above the operating-system boundary. **Both mount
 the same guest bundle shape, the same no-std Rust UI core with its GLES2
-DrawList backend, and the same QuickJS bridge (`hosts/iphone2g/pocket_runtime.c`)
+DrawList backend, and the same QuickJS bridge (`engine/quickjs-c/pocket_runtime.c`)
 against one private device profile: 720×720 physical, 360×360 logical at
 raster density 2, 60 Hz fixed simulation time, `input.buttons`, `input.touch`,
 and `text.glyphs.baked`.** They differ only in how the process is packaged,
 installed, and fed input:
 
-| | Native QNX host — `hosts/blackberry-qnx` | Android Runtime host — `hosts/blackberry-android` |
+| | Native QNX host — `hosts/blackberry-classic-qnx` | Android Runtime host — `hosts/blackberry-classic-android` |
 | --- | --- | --- |
 | Process | BlackBerry 10 Core Native ELF: libscreen window, EGL, OpenGL ES 2, BPS event loop | Android 4.3 (API 18) APK: a `GLSurfaceView` Activity over one JNI `armeabi-v7a` library |
 | Package | unsigned development BAR (`blackberry-nativepackager -devMode`) | v1-signed APK |
@@ -49,11 +49,11 @@ build time; neither host directory holds a second copy of the id or version.
 
 Input reaches the guest only through the portable button mask and touch
 snapshot; no Android or QNX concept crosses the boundary. **The mask constants
-come from `hosts/iphone2g/pocket_spec.h`, generated from
+come from `contracts/generated/pocket_spec.h`, generated from
 `contracts/spec/spec.ts` by `contracts/spec/gen-c.ts` and byte-compared by
 `tests/contract.ts`**, and both hosts feed their platform events into the same
-state machine, `hosts/iphone2g/pocket_input.c` (unit-tested with the host
-compiler in `tests/pocket-input.test.ts`):
+state machine, `hosts/blackberry-classic/pocket_input.c` (unit-tested with the
+host compiler in `tests/pocket-input.test.ts`):
 
 | Physical input | Portable input |
 | --- | --- |
@@ -67,7 +67,7 @@ compiler in `tests/pocket-input.test.ts`):
 | touchscreen | one tracked contact (a second finger never becomes input), divided into 360×360 logical coordinates, with the host-resolved bounds hit fact; **a contact that went down and up between two frames still reports one down frame, and a release is reported at the very next frame** |
 
 The frame call is `pocket_runtime_tick(&input)` in
-`hosts/iphone2g/pocket_runtime.c`: **exactly one guest turn followed by one
+`engine/quickjs-c/pocket_runtime.c`: **exactly one guest turn followed by one
 core tick per presented frame** (docs/RUNTIMES.md, law 3), taking the mask,
 the sampled contact, and its hit fact. The older `pocket_runtime_frame` /
 `pocket_runtime_frame_ticks` entry points stay for the original iPhone host
@@ -76,11 +76,13 @@ not call them. `pocket_runtime_gl_reset` drops GL resources so the backend can
 be re-initialized after the platform recreates the context (Android does on
 pause/resume).
 
-The Rust core is `pocketjs-symbian-core` (`engine/symbian`): the no-std C-ABI
+The Rust package is `pocketjs-ui-cabi` (`engine/ui-cabi`): the no-std C-ABI
 build of `pocketjs-core` plus the GLES2 DrawList backend that the Nokia E7,
 iPhone 2G/4S, and Meizu M8 hosts already link. Both Classic hosts build it
-with the `bare-platform` feature. The QNX build uses the checked-in
-`hosts/blackberry-qnx/armv7-qnx-eabi.json` target (ARMv7, VFPv3, soft-float
+with the `bare-platform` feature. **Its compatibility archive remains
+`libpocketjs_symbian_core.a`, preserving the existing link input and C ABI.**
+The QNX build uses the checked-in
+`hosts/blackberry-classic-qnx/armv7-qnx-eabi.json` target (ARMv7, VFPv3, soft-float
 ABI, PIC, `build-std`); the Android build uses the stock
 `armv7-linux-androideabi` target.
 
@@ -155,10 +157,10 @@ bun blackberry-qnx build     # build-demo + build-runtime
 `build-demo` resolves the manifest against `blackberry-qnx-dev`, writes the
 plan to `.pocket/blackberry-qnx/`, and compiles the guest into
 `dist/blackberry-qnx/guest/`. `build-runtime` builds the Rust core, compiles
-QuickJS, `pocket_runtime.c`, and `hosts/blackberry-qnx/main.c` with the plan's
+QuickJS, `pocket_runtime.c`, and `hosts/blackberry-classic-qnx/main.c` with the plan's
 target id, host ABI, raster density, and logical viewport, links the PIE ELF
 against `libbps`, `libscreen`, `libEGL`, and `libGLESv2` with `--no-undefined`,
-and packages the unsigned BAR from the rendered `hosts/blackberry-qnx/bar-descriptor.xml`
+and packages the unsigned BAR from the rendered `hosts/blackberry-classic-qnx/bar-descriptor.xml`
 template.
 **The tool rejects a build whose ELF is not ARM, lacks the QNX dynamic loader
 or one of the four libraries, whose BAR manifest does not carry the
@@ -258,7 +260,7 @@ bun blackberry-android build        # build-demo + build-app
 
 `build` compiles the guest against `blackberry-android-dev`, builds the Rust
 core, compiles QuickJS, `pocket_runtime.c`, `pocket_input.c`, and
-`hosts/blackberry-android/app/jni/runtime.c` with the plan's target id, host
+`hosts/blackberry-classic-android/app/jni/runtime.c` with the plan's target id, host
 ABI, raster density, and logical viewport, links `lib/armeabi-v7a/libpocketjs.so`
 against `libGLESv2`, `liblog`, `libdl`, and `libm`, renders the manifest and
 string templates with the plan-derived package id, version, and title, and
@@ -296,7 +298,7 @@ generic-motion scroll axes and trackball deltas as relative movement and the
 primary button state as the press; which of those callbacks the Classic's
 Android Runtime actually delivers for the trackpad, and whether it presents
 the trackpad as a pointer instead, has not been observed on a device yet.
-Adjust `hosts/blackberry-android/app/jni/runtime.c` from the first device
+Adjust `hosts/blackberry-classic-android/app/jni/runtime.c` from the first device
 run before accepting the Hero APK.
 
 The Hero APK must show the same list as the native host: 720×720 GLES2

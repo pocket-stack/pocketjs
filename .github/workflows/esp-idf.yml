@@ -1,0 +1,121 @@
+name: ESP-IDF components
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: >-
+          bun test tests/idf-host-profile.test.ts tests/idf-embed.test.ts
+          tests/pocket-package.test.ts tests/platform-contracts.test.ts
+          tests/idf-incremental.test.ts tests/idf-release.test.ts tests/idf-package-corpus.test.ts
+      - run: bun tools/esp-idf-contracts.ts --check
+      - uses: dtolnay/rust-toolchain@1.93.0
+      - run: cargo test --locked --manifest-path hosts/esp-idf/native/ui-core/Cargo.toml
+      - run: cargo test --locked --manifest-path hosts/esp-idf/tests/native/Cargo.toml
+      - run: cargo test --locked --manifest-path engine/core/Cargo.toml package::tests
+      - name: Test C bindings with the pinned QuickJS component
+        env:
+          POCKETJS_QUICKJS_SOURCE: ${{ runner.temp }}/pocketjs-quickjs/quickjs-ng
+        run: |
+          bun -e 'const r = await fetch("https://components-file.espressif.com/components/espressif/quickjs-ng/0.14.0/espressif__quickjs-ng-v0.14.0.zip"); if (!r.ok) throw new Error(String(r.status)); await Bun.write(process.env.RUNNER_TEMP + "/quickjs.zip", r);'
+          unzip -q "$RUNNER_TEMP/quickjs.zip" -d "$RUNNER_TEMP/pocketjs-quickjs"
+          bun tools/esp-idf-host-tests.ts
+      - name: Fuzz package parsing with sanitizers
+        run: |
+          cmake -S hosts/esp-idf/tests/fuzz -B "$RUNNER_TEMP/package-fuzz" -G Ninja -DCMAKE_C_COMPILER=clang
+          cmake --build "$RUNNER_TEMP/package-fuzz"
+          cp -R tests/fixtures/packages/corpus "$RUNNER_TEMP/package-fuzz/corpus"
+          "$RUNNER_TEMP/package-fuzz/package_fuzz" "$RUNNER_TEMP/package-fuzz/corpus" -runs=10000 -max_len=8192
+
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [esp32p4, esp32s3]
+        idf: [release-v6.0, release-v6.1]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+
+      - name: Install P4 Rust target
+        if: matrix.target == 'esp32p4'
+        uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          targets: riscv32imafc-unknown-none-elf
+
+      - name: Build P4 native archive
+        if: matrix.target == 'esp32p4'
+        run: bun tools/esp-idf-native.ts --target esp32p4
+
+      - name: Install user-managed Xtensa Rust toolchain fixture
+        if: matrix.target == 'esp32s3'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/esp-rust-dist" "$RUNNER_TEMP/esp-rust"
+          gh release download v1.97.0.0 -R esp-rs/rust-build \
+            -p rust-1.97.0.0-x86_64-unknown-linux-gnu.tar.xz \
+            -p rust-src-1.97.0.0.tar.xz -D "$RUNNER_TEMP/esp-rust-dist"
+          tar -xf "$RUNNER_TEMP/esp-rust-dist/rust-1.97.0.0-x86_64-unknown-linux-gnu.tar.xz" \
+            -C "$RUNNER_TEMP/esp-rust-dist"
+          tar -xf "$RUNNER_TEMP/esp-rust-dist/rust-src-1.97.0.0.tar.xz" \
+            -C "$RUNNER_TEMP/esp-rust-dist"
+          "$RUNNER_TEMP/esp-rust-dist/rust-nightly-x86_64-unknown-linux-gnu/install.sh" \
+            --prefix="$RUNNER_TEMP/esp-rust" --disable-ldconfig
+          "$RUNNER_TEMP/esp-rust-dist/rust-src-nightly/install.sh" \
+            --prefix="$RUNNER_TEMP/esp-rust" --disable-ldconfig
+
+      - name: Build S3 native archive
+        if: matrix.target == 'esp32s3'
+        run: >-
+          bun tools/esp-idf-native.ts --target esp32s3
+          --cargo "$RUNNER_TEMP/esp-rust/bin/cargo"
+
+      - name: Build deterministic smoke package
+        run: >-
+          bun tools/pocket.ts build
+          --manifest hosts/esp-idf/examples/smoke/pocket.json
+          --host-profile hosts/esp-idf/examples/smoke/pocket.host.json
+          --project-root hosts/esp-idf/examples/smoke
+          --plan-dir "$RUNNER_TEMP/pocketjs-plans"
+          --outdir .pocket-build
+          --output idf-smoke.pocket
+
+      - name: Verify committed prebuilt package
+        run: >-
+          cmp hosts/esp-idf/examples/smoke/idf-smoke.pocket
+          hosts/esp-idf/examples/prebuilt/idf-smoke.pocket
+
+      - name: Build ESP-IDF smoke firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ matrix.idf }}
+          target: ${{ matrix.target }}
+          path: hosts/esp-idf/examples/smoke
+          command: idf.py -DPOCKETJS_RUST_FROM_SOURCE=OFF build
+
+      - name: Build optional runner firmware
+        if: matrix.idf == 'release-v6.0'
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ matrix.idf }}
+          target: ${{ matrix.target }}
+          path: hosts/esp-idf/examples/runner
+          command: idf.py -DPOCKETJS_RUST_FROM_SOURCE=OFF build

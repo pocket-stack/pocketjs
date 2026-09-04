@@ -13,9 +13,12 @@
 //! still call [`DamageTracker::invalidate`] for output-affecting mutations
 //! performed outside `Ui`.
 
+use crate::resources::RenderResources;
 use alloc::vec::Vec;
 
-use crate::{spec, Ui};
+use crate::spec;
+#[cfg(test)]
+use crate::Ui;
 
 const CLIP_DEPTH: usize = 32;
 
@@ -311,7 +314,7 @@ impl<const MAX_REGIONS: usize> DamageTracker<MAX_REGIONS> {
     /// successfully been rendered.
     pub fn prepare(
         &self,
-        ui: &Ui,
+        ui: &impl RenderResources,
         words: &[u32],
         target: DamageTarget,
     ) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
@@ -334,7 +337,7 @@ impl<const MAX_REGIONS: usize> DamageTracker<MAX_REGIONS> {
     }
 
     /// Record the DrawList after its [`DamagePlan`] has been rendered.
-    pub fn commit(&mut self, ui: &Ui, words: &[u32], target: DamageTarget) {
+    pub fn commit(&mut self, ui: &impl RenderResources, words: &[u32], target: DamageTarget) {
         if self.words != words {
             self.words.clear();
             self.words.extend_from_slice(words);
@@ -351,7 +354,10 @@ impl<const MAX_REGIONS: usize> Default for DamageTracker<MAX_REGIONS> {
     }
 }
 
-fn target_screen(ui: &Ui, target: DamageTarget) -> Result<DamageRect, DamageError> {
+fn target_screen(
+    ui: &impl RenderResources,
+    target: DamageTarget,
+) -> Result<DamageRect, DamageError> {
     let (viewport_width, viewport_height) = ui.viewport();
     if viewport_width <= 0.0 || viewport_height <= 0.0 {
         return Err(DamageError::InvalidTarget);
@@ -404,7 +410,7 @@ impl<'a> DamageDecoder<'a> {
         }
     }
 
-    fn next(&mut self, ui: &Ui) -> Result<Option<DecodedOp<'a>>, ()> {
+    fn next(&mut self, ui: &impl RenderResources) -> Result<Option<DecodedOp<'a>>, ()> {
         if self.index == self.words.len() {
             return Ok(None);
         }
@@ -481,7 +487,7 @@ impl<'a> DamageDecoder<'a> {
 }
 
 fn draw_list_damage<const MAX_REGIONS: usize>(
-    ui: &Ui,
+    ui: &impl RenderResources,
     previous: &[u32],
     current: &[u32],
     screen: DamageRect,
@@ -513,7 +519,11 @@ fn draw_list_damage<const MAX_REGIONS: usize>(
     Ok(damage)
 }
 
-fn validate_draw_list(ui: &Ui, words: &[u32], screen: DamageRect) -> Result<(), DamageError> {
+fn validate_draw_list(
+    ui: &impl RenderResources,
+    words: &[u32],
+    screen: DamageRect,
+) -> Result<(), DamageError> {
     let mut decoder = DamageDecoder::new(words, screen);
     while decoder
         .next(ui)
@@ -527,7 +537,7 @@ fn validate_draw_list(ui: &Ui, words: &[u32], screen: DamageRect) -> Result<(), 
     }
 }
 
-fn glyph_run_bounds(ui: &Ui, words: &[u32], clip: DamageRect) -> DamageRect {
+fn glyph_run_bounds(ui: &impl RenderResources, words: &[u32], clip: DamageRect) -> DamageRect {
     if words.len() < 3 || words[2] >> 24 == 0 {
         return DamageRect::empty();
     }

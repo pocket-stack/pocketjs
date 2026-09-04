@@ -12,4 +12,4 @@
  * damage accounting, and hardware receipts identical across legacy Apple
  * devices; this wrapper only scopes device-local paths.
  */
-#include "../iphone2g/runtime.c"
+#include "../ios-legacy/runtime.c"

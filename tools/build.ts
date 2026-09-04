@@ -1,3 +1,5 @@
+import { readIdfHostExtension } from "../framework/src/manifest/idf-host.ts";
+import { BuildInputs } from "../framework/compiler/build-inputs.ts";
 // tools/build.ts <app> — the TWO-PASS app build (docs/DESIGN.md "Build pipeline").
 //
 //   bun tools/build.ts apps/hero/app.tsx    (or just `hero`)
@@ -89,6 +91,8 @@ let planPath: string | undefined;
 let densityFlag: number | undefined;
 let hzFlag: number | undefined;
 let projectRoot = process.cwd();
+let inputsFile: string | undefined;
+const buildInputs = new BuildInputs();
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
   else if (a.startsWith("--font-regular=")) regularFontPath = resolvePath(a.slice("--font-regular=".length));
@@ -101,6 +105,7 @@ for (const a of args) {
   else if (a.startsWith("--outdir=")) DIST = resolvePath(a.slice("--outdir=".length)) + "/";
   else if (a.startsWith("--density=")) densityFlag = Number(a.slice("--density=".length));
   else if (a.startsWith("--hz=")) hzFlag = Number(a.slice("--hz=".length));
+  else if (a.startsWith("--inputs-file=")) inputsFile = resolvePath(a.slice("--inputs-file=".length));
   else if (!a.startsWith("-")) appArg = a;
 }
 
@@ -164,6 +169,9 @@ function resolveEntry(arg: string): string {
 }
 
 const requestedEntry = resolveEntry(appArg);
+buildInputs.optional(configPath);
+buildInputs.optional(join(dirname(requestedEntry), "pocket.config.ts"));
+buildInputs.optional(join(projectRoot, "tsconfig.json"));
 // An app directory can carry its own pocket.config.ts (theme/keyframes local
 // to the app); it wins over the repo root config unless --config was given.
 if (!configFlagged && useConfig) {
@@ -209,12 +217,16 @@ if (densityFlag !== undefined && (!Number.isInteger(densityFlag) || densityFlag 
 const rasterDensity = buildPlan?.viewport.rasterDensity ?? densityFlag ?? 1;
 
 // Tick rate: the realm's virtual-time step, baked into the bundle because
-// every ms-to-frame conversion in the framework resolves against it. The
-// plan does not own it, so --hz is accepted with or without --plan.
+// every ms-to-frame conversion in the framework resolves against it. An
+// ESP-IDF host profile owns the rate; low-level builds may still pass --hz.
 if (hzFlag !== undefined && (!Number.isInteger(hzFlag) || hzFlag < 1 || hzFlag > 240)) {
   throw new Error("PocketJS build: --hz wants an integer from 1 through 240");
 }
-const tickHz = hzFlag ?? 60;
+const idfHost = readIdfHostExtension(buildPlan?.hostExtension);
+if (idfHost && hzFlag !== undefined && hzFlag !== idfHost.tickHz) {
+  throw new Error("PocketJS build: --hz cannot override an ESP-IDF host profile");
+}
+const tickHz = idfHost?.tickHz ?? hzFlag ?? 60;
 console.log(
   `PocketJS build: ${appName} (${entry}, framework=${framework}` +
     `${tickHz === 60 ? "" : `, ${tickHz}Hz`}` +
@@ -267,6 +279,7 @@ async function walk(file: string): Promise<void> {
   // pass 1 must see like any hand-written module's.
   if (file.replace(/\\/g, "/").endsWith("/styles.generated.ts")) return;
   const src = await Bun.file(file).text();
+  buildInputs.add(file);
   // Throws with a code frame on lint errors.
   const res = await transformFile(file, src, framework, { features: buildPlan?.features });
   for (const s of res.classStrings) {
@@ -315,6 +328,7 @@ const atlases = await bakeAtlases({
   rasterDensity,
   regularTtf: regularFontPath,
   boldTtf: boldFontPath,
+  onRead: path => buildInputs.add(path),
 });
 for (const a of atlases) {
   console.log(
@@ -340,6 +354,7 @@ interface SpriteMeta {
   psm?: number;
 }
 const spriteManifestPath = join(appDir, "sprites.json");
+buildInputs.optional(spriteManifestPath);
 const spriteMeta: Record<string, SpriteMeta> = existsSync(spriteManifestPath)
   ? (JSON.parse(await Bun.file(spriteManifestPath).text()) as Record<string, SpriteMeta>)
   : {};
@@ -352,12 +367,14 @@ interface ImageMeta {
   psm?: number;
 }
 const imageManifestPath = join(appDir, "images.json");
+buildInputs.optional(imageManifestPath);
 const imageMeta: Record<string, ImageMeta> = existsSync(imageManifestPath)
   ? (JSON.parse(await Bun.file(imageManifestPath).text()) as Record<string, ImageMeta>)
   : {};
 const imageNames = classStrings.filter((s) => /^[\w./-]+\.(?:png|svg)$/i.test(s));
 for (const name of imageNames) {
   const candidates = [join(appDir, name), join(ROOT, "assets/images/", name), join(ROOT, "assets/", name)];
+  candidates.forEach(path => buildInputs.optional(path));
   const found = candidates.find((c) => existsSync(c));
   let img;
   if (found) {
@@ -372,6 +389,7 @@ for (const name of imageNames) {
       // sprite's frame grid stays logical because every atlas dimension is
       // scaled by the same integer density.
       const variant = densityVariantPath(found, rasterDensity);
+      buildInputs.optional(variant);
       if (variant !== found && existsSync(variant)) {
         const highDensity = decodePng(new Uint8Array(await Bun.file(variant).arrayBuffer()));
         assertDensityVariantDimensions(base, highDensity, rasterDensity, found, variant);
@@ -426,6 +444,7 @@ for (const name of imageNames) {
 // appended verbatim as u8 blobs. This keeps expensive offline bakes out of the
 // build: the build just splices bytes it can't (and needn't) regenerate.
 const pakManifestPath = join(appDir, "pak.json");
+buildInputs.optional(pakManifestPath);
 if (existsSync(pakManifestPath)) {
   const rawEntries = JSON.parse(await Bun.file(pakManifestPath).text()) as Array<{ key: string; file: string }>;
   let rawBytes = 0;
@@ -436,6 +455,8 @@ if (existsSync(pakManifestPath)) {
       process.exit(1);
     }
     const densityPath = densityVariantPath(basePath, rasterDensity);
+    buildInputs.add(basePath);
+    buildInputs.optional(densityPath);
     const path = densityPath !== basePath && existsSync(densityPath) ? densityPath : basePath;
     const data = new Uint8Array(await Bun.file(path).arrayBuffer());
     blobs.push({ key: e.key, dtype: PAK_DTYPE.u8, data });
@@ -467,6 +488,7 @@ if (!existsSync(frameworkConfig.rendererPath)) {
 // browser-mode Solid runtime even when the app has its own node_modules.
 const result = await Bun.build({
   entrypoints: [entry],
+  root: process.cwd(),
   outdir: DIST,
   naming: `${outName}.js`,
   format: "iife",
@@ -489,6 +511,7 @@ const result = await Bun.build({
       : {}),
   },
   minify: false,
+  metafile: true,
   sourcemap: "none",
   plugins: [jsxPlugin(framework, {
     entry,
@@ -502,6 +525,12 @@ if (!result.success) {
   process.exit(1);
 }
 const bundle = result.outputs.find((o) => o.path.endsWith(".js"));
+if (inputsFile) {
+  buildInputs.metafile(result.metafile);
+  await buildInputs.compiler([join(ROOT, "tools/build.ts"), join(ROOT, "tools/pocket.ts"),
+    ...(useConfig && existsSync(configPath) ? [configPath] : [])], ROOT);
+  await Bun.write(inputsFile, JSON.stringify(buildInputs.paths(), null, 2) + "\n");
+}
 console.log(`  pass 2: ${DIST}${outName}.js (${bundle ? (await bundle.arrayBuffer()).byteLength : 0} bytes)`);
 console.log("PocketJS build: done");
 

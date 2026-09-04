@@ -3,7 +3,7 @@
  *
  * The Rust core emits the same flat u32 word stream on every target
  * (contracts/spec/spec.ts "DRAWLIST op format"); this file is the 3DS
- * equivalent of engine/symbian/src/gl/mod.rs — the walk, the texture and
+ * equivalent of engine/ui-cabi/src/gl/mod.rs — the walk, the texture and
  * font-atlas caches, and batching by texture and scissor are the same shape,
  * only the state they turn into is citro3d instead of GLES.
  *
@@ -197,7 +197,7 @@ static inline uint32_t morton_offset(uint32_t x, uint32_t y) {
 }
 
 /* One source texel as R, G, B, A — the core's byte order (see
- * engine/symbian/src/gl/mod.rs texture_rgba, which expands the same formats
+ * engine/ui-cabi/src/gl/mod.rs texture_rgba, which expands the same formats
  * for GLES). Out-of-image reads are transparent so a non-power-of-two image
  * can sit inside a power-of-two envelope. */
 static void fetch_texel(
@@ -343,7 +343,7 @@ static bool upload_image(ImageTexture *entry, const PocketTexture *source) {
 }
 
 /* Lay the glyph coverage cells out in a roughly square grid whose power-of-two
- * envelope the PICA can hold — engine/symbian/src/gl/mod.rs font_grid picks
+ * envelope the PICA can hold — engine/ui-cabi/src/gl/mod.rs font_grid picks
  * the same shape for GLES. */
 static bool font_grid(
   const PocketFontAtlas *atlas,

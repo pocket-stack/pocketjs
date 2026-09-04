@@ -19,7 +19,7 @@ the split is the other way round and matches `hosts/iphone2g`: **C owns the
 graphics API, Rust owns everything above it.** That is why this host's crate
 exports the DrawList itself (`ui_draw`, `ui_draw_list_ptr`,
 `ui_draw_list_len`) and the texture and font registries over the C ABI, which
-`engine/symbian` does not — its GLES backends consume the list internally.
+`engine/ui-cabi` does not — its GLES backends consume the list internally.
 
 ```
 core/                 pocketjs-3ds-core: the ui_* C ABI over pocketjs-core
@@ -337,7 +337,7 @@ is geometry:
 
 ## What the backend has to honour
 
-`src/gfx.c` is the 3DS twin of `engine/symbian/src/gl/mod.rs`: the same walk,
+`src/gfx.c` is the 3DS twin of `engine/ui-cabi/src/gl/mod.rs`: the same walk,
 the same texture and font-atlas caches, the same batching by texture and
 scissor. It does **no clipping** — the core's CPU clip stage guarantees every
 coordinate is already inside the viewport and i16-safe. The PICA200 adds:

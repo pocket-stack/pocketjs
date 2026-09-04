@@ -140,6 +140,12 @@ and ABI and refuses to mount on a mismatched or pre-contract native host.
 `__textures` remains a legacy native marker so old, non-manifest bundles keep
 working, but it cannot satisfy an embedded target contract.
 
+On ESP-IDF, `pocketjs_ui_qjs` installs this namespace into a caller-owned
+`pocketjs_guest` and forwards each op to a caller-owned `pocketjs_ui_core`.
+The binding performs no rendering and creates no task. Its synchronous
+`pocketjs_ui_turn` follows the frame order below and returns a borrowed native
+frame view for the selected backend.
+
 Every host drives frames through
 `globalThis.frame(buttons, analog?, touches?, hits?, touchSurfaces?)`. Buttons use the shared PSP
 bitmask, analog is `(x << 8) | y` with centered bytes on stickless hosts, and

@@ -23,10 +23,13 @@ the targets that compile the core natively — you don't need them to write UI.
 | Run the local **browser** dev host    | Bun + Rust with the wasm target (`rustup target add wasm32-unknown-unknown`) |
 | Ship a **PSP EBOOT** | `bun run bootstrap` (pinned Rust, [`cargo-psp`](https://github.com/pocket-stack/rust-psp), LLVM, and verified SDK) |
 | Ship a **PS Vita VPK** | [VitaSDK](https://vitasdk.org/), `cargo-vita` 0.2.2, and Rust nightly `2026-05-28` with `rust-src` |
+| Embed PocketJS in **ESP-IDF** | ESP-IDF 6.0 or 6.1; Registry releases include the P4/S3 native core archives |
 | Hot-reload on **real PSP hardware** | The build toolchain above + optional [PSPLINK](https://github.com/pspdev/psplinkusb) host tools |
 
 The Rust core is `no_std` and gets built once per platform. For this guide we
 stay on the JS side and let the dev host compile the wasm core for us.
+Existing P4 and S3 firmware projects use the independent workflow in the
+[ESP-IDF guide](/docs/esp-idf/).
 
 ## Install
 

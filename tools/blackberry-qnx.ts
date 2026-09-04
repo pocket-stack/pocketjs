@@ -184,7 +184,7 @@ function buildRustCore(): string {
       "-Z",
       "build-std-features=compiler-builtins-mem",
     ],
-    join(repository, "engine/symbian"),
+    join(repository, "engine/ui-cabi"),
     {
       ...process.env,
       CARGO_PROFILE_RELEASE_LTO: "false",
@@ -294,7 +294,7 @@ function buildRuntime(): void {
   writeFileSync(
     join(nativeBuild, "staging/bar-descriptor.xml"),
     renderTemplate(
-      readFileSync(join(repository, "hosts/blackberry-qnx/bar-descriptor.xml"), "utf8"),
+      readFileSync(join(repository, "hosts/blackberry-classic-qnx/bar-descriptor.xml"), "utf8"),
       {
         ID: identity.packageId,
         TITLE: xmlEscape(identity.title),

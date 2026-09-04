@@ -484,7 +484,7 @@ async function build(): Promise<void> {
       join(REPOSITORY, "hosts/ipodtouch4/armv7-apple-ios.json"), "-Z", "json-target-spec",
       "-Z", "build-std=core,alloc,compiler_builtins", "-Z", "build-std-features=compiler-builtins-mem"],
     {
-      cwd: join(REPOSITORY, "engine/symbian"),
+      cwd: join(REPOSITORY, "engine/ui-cabi"),
       env: { ...process.env, RUSTC: rustc, CARGO_HOME: cargoHome, CARGO_TARGET_DIR: rustTarget, IPHONEOS_DEPLOYMENT_TARGET: DEPLOYMENT_TARGET },
     },
   );
@@ -510,21 +510,24 @@ async function build(): Promise<void> {
   const runtimeIdentityObject = join(nativeBuild, "runtime.build-id-input.o");
   const pocketRuntimeObject = join(nativeBuild, "pocket_runtime.o");
   const compatObject = join(nativeBuild, "compat.o");
-  compile(join(REPOSITORY, "hosts/iphone2g/crt_globals.c"), crtGlobalsObject, warnings);
+  compile(join(REPOSITORY, "hosts/ios-legacy/crt_globals.c"), crtGlobalsObject, warnings);
   compile(join(REPOSITORY, "hosts/ipodtouch4/runtime.c"), runtimeIdentityObject, [
     ...firstParty,
     `-DPOCKET_BUILD_ID=\"${BUILD_ID_PLACEHOLDER}\"`,
+    "-I", join(REPOSITORY, "engine/quickjs-c"),
     "-Wno-cast-function-type-mismatch",
   ]);
-  compile(join(REPOSITORY, "hosts/iphone2g/pocket_runtime.c"), pocketRuntimeObject, [
+  compile(join(REPOSITORY, "engine/quickjs-c/pocket_runtime.c"), pocketRuntimeObject, [
     ...warnings,
     `-DPOCKETJS_TARGET_ID=\"${inputs.target}\"`,
     `-DPOCKETJS_HOST_ABI=${inputs.hostAbi}`,
     `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`,
+    "-I", join(REPOSITORY, "engine/ui-cabi/include"),
+    "-I", join(REPOSITORY, "contracts/generated"),
     "-isystem",
     quickjs,
   ]);
-  compile(join(REPOSITORY, "hosts/iphone2g/compat.c"), compatObject, warnings);
+  compile(join(REPOSITORY, "hosts/ios-legacy/compat.c"), compatObject, warnings);
 
   const buildId = hashInputs([
     planPath(),
@@ -564,6 +567,7 @@ async function build(): Promise<void> {
   compile(join(REPOSITORY, "hosts/ipodtouch4/runtime.c"), runtimeObject, [
     ...firstParty,
     `-DPOCKET_BUILD_ID=\"${buildId}\"`,
+    "-I", join(REPOSITORY, "engine/quickjs-c"),
     "-Wno-cast-function-type-mismatch",
   ]);
 

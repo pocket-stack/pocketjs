@@ -10,7 +10,7 @@ if test "$POCKETJS_SYMBIAN_IMAGE_IMPLEMENTATION_SHA256" != \
     exit 1
 fi
 toolchain=/toolchain/current
-source=/workspace/hosts/symbian/probe
+source=/workspace/hosts/nokia-e7/probe
 uid=$(jq -r .probe.uid "$manifest")
 output_name=$(basename "$(jq -r .probe.output "$manifest")")
 output="/out/$output_name"

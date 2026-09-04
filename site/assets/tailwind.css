@@ -29,13 +29,23 @@
   --color-fg-2: var(--ink-2);
   --color-muted: var(--muted);
 
-  --color-steel: var(--steel-2);
-  --color-steel-1: var(--steel-1);
-  --color-phosphor: var(--ph);
-  --color-phosphor-2: var(--ph-2);
-  --color-brand: var(--sky);
-  --color-brand-2: var(--ph);
-  --color-brand-3: var(--sky);
+  --color-tint: var(--tint-2);
+  --color-tint-1: var(--tint-1);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-brand: var(--accent-3);
+  --color-brand-2: var(--accent);
+  --color-brand-3: var(--accent-3);
+
+  /* Docs chrome reaches for slate by name in a dozen places. The ground is
+     plum, so the scale is redefined here as the matching lavender ramp rather
+     than left as Tailwind's cool grey, which reads dirty over this bg. */
+  --color-slate-100: #fcf6ff;
+  --color-slate-200: #ded2f2;
+  --color-slate-300: var(--ink-2);
+  --color-slate-400: #ab9ccb;
+  --color-slate-500: var(--muted);
+  --color-slate-600: #6f6389;
 }
 
 /* ---- base: chrome.css sets the ground; this adds prose-only defaults ------ */
@@ -44,37 +54,37 @@
   body {
     background: var(--bg);
     background-image:
-      radial-gradient(ellipse 55% 34% at 50% -6%, rgba(78, 240, 138, 0.1), transparent),
-      radial-gradient(ellipse 58% 40% at 50% -4%, rgba(216, 225, 236, 0.06), transparent),
-      radial-gradient(ellipse 40% 30% at 90% 14%, rgba(78, 240, 138, 0.05), transparent);
+      radial-gradient(ellipse 55% 34% at 50% -6%, rgba(var(--accent-rgb), 0.1), transparent),
+      radial-gradient(ellipse 58% 40% at 50% -4%, rgba(var(--accent-2-rgb), 0.06), transparent),
+      radial-gradient(ellipse 40% 30% at 90% 14%, rgba(var(--accent-3-rgb), 0.05), transparent);
     color: var(--ink-2);
     font-family: var(--sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
-  /* the same tube glass the homepage sits behind */
+  /* the same fine horizontal grain the homepage sits behind */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
     z-index: 100;
-    background: repeating-linear-gradient(0deg, rgba(3, 18, 11, 0.16) 0 1px, transparent 1px 3px);
+    background: repeating-linear-gradient(0deg, rgba(var(--shade-rgb), 0.10) 0 1px, transparent 1px 4px);
   }
   a { color: inherit; text-decoration: none; }
-  ::selection { background: color-mix(in oklab, var(--ph) 32%, transparent); color: #04170c; }
+  ::selection { background: color-mix(in oklab, var(--accent) 82%, transparent); color: #2a1b10; }
 }
 
 /* prose links carry the accent the rest of the system uses for references */
 @layer components {
-  .prose a { color: var(--sky); font-weight: 500; }
-  .prose a:hover { color: var(--ph); }
-  .prose :where(code):not(:where(pre *)) { color: var(--ph-2); }
+  .prose a { color: var(--accent-3); font-weight: 500; }
+  .prose a:hover { color: var(--accent); }
+  .prose :where(code):not(:where(pre *)) { color: var(--accent-2); }
 }
 
 /* ---- reusable brand bits -------------------------------------------------- */
 @utility text-gradient {
-  background: linear-gradient(120deg, #f3f7fd 0%, #d6e0ec 36%, #8d9bb0 67%, #c5d4e6 100%);
+  background: var(--spectrum);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

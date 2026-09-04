@@ -16,7 +16,7 @@ whose input is entirely gestures; its acceptance receipt is the
 ## Multi-contact touch
 
 This target is the reason the legacy UIKit runtime tracks a touch slot table
-instead of one contact. **`hosts/iphone2g/runtime.c` keeps eight slots — the
+instead of one contact. **`hosts/ios-legacy/runtime.c` keeps eight slots — the
 guest wire cap — with the slot index as the wire contact id, release-latched
 delivery (a sub-frame tap is still delivered for at least one guest frame),
 and a bounds hit fact resolved once at each contact's down edge.** The frame

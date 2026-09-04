@@ -21,8 +21,8 @@ const ENTRY_PATH = join(REPOSITORY, "apps/iphone2g-demo/main.tsx");
 const APP_PATH = join(REPOSITORY, "apps/iphone2g-demo/app.tsx");
 const INFO_PLIST_PATH = join(REPOSITORY, "hosts/iphone2g/Info.plist");
 const ICON_PATH = join(REPOSITORY, "hosts/iphone2g/Icon.png");
-const RUNTIME_PATH = join(REPOSITORY, "hosts/iphone2g/runtime.c");
-const POCKET_RUNTIME_PATH = join(REPOSITORY, "hosts/iphone2g/pocket_runtime.c");
+const RUNTIME_PATH = join(REPOSITORY, "hosts/ios-legacy/runtime.c");
+const POCKET_RUNTIME_PATH = join(REPOSITORY, "engine/quickjs-c/pocket_runtime.c");
 const ROOT_TSCONFIG = join(REPOSITORY, "tsconfig.json");
 const JSX_DECLARATIONS = join(REPOSITORY, "framework/src/jsx.d.ts");
 
@@ -42,7 +42,7 @@ describe("private iPhone 2G build profile", () => {
     expect(POCKET_TARGETS).not.toHaveProperty(IPHONE2G_DEV_TARGET_ID);
     expect(IPHONE2G_DEV_CONTRACTS.targets[IPHONE2G_DEV_TARGET_ID]).toEqual({
       hostAbi: IPHONE2G_DEV_HOST_ABI,
-      platform: "iphoneos",
+      platform: "ios",
       form: "takeover",
       display: {
         physicalViewport: IPHONE2G_VIEWPORT,
@@ -109,10 +109,10 @@ describe("private iPhone 2G build profile", () => {
     ).toBe(true);
   });
 
-  test("ships a precomposed skeuomorphic metal SpringBoard icon", async () => {
+  test("ships a precomposed skeuomorphic SpringBoard icon", async () => {
     expect(
       createHash("sha256").update(readFileSync(ICON_PATH)).digest("hex"),
-    ).toBe("198a1c3768a028d825da6b1e2213434766ad1ed0fe9c4350f901440cad062a2f");
+    ).toBe("c53fd02ab1148674d33d36efa9b1d2eecc518cbe325ea2a2a0d47e3c295b019b");
     const image = await loadImage(ICON_PATH);
     expect([image.width, image.height]).toEqual([59, 60]);
     const canvas = createCanvas(image.width, image.height);
@@ -121,20 +121,23 @@ describe("private iPhone 2G build profile", () => {
     const pixelAt = (x: number, y: number) =>
       Array.from(context.getImageData(x, y, 1, 1).data);
     const alphaAt = (x: number, y: number) => pixelAt(x, y)[3];
+    // SpringBoard on 1.x rounds nothing itself, so the artwork carries its own
+    // corners: transparent outside them, opaque everywhere inside.
     expect(alphaAt(0, 0)).toBe(0);
     expect(alphaAt(58, 0)).toBe(0);
     expect(alphaAt(0, 59)).toBe(0);
     expect(alphaAt(58, 59)).toBe(0);
     expect(alphaAt(29, 29)).toBe(255);
-    expect(pixelAt(10, 48)).toEqual([5, 5, 4, 255]);
-    expect(pixelAt(29, 0)).toEqual([176, 180, 188, 255]);
-    expect(pixelAt(29, 8)).toEqual([110, 109, 109, 255]);
-    expect(pixelAt(29, 29).slice(0, 3)).toEqual([249, 249, 249]);
+    // The three layers the era treatment is made of, sampled in from the edge:
+    // chrome bezel, plum enamel, then the arcade-yellow shell of the mark.
+    expect(pixelAt(29, 2)).toEqual([215, 217, 220, 255]);
+    expect(pixelAt(29, 52)).toEqual([28, 21, 48, 255]);
+    expect(pixelAt(12, 30)).toEqual([255, 210, 63, 255]);
   });
 
   test("the ES 1.1 pipeline enables the fixed-function state ES 2 gets from its shader", () => {
     const es1 = readFileSync(
-      join(REPOSITORY, "engine/symbian/src/gl/es1.rs"),
+      join(REPOSITORY, "engine/ui-cabi/src/gl/es1.rs"),
       "utf8",
     );
     // Texturing is a per-unit enable in ES 1.1 and has no ES 2 equivalent, so

@@ -1,7 +1,7 @@
 # PocketJS iPod touch 4 host
 
 This host targets the exact `iPod4,1` / iOS 6.1.6 / `10B500` hardware tuple.
-It compiles the shared legacy UIKit runtime (`hosts/iphone2g/runtime.c`) for
+It compiles the shared legacy UIKit runtime (`hosts/ios-legacy/runtime.c`) for
 ARMv7 and links it against the validated iPhone 4S sysroot — the same 6.1.3
 ARMv7 shared-cache extraction, reused because the stubs are link-time only
 and iOS 6.1.6 resolves the same install names. Apple system binaries are

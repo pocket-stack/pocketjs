@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 
@@ -94,5 +94,38 @@ describe("published PocketJS CLI", () => {
       expect(basename(new URL(recorded.script).pathname)).toBe(fixture.script);
       expect(recorded.args).toEqual(fixture.args);
     }
+  });
+
+  test("manifest commands resolve a project-local published framework", () => {
+    const cwd = `/tmp/pocketjs-cli-external-${process.pid}-${Math.random().toString(16).slice(2)}`;
+    const framework = join(cwd, "node_modules/@pocketjs/framework");
+    const log = join(cwd, "cli-log.json");
+    mkdirSync(join(framework, "tools"), { recursive: true });
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "external-pocket-app" }));
+    writeFileSync(join(framework, "package.json"), JSON.stringify({ name: "@pocketjs/framework" }));
+    writeFileSync(join(framework, "tools/pocket.ts"), `await Bun.write(process.env.POCKET_CLI_TEST_LOG, JSON.stringify({
+  args: Bun.argv.slice(2),
+  cwd: process.cwd(),
+}));\n`);
+    temporary.push(cwd);
+
+    const result = runCli(cwd, [
+      "build",
+      "--host-profile",
+      "firmware/pocket.host.json",
+      "--manifest",
+      "app/pocket.json",
+    ], { POCKET_CLI_TEST_LOG: log });
+    expect(result.exitCode, result.stderr.toString()).toBe(0);
+    expect(JSON.parse(readFileSync(log, "utf8"))).toEqual({
+      args: [
+        "build",
+        "--host-profile",
+        "firmware/pocket.host.json",
+        "--manifest",
+        "app/pocket.json",
+      ],
+      cwd: realpathSync(cwd),
+    });
   });
 });

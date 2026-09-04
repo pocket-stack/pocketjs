@@ -34,7 +34,7 @@ describe("private iPod touch 4 profile", () => {
     expect(POCKET_TARGETS).not.toHaveProperty(IPODTOUCH4_DEV_TARGET_ID);
     expect(IPODTOUCH4_DEV_CONTRACTS.targets[IPODTOUCH4_DEV_TARGET_ID]).toEqual({
       hostAbi: IPODTOUCH4_DEV_HOST_ABI,
-      platform: "iphoneos",
+      platform: "ios",
       form: "takeover",
       display: {
         physicalViewport: IPODTOUCH4_PHYSICAL_VIEWPORT,
@@ -95,9 +95,9 @@ describe("private iPod touch 4 profile", () => {
 
   test("shares the multi-contact touch host and keeps transactional rollback", () => {
     const wrapper = readFileSync(join(repository, "hosts/ipodtouch4/runtime.c"), "utf8");
-    const runtime = readFileSync(join(repository, "hosts/iphone2g/runtime.c"), "utf8");
-    const guest = readFileSync(join(repository, "hosts/iphone2g/pocket_runtime.c"), "utf8");
-    expect(wrapper).toContain('#include "../iphone2g/runtime.c"');
+    const runtime = readFileSync(join(repository, "hosts/ios-legacy/runtime.c"), "utf8");
+    const guest = readFileSync(join(repository, "engine/quickjs-c/pocket_runtime.c"), "utf8");
+    expect(wrapper).toContain('#include "../ios-legacy/runtime.c"');
     expect(wrapper).toContain("#define POCKET_GL_DEFAULT 1");
     expect(wrapper).toContain("#define POCKET_REQUIRE_GL 1");
     // The legacy runtime tracks a slot table, not one contact: eight wire

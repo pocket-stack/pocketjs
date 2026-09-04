@@ -1,3 +1,4 @@
+import { isHostExtension, type HostExtension } from "./host-extension.ts";
 import { DYNAMIC_FORMS, PACKAGE_ROLES, TARGET_FORMS } from "../../../contracts/spec/platforms.ts";
 import type { PocketManifestV2 } from "../../../contracts/spec/pocket-manifest.ts";
 import {
@@ -23,6 +24,8 @@ export interface ResolveBuildRequest {
   /** Defaults to an ordinary application. System resolution assigns the
    *  System UI role before capability admission. */
   readonly role?: "application" | "systemUI";
+  /** Versioned adapter input, interpreted only by its owner. */
+  readonly hostExtension?: HostExtension;
 }
 
 export type ResolutionResult =
@@ -392,6 +395,10 @@ export function resolveBuildPlan(
   registry: PlatformContractRegistry = POCKET_PLATFORM_CONTRACTS,
 ): ResolutionResult {
   const diagnostics: ContractDiagnostic[] = [...validatePlatformContractRegistry(registry)];
+  if (request.hostExtension !== undefined && !isHostExtension(request.hostExtension)) {
+    diagnostics.push({ code: "hostExtension.invalid", path: "/hostExtension",
+      message: "host extension must carry a versioned, content-verified JSON payload" });
+  }
   const profile = registry.targets[request.target];
   if (!profile) {
     diagnostics.push({
@@ -558,6 +565,7 @@ export function resolveBuildPlan(
     ...(resolvedAuxiliary ? { surfaces: { auxiliary: resolvedAuxiliary } } : {}),
     features,
     companions: manifest.app.companions ?? [],
+    ...(request.hostExtension ? { hostExtension: request.hostExtension } : {}),
   };
   return { ok: true, plan: finalizeBuildPlan(content) };
 }

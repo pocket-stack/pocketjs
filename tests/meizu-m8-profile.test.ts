@@ -158,7 +158,7 @@ describe("private Meizu M8 build profile", () => {
     const app = readFileSync(join(repository, "apps/meizu-m8-demo/app.tsx"), "utf8");
     const shellIcon = readFileSync(join(repository, "apps/meizu-m8-demo/icon80.png"));
     const guestRuntime = readFileSync(
-      join(repository, "hosts/iphone2g/pocket_runtime.c"),
+      join(repository, "engine/quickjs-c/pocket_runtime.c"),
       "utf8",
     );
     const toolchainManifest = readFileSync(

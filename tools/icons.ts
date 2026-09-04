@@ -13,6 +13,7 @@
 //   ...-precomposed.png    what older iOS fetches from the root with no link
 //   icon-192/512.png       web app manifest
 //   icon-512-maskable.png  Android adaptive icons, artwork inside the safe zone
+//   og-image.png           the 1200x630 social card, rasterized from og-image.svg
 //
 // iOS picks the apple-touch-icon whose `sizes` is closest to what it wants and
 // ignores the manifest when one exists, so the ladder below is what actually
@@ -30,10 +31,12 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const ROOT = new URL("..", import.meta.url).pathname;
 const ASSETS = `${ROOT}site/assets/`;
 const SOURCE = `${ASSETS}favicon.svg`;
-const BACKING = "#0a0a0c"; // the backing the mark is drawn on, matching favicon.svg
+const BACKING = "#171226"; // the backing the mark is drawn on, matching favicon.svg
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 type Job = { file: string; size: number; bleed: boolean };
+/** Non-square art rendered from its own SVG rather than from the mark. */
+type Card = { file: string; source: string; width: number; height: number };
 
 // `bleed` fills the canvas with the backing colour and insets the artwork: iOS
 // and Android apply their own mask, and a transparent or self-rounded icon
@@ -50,6 +53,11 @@ const PNGS: Job[] = [
   { file: "icon-512-maskable.png", size: 512, bleed: true },
 ];
 const ICO = [16, 32, 48];
+// The social card is a drawing of its own, but it carries the same mark, so it
+// rasterizes here rather than being a committed PNG nothing regenerates.
+const CARDS: Card[] = [
+  { file: "og-image.png", source: "og-image.svg", width: 1200, height: 630 },
+];
 
 class Chrome {
   #ws!: WebSocket;
@@ -103,10 +111,10 @@ class Chrome {
     });
   }
 
-  async shot(html: string, size: number): Promise<Uint8Array> {
+  async shot(html: string, width: number, height = width): Promise<Uint8Array> {
     await this.send("Emulation.setDeviceMetricsOverride", {
-      width: size,
-      height: size,
+      width,
+      height,
       deviceScaleFactor: 1,
       mobile: false,
     });
@@ -141,6 +149,14 @@ function page(svg: string, size: number, bleed: boolean): string {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;padding:0;width:${size}px;height:${size}px;background:${bleed ? BACKING : "transparent"}}
 img{position:absolute;left:${px}px;top:${px}px;width:${size - px * 2}px;height:${size - px * 2}px}
+</style></head><body><img src="${src}"></body></html>`;
+}
+
+function cardPage(svg: string, width: number, height: number): string {
+  const src = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;padding:0;width:${width}px;height:${height}px;background:${BACKING}}
+img{display:block;width:${width}px;height:${height}px}
 </style></head><body><img src="${src}"></body></html>`;
 }
 
@@ -197,6 +213,16 @@ try {
   const container = ico(layers);
   writeFileSync(ASSETS + "favicon.ico", container);
   console.log(`  favicon.ico  ${ICO.join(" + ")}  ${(container.length / 1024).toFixed(1)} KiB`);
+  for (const card of CARDS) {
+    const art = readFileSync(ASSETS + card.source, "utf8");
+    const png = await chrome.shot(cardPage(art, card.width, card.height), card.width, card.height);
+    const [w, h] = pngSize(png);
+    if (w !== card.width || h !== card.height) {
+      throw new Error(`${card.file}: rendered ${w}x${h}, wanted ${card.width}x${card.height}`);
+    }
+    writeFileSync(ASSETS + card.file, png);
+    console.log(`  ${card.file}  ${card.width}x${card.height}  ${(png.length / 1024).toFixed(1)} KiB`);
+  }
 } finally {
   chrome.stop();
 }

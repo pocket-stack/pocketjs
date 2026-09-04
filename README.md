@@ -270,7 +270,7 @@ hardware bootable is its own work, tracked in Pocket Museum.
 | BlackBerry 10.3 | QNX, native ELF | [One square screen, two native stacks](https://pocketjs.dev/blog/blackberry-classic/) |
 | Android 4.3 | BlackBerry runtime, JNI | [#298](https://github.com/pocket-stack/pocketjs/pull/298) |
 | PocketBook e-ink | inkview, partial refresh | [#172](https://github.com/pocket-stack/pocketjs/pull/172) |
-| ESP-IDF | RGB565 and PPA | [#160](https://github.com/pocket-stack/pocketjs/pull/160) |
+| ESP-IDF 6.0/6.1 | P4 PPA or S3 software RGB565 | [ESP-IDF components](https://pocketjs.dev/docs/esp-idf/) |
 | The browser | WebAssembly core | [Playground](https://pocketjs.dev/playground/) |
 
 Devices verified so far: **Sony PSP** (2004), **PS Vita** (2011),
@@ -363,6 +363,7 @@ lowering; see [`vapor/DESIGN.md`](./vapor/DESIGN.md).
 | [`engine/`](./engine/) | `no_std` UI core, render backends, native modules, Pocket3D, and platform-native crates |
 | [`contracts/`](./contracts/) | Generated wire specs, capability registry, manifests, build plans, and package formats |
 | [`hosts/`](./hosts/) | PSP, Vita, web, desktop, e-reader, phone, and MCU host integrations |
+| [`hosts/esp-idf/`](./hosts/esp-idf/) | Composable package, QuickJS, UI, RGB565, PPA, and runner components for P4/S3 firmware |
 | [`vapor/`](./vapor/) | Pocket Vapor compiler, oracle, board contracts, target runtimes, and parity harnesses |
 | [`apps/`](./apps/) | Framework demos and system applications used by the launcher and acceptance suites |
 | [`tools/`](./tools/) | Build, package, launcher, device, DevTools, benchmark, and release commands |

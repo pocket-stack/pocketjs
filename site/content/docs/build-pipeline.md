@@ -64,6 +64,19 @@ bun tools/build.ts hero-main               # the mounted entry (apps/hero/main.t
 A bare name resolves against `apps/`: `hero` finds `apps/hero/app.tsx`, and a
 name ending in `-main` finds `apps/hero/main.tsx`.
 
+An external ESP-IDF product supplies its host profile instead of selecting a
+stock target:
+
+```sh
+pocket build --manifest app/pocket.json \
+  --host-profile firmware/pocket.host.json \
+  --project-root app --output dist/app.pocket
+```
+
+The package carries the JSON plan and a fixed-width binary `hostInputs`
+section. Device admission reads the binary section and does not run a JSON
+parser in QuickJS. See [ESP-IDF](/docs/esp-idf/#build-an-application-package).
+
 | Flag | Effect |
 |---|---|
 | `--framework=solid\|vue-vapor\|octane` | Select the framework for this low-level build, overriding `pocket.config.ts`. Manifest builds take it from `pocket.json`. |

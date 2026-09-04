@@ -71,6 +71,13 @@ Everything *above* the backend follows the same contract across targets. The
 layout you see in the browser [playground](/playground/) is the same layout,
 computed by the same code, that runs on the handheld.
 
+ESP-IDF exposes the same stages as separate libraries. `pocketjs_guest` owns
+QuickJS, `pocketjs_ui_core` owns the retained tree, `pocketjs_ui_qjs` binds the
+`ui.*` ops, and `pocketjs_render_rgb565` consumes a borrowed frame view. **Only
+the optional runner creates a task; the product BSP owns input, physical
+buffers, and presentation.** P4 adds a PPA accelerator while S3 retains the
+complete software renderer. See [ESP-IDF](/docs/esp-idf/).
+
 ## Why these choices
 
 ### Framework adapters over HostOps
