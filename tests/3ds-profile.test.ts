@@ -106,6 +106,7 @@ describe("private Nintendo 3DS build profile", () => {
         "input.cursor",
         "input.touch.auxiliary",
         "display.auxiliary",
+        "svc.companion",
         "text.glyphs.baked",
       ],
     });

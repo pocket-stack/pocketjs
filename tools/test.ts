@@ -105,6 +105,7 @@ const SUITE: readonly Stage[] = [
       "tests/devtools.test.ts",
       "tests/hot.test.ts",
       "tests/clock.test.ts",
+      "tests/companion.test.ts",
       "tests/tiles.test.ts",
     ],
   },

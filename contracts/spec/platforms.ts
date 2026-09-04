@@ -194,6 +194,16 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // target appends the id to its profile only when its native host ships
   // the module.
   "data.fs",
+  // A companion process reachable through the svc mailbox (spec ops 30–32:
+  // svcOpen/svcPoll/svcSend) speaking contracts/spec/companion.ts — the
+  // guest hands file, database, network and layout work to a paired
+  // machine and reads the results back as lines on later ticks. The host
+  // provides the transport (PKNT over TCP with beacon discovery on the
+  // consoles) and matches the id the guest opens against the manifest's
+  // `app.companions`. Registered for hosts whose svc transport is tested;
+  // an app that declares companions requires it so admission fails where
+  // there is no mailbox at all instead of svcOpen answering false forever.
+  "svc.companion",
   // Copy/cut/paste round-trips with the OS clipboard.
   "host.clipboard",
   // The logical viewport is runtime-mutable: the app is told about live

@@ -47,6 +47,9 @@ export const THREE_DS_DEV_CONTRACTS = definePlatformContractRegistry(
         "input.cursor",
         "input.touch.auxiliary",
         "display.auxiliary",
+        // hosts/3ds/src/svcwire.c: PKNT over TCP, beacon discovery, one
+        // companion per guest.
+        "svc.companion",
         "text.glyphs.baked",
       ],
     },

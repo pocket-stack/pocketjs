@@ -138,6 +138,7 @@
     "./animation": "./framework/src/animation.ts",
     "./audio": "./framework/src/audio-api.ts",
     "./clock": "./framework/src/clock.ts",
+    "./companion": "./framework/src/companion.ts",
     "./config": "./framework/src/config.ts",
     "./db": "./framework/src/db-api.ts",
     "./components": "./framework/src/components.ts",
