@@ -56,7 +56,7 @@ function usage(message?: string, exitCode = 1): never {
   bun tools/3ds-dev.ts pair  --host <3ds-ip> [--ftp-port 5000] [--rotate]
   bun tools/3ds-dev.ts discover
   bun tools/3ds-dev.ts push  [--host <3ds-ip>] [--app 3ds-demo | --package file.pocket]
-  bun tools/3ds-dev.ts probe [--host <3ds-ip>] [--out screenshot.png]
+  bun tools/3ds-dev.ts probe [--host <3ds-ip>] [--out screenshot.png] [--eval <expression>]
   bun tools/3ds-dev.ts dev   [--host <3ds-ip>] [--app 3ds-demo] [--no-push] [--panel-port 8130]
 
 The device must run Pocket Runtime for push/probe/dev. pair runs once while
@@ -381,7 +381,10 @@ async function probe(): Promise<void> {
     await client.sendCtrl({
       t: "eval",
       id: "3ds-probe",
-      code: 'console.log("Pocket Runtime probe"); ({target:globalThis.ui.__host,abi:globalThis.ui.__hostAbi,probe:globalThis.__runtimeProbe??null})',
+      code:
+        'console.log("Pocket Runtime probe"); ' +
+        (value("--eval") ??
+          "({target:globalThis.ui.__host,abi:globalThis.ui.__hostAbi,probe:globalThis.__runtimeProbe??null})"),
     });
     await client.sendCtrl({ t: "screenshot" });
     const [stats, tree, evaluation, , screenshot] = await Promise.all([
