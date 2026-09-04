@@ -29,11 +29,11 @@ UI shell — the shell stays a thin, stall-free guest either way.
 | Spec | `contracts/spec/companion.ts` | record shapes, the limits, reply chunking, `parseLines` |
 | Wire codec | `contracts/spec/svc-wire.ts` | PKNT frame encode/decode, device hello + ack, discovery beacon |
 | Guest core | `framework/src/companion-core.ts` | one link: request table, chunk reassembly, subscriptions, reconnect, the per-frame pump |
-| Guest SDK | `framework/src/companion.ts` | Solid signals over the core: `createCompanion`, `createQuery`, `createChannel` |
+| Guest SDK | `framework/src/companion.ts`, `companion.vue-vapor.ts` | Solid signals / Vue shallow refs over the core: `createCompanion`, `createQuery`, `createChannel` — the same accessor-style API under both |
 | Companion library | `tools/companion-host.ts` | methods, sessions, topics, cancellation — no sockets |
 | Companion transport | `tools/companion-serve.ts` | the TCP listener and UDP beacon a console's svc transport expects |
 | Deterministic pair | `hosts/sim/companion.ts` | guest ops and a host session in one process, one-tick latency, for tests and sim-hosted apps |
-| Capability | `svc.companion` in `contracts/spec/platforms.ts` | a host whose svc mailbox and transport are tested |
+| Capability | `svc.companion` in `contracts/spec/platforms.ts` | a host whose svc mailbox and transport are tested: `psp` (usbhostfs), `vita` (PKNT), `3ds-dev` (PKNT) |
 
 The protocol rides **spec ops 30–32** (`svcOpen`, `svcPoll`, `svcSend`) and
 so inherits every transport the mailbox already has: PKNT over TCP with UDP

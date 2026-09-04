@@ -221,6 +221,7 @@ describe("platform registry", () => {
       "input.buttons",
       "input.cursor",
       "audio.pcm",
+      "svc.companion",
       "text.glyphs.baked",
     ]);
     expect(POCKET_TARGETS.vita.capabilities).toEqual([
@@ -228,6 +229,7 @@ describe("platform registry", () => {
       "input.buttons",
       "input.cursor",
       "input.touch",
+      "svc.companion",
       "text.glyphs.baked",
     ]);
     expect(POCKET_TARGETS.vita.display).toEqual({

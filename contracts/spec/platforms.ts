@@ -268,6 +268,10 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       // hosts/psp/src/audio_mod.rs: the audio module mounted as
       // globalThis.audio (4-stream mixer on one 44.1 kHz normal channel).
       "audio.pcm",
+      // hosts/psp/src/svc.rs: the svc mailbox over PSPLINK's usbhostfs share
+      // (pocket-svc/<app>/{in,out}.jsonl) — the transport the companion
+      // protocol was born on.
+      "svc.companion",
       "text.glyphs.baked",
     ],
   },
@@ -286,6 +290,9 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "input.buttons",
       "input.cursor",
       "input.touch",
+      // hosts/vita/src/svc.rs: PKNT over TCP with beacon discovery
+      // (docs/SVC-VITA.md).
+      "svc.companion",
       "text.glyphs.baked",
     ],
   },

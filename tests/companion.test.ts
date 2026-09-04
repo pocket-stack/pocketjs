@@ -8,6 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { createRoot, createSignal } from "solid-js";
+import { effectScope, shallowRef } from "vue";
 
 import {
   COMPANION_LINE_BYTES,
@@ -31,6 +32,11 @@ import {
 } from "../contracts/spec/svc-wire.ts";
 import { createCompanionCore } from "../framework/src/companion-core.ts";
 import { createChannel, createCompanion, createQuery } from "../framework/src/companion.ts";
+import {
+  createChannel as createVueChannel,
+  createCompanion as createVueCompanion,
+  createQuery as createVueQuery,
+} from "../framework/src/companion.vue-vapor.ts";
 import { runServicePumps } from "../framework/src/services.ts";
 import { createSimCompanionPair } from "../hosts/sim/companion.ts";
 import { createCompanionHost, type CompanionHost, type CompanionMethod } from "../tools/companion-host.ts";
@@ -361,5 +367,33 @@ describe("companion Solid shim", () => {
       expect(files()).toBe(12);
       dispose();
     });
+  });
+});
+
+describe("companion Vue Vapor shim", () => {
+  test("the same query and channel semantics over shallow refs", async () => {
+    const host = vaultHost();
+    const pair = createSimCompanionPair(host);
+    const scope = effectScope();
+    await scope.run(async () => {
+      const mac = createVueCompanion({ app: "vault", ops: pair.ops });
+      const n = shallowRef(1);
+      const page = createVueQuery<{ n: number }>(mac, () => ["echo", { n: n.value }]);
+      const files = createVueChannel<number, { count: number }>(mac, "vault.files", 0, (_p, e) => e.count);
+      expect(page()).toBeUndefined();
+      runServicePumps();
+      n.value = 2; // sync watch: cancel 1, ask 2 before the reply lands
+      expect(pair.sent().slice(-2)).toEqual(['{"c":1}', '{"q":2,"m":"echo","p":{"n":2}}']);
+      pair.tick();
+      runServicePumps();
+      expect(page()).toEqual({ n: 2 });
+      expect(page.loading()).toBe(false);
+      expect(mac.status()).toBe("linked");
+      host.publish("vault.files", { count: 5 });
+      pair.tick();
+      runServicePumps();
+      expect(files()).toBe(5);
+    });
+    scope.stop();
   });
 });

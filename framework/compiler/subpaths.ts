@@ -58,9 +58,15 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
   audio: { file: "framework/src/audio-api.ts", aliases: TWINS },
   clock: { file: "framework/src/clock.ts", aliases: TWINS },
   // The link/request/reconnect machinery is framework-neutral
-  // (companion-core.ts); the Solid shim adds queries and channels. A Vue
-  // Vapor shim binds the same core to refs when an app needs it.
-  companion: { file: { solid: "framework/src/companion.ts" } },
+  // (companion-core.ts); each shim binds it to its framework's cells —
+  // signals for Solid, shallow refs for Vue Vapor.
+  companion: {
+    file: {
+      solid: "framework/src/companion.ts",
+      "vue-vapor": "framework/src/companion.vue-vapor.ts",
+    },
+    aliases: ["vue-vapor"],
+  },
   config: { file: "framework/src/config.ts" },
   db: { file: "framework/src/db-api.ts", aliases: TWINS },
   components: {
