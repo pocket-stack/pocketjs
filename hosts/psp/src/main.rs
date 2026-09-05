@@ -46,8 +46,6 @@ const MULTI_APP_SIM_HZ: u32 = 20;
 // App bundles live in switch::APPS (build.rs generates the table; entry 0 is
 // the app POCKETJS_APP selected, multi-app builds append the registry). Each
 // entry's js is NUL-terminated there for JS_Eval (input[len] == '\0').
-#[cfg(feature = "bench")]
-static POCKETJS_APP_NAME: &str = env!("POCKETJS_APP");
 static POCKETJS_TRACE: &str = env!("POCKETJS_TRACE");
 
 // Arena bump high-water at the last host-forced collection (frame loop's
@@ -196,6 +194,8 @@ impl BenchState {
 
 #[cfg(feature = "bench")]
 static mut BENCH: BenchState = BenchState::new();
+#[cfg(feature = "bench")]
+static mut BENCH_HAS_GUEST: bool = false;
 
 #[cfg(feature = "bench")]
 #[inline]
@@ -241,6 +241,12 @@ unsafe fn bench_reset_file() {
 #[cfg(feature = "bench")]
 unsafe fn bench_init() {
     bench_reset_file();
+    bench_start_guest();
+    BENCH_HAS_GUEST = false;
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_start_guest() {
     BENCH = BenchState::new();
     BENCH.run_start_us = bench_now_us();
 }
@@ -271,6 +277,12 @@ unsafe fn bench_window() -> (u32, u32) {
 }
 
 #[cfg(feature = "bench")]
+#[inline]
+fn bench_in_window(frame_count: u32, start: u32, n: u32) -> bool {
+    frame_count >= start && frame_count - start < n
+}
+
+#[cfg(feature = "bench")]
 #[allow(clippy::too_many_arguments)]
 unsafe fn bench_record_frame(
     frame_count: u32,
@@ -283,7 +295,7 @@ unsafe fn bench_record_frame(
     present_us: u64,
 ) {
     let (start, n) = bench_window();
-    if frame_count < start || frame_count >= start + n {
+    if !bench_in_window(frame_count, start, n) {
         return;
     }
     let js_us = after_js.saturating_sub(t0);
@@ -315,7 +327,7 @@ unsafe fn bench_record_frame(
 #[cfg(feature = "bench")]
 unsafe fn bench_record_drawlist(frame_count: u32, words: &[u32]) {
     let (start, n) = bench_window();
-    if frame_count < start || frame_count >= start + n {
+    if !bench_in_window(frame_count, start, n) {
         return;
     }
     for word in words {
@@ -329,7 +341,7 @@ unsafe fn bench_record_drawlist(frame_count: u32, words: &[u32]) {
 #[cfg(feature = "bench")]
 unsafe fn bench_record_gpu(frame_count: u32, gpu_us: u64) {
     let (start, n) = bench_window();
-    if frame_count < start || frame_count >= start + n {
+    if !bench_in_window(frame_count, start, n) {
         return;
     }
     BENCH.gpu_sum_us = BENCH.gpu_sum_us.saturating_add(gpu_us);
@@ -346,7 +358,11 @@ unsafe fn bench_record_frame0_complete() {
 #[cfg(feature = "bench")]
 unsafe fn bench_maybe_flush(frame_count: u32) {
     let (start, n) = bench_window();
-    if n == 0 || frame_count != start + n - 1 || BENCH.frames == 0 {
+    if n == 0
+        || !bench_in_window(frame_count, start, n)
+        || frame_count - start != n - 1
+        || BENCH.frames == 0
+    {
         return;
     }
     let frames = BENCH.frames as u64;
@@ -356,7 +372,7 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
         sys::sceKernelGetThreadStackFreeSize(sys::SceUid(sys::sceKernelGetThreadId())).max(0);
     let line = alloc::format!(
          "{{\"app\":\"{}\",\"sim_hz\":{},\"frames\":{},\"window_start\":{},\"window_n\":{},\"eval_us\":{},\"boot_to_eval_begin_us\":{},\"boot_to_frame0_us\":{},\"avg_frame_interval_us\":{},\"max_frame_interval_us\":{},\"avg_js_us\":{},\"avg_jobs_us\":{},\"avg_tick_us\":{},\"avg_draw_us\":{},\"avg_render_us\":{},\"avg_work_us\":{},\"max_work_us\":{},\"avg_gpu_us\":{},\"max_gpu_us\":{},\"stack_free_bytes\":{},\"bundle_bytes\":{},\"pak_bytes\":{},\"arena_capacity_bytes\":{},\"arena_bump_bytes\":{},\"arena_tail_free_bytes\":{},\"arena_init_free_bytes\":{},\"arena_configured_bytes\":{},\"drawlist_checksum\":\"{:016x}\"}}\n",
-        POCKETJS_APP_NAME,
+        switch::current_output(),
         if switch::multi() { MULTI_APP_SIM_HZ } else { CORE_TICKS_PER_SECOND },
         BENCH.frames,
         start,
@@ -500,6 +516,12 @@ unsafe fn run_guest(
     last_present_vcount: &mut u32,
 ) -> usize {
     switch::set_current(app_index);
+    #[cfg(feature = "bench")]
+    if BENCH_HAS_GUEST {
+        bench_start_guest();
+    } else {
+        BENCH_HAS_GUEST = true;
+    }
     // Package mode extracts js/pak zero-copy from the entry's embedded
     // `.pocket`; single-app mode reads the classic inline embed. A package
     // that fails to parse routes through the broken-guest rule.
@@ -741,8 +763,6 @@ unsafe fn run_guest(
             (dl.words.as_ptr(), dl.words.len())
         };
         #[cfg(feature = "bench")]
-        bench_record_drawlist(guest_frame, core::slice::from_raw_parts(words_ptr, words_len));
-        #[cfg(feature = "bench")]
         let bench_after_draw = bench_now_us();
         if guest_frame == 0 {
             trace("frame 0: ui draw ok");
@@ -841,6 +861,8 @@ unsafe fn run_guest(
             bench_after_render,
             bench_after_present.saturating_sub(bench_before_sync),
         );
+        #[cfg(feature = "bench")]
+        bench_record_drawlist(guest_frame, core::slice::from_raw_parts(words_ptr, words_len));
         if guest_frame == 0 {
             trace("frame 0: rendered");
         }
@@ -971,13 +993,13 @@ unsafe fn cap_dump_frame(frame_count: u32) {
     // Defaults: skip boot transients + 150 ms mount transitions; 32 frames.
     let cap_start = capture_env_u32(POCKETJS_CAP_START, 16);
     let cap_n = capture_env_u32(POCKETJS_CAP_N, 32);
-    if frame_count < cap_start || frame_count >= cap_start + cap_n {
+    if frame_count < cap_start || frame_count - cap_start >= cap_n {
         return;
     }
     let idx = frame_count - cap_start;
     #[cfg(feature = "bench")]
     if POCKETJS_BENCH_DUMP_FRAMES != "1" {
-        if idx + 1 == cap_n {
+        if idx == cap_n - 1 {
             sys::sceKernelExitGame();
         }
         return;
@@ -1017,7 +1039,7 @@ unsafe fn cap_dump_frame(frame_count: u32) {
         sys::sceIoWrite(fd, addr as *const c_void, 512 * 272 * 4);
         sys::sceIoClose(fd);
     }
-    if idx + 1 == cap_n {
+    if idx == cap_n - 1 {
         sys::sceKernelExitGame();
     }
 }
