@@ -129,7 +129,7 @@ export interface ClassicSheetProps {
  * Fixed action children are retained through close/reopen; no frame JS writes. */
 export function ClassicSheet(props: ClassicSheetProps) {
   if (props.actions.length > 4) throw new RangeError("ClassicSheet supports at most four actions");
-  const height = 64 + (props.actions.length + 1) * 38 + 8;
+  const height = 60 + (props.actions.length + 1) * 38;
   const [shown, setShown] = createSignal(false);
   const frame = View({ debugName: props.debugName ?? "ClassicSheet",
     get style() { return { posType: 1, insetL: 0, insetR: 0, insetT: 0, insetB: 0, display: shown() ? 0 : 1 }; } });

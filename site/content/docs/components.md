@@ -533,7 +533,8 @@ defaults to 27 logical pixels.
 **The host animates the panel translation and backdrop opacity.** The component
 keeps its fixed action subtree mounted and blocks other touch gestures until
 the closing transition ends. `onModalChange` includes that closing interval so
-applications can also gate hardware buttons. Reopening cancels the old closing
+applications can also gate hardware buttons. Buttons keep a 4px gap and the final button sits 4px above the panel bottom.
+Reopening cancels the old closing
 deadline; unmounting cancels animations, the deadline and the touch block.
 
 ```tsx

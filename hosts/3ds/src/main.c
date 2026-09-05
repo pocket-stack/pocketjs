@@ -858,7 +858,7 @@ int main(void) {
       1
     );
     if (hit_count != touch_count) fail("auxiliary touch hit resolution failed");
-    if (!qjs_frame(buttons, analog, &touch, &touch_hit, touch_count)) {
+    if (!qjs_frame(buttons, analog, &touch, &touch_hit, touch_count, devmenu_blocks_guest ? ANALOG_CENTER : input_right_analog())) {
 #if defined(POCKETJS_CAPTURE) || defined(POCKETJS_OFFLOAD)
       fail(qjs_last_error());
 #else

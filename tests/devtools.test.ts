@@ -23,7 +23,7 @@ import {
   type Tape,
 } from "../framework/src/devtools.ts";
 import { touches, __packTouch } from "../framework/src/touch.ts";
-import { onFrame } from "../framework/src/lifecycle.ts";
+import { onFrame, rightAnalogRaw, rightAnalogX, rightAnalogY } from "../framework/src/lifecycle.ts";
 import {
   createComponent,
   createTextNode,
@@ -575,4 +575,20 @@ describe("bundle hash", () => {
     // Chunk boundaries must not matter (js+pak concatenation).
     expect(fnv1a64(bytes("he"), bytes("llo"))).toBe(fnv1a64(bytes("hello")));
   });
+});
+
+
+test("right stick records, replays independently, and centers absent legacy samples", () => {
+  const samples: number[][] = [];
+  mountApp(() => { onFrame(() => samples.push([rightAnalogX(), rightAnalogY(), rightAnalogRaw()])); return View({}); });
+  const run = (right?: number) => (globalThis as any).frame(0, 0x8080, undefined, undefined, undefined, right);
+  run(); run(0xff80); run(0x8000); run(0x8181);
+  expect(samples).toEqual([[0, 0, 0x8080], [1, 0, 0xff80], [0, -1, 0x8000], [0, 0, 0x8181]]);
+  const api = (globalThis as any).__pocketDevtools;
+  const tape = api.dumpTape(); expect(tape.rightAnalog).toEqual([[0x8080, 1], [0xff80, 1], [0x8000, 1], [0x8181, 1]]);
+  api.replay(tape); samples.length = 0;
+  for (let i = 0; i < 4; i++) run(0x0080);
+  expect(samples).toEqual([[0, 0, 0x8080], [1, 0, 0xff80], [0, -1, 0x8000], [0, 0, 0x8181]]);
+  api.replay({ v: 1, frames: 1, masks: [[0, 1]] }); run(0xff80);
+  expect(samples.at(-1)).toEqual([0, 0, 0x8080]);
 });

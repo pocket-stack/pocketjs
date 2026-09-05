@@ -13,6 +13,7 @@ int32_t input_buttons(void);
 void input_init(void);
 void input_shutdown(void);
 int32_t input_analog(void);
+int32_t input_right_analog(void);
 /** Host-owned L+R+X edge. The complete chord is removed from app buttons. */
 bool input_reload_requested(void);
 /** Host-owned L+R+SELECT edge that toggles the native development menu. */

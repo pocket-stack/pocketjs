@@ -26,7 +26,8 @@ bool qjs_frame(
   int32_t analog,
   const uint32_t *touches,
   const int32_t *hits,
-  size_t touch_count
+  size_t touch_count,
+  int32_t right_analog
 );
 const char *qjs_last_error(void);
 void qjs_shutdown(void);

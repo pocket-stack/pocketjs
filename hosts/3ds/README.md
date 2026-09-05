@@ -373,3 +373,8 @@ part of it, so a run gets its own config and SD card by getting its own `$HOME`.
 to the **bottom auxiliary surface**, so it is exposed only as
 `input.touch.auxiliary`; contacts are never remapped into the top screen's
 coordinate space. `audio.pcm` is not implemented in v1.
+
+The New 3DS C-stick is exposed as the optional right analog lane. Applications
+read `rightAnalogX()` / `rightAnalogY()` from the framework lifecycle API, using
+the same normalized axes and deadzone as the left stick. Older hardware returns
+centered values. IRRST scanning stays in the host input adapter.

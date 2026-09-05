@@ -132,6 +132,7 @@ export type TargetId<T extends TargetRegistry> = Extract<keyof T, string>;
 
 export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   "input.analog.left",
+  "input.analog.right",
   "input.buttons",
   // Framework-synthesized pointer for targets without a native one: the
   // analog nub steers a screen cursor, hover applies `focus:`, the press

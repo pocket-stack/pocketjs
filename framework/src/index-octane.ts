@@ -213,9 +213,10 @@ export function render(code: OctaneRenderRoot, opts: RenderOptions = {}): () => 
       touches?: readonly number[],
       hits?: readonly number[],
       touchSurfaces?: readonly number[],
+      rightAnalog?: number,
     ) => {
       __advanceClock();
-      __setAnalog(analog);
+      __setAnalog(analog, rightAnalog);
       __setTouches(touches, hits, touchSurfaces);
       runServicePumps();
       __drainEffects();

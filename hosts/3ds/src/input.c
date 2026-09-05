@@ -138,6 +138,12 @@ int32_t input_analog(void) {
   return (axis(pad.dx) << 8) | axis(-pad.dy);
 }
 
+int32_t input_right_analog(void) {
+  if (!extra_input) return 0x8080;
+  circlePosition stick; irrstCstickRead(&stick);
+  return (axis(stick.dx) << 8) | axis(-stick.dy);
+}
+
 size_t input_touch(uint32_t *packed) {
   if (packed == NULL || (hidKeysHeld() & KEY_TOUCH) == 0) return 0;
   touchPosition touch;
