@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a deterministic allocator-independent core memory receipt and connect the same structural-relayout workload to the existing PSP/PPSSPP arena benchmark without merging the Taffy rebuild candidate.
+**Goal:** Add a deterministic allocator-independent core memory receipt and connect its shared workload profile to the existing PSP/PPSSPP representative arena benchmark without merging the Taffy rebuild candidate.
 
 **Architecture:** The host benchmark is a standalone `pocketjs-core` example with a counting global allocator. All fixture and harness allocations are completed before measurement, and the measured phase emits JSON only after counting is disabled. PSP evidence continues to come from `tools/bench-ppsspp.ts` and `hosts/psp` stats, so canonical requested bytes and target arena high-water remain separate metrics.
 
@@ -152,21 +152,22 @@ git add engine/core/examples/membench_baseline.json engine/core/examples/membenc
 git commit -m "bench(core): record baseline memory receipt"
 ```
 
-### Task 3: Align The PSP Workload And Timing Receipt
+### Task 3: Align The PSP Representative Workload And Timing Receipt
 
 **Files:**
-- Modify: `tools/bench-ppsspp.ts:81-100` to expose the existing `stats` workload as the canonical structural-memory run
+- Modify: `tools/bench-ppsspp.ts:81-100` to expose the existing `stats` workload as the representative structural-memory run
 - Modify: `skills/pocketjs-psp-benchmark/references/metrics.md` for any new fields
 - Create: `docs/bench/core-memory-ppsspp-2026-09-05.json`
 - Create: `docs/bench/core-memory-ppsspp-2026-09-05.md`
 
 - [ ] **Step 1: Define the shared workload profile without changing existing app defaults**
 
-Use the existing `stats` app and its fixed input script as the target workload.
+Use the existing `stats` app and its fixed input script as the representative workload.
 Keep `stats` as the default app and preserve all existing app scripts. Align
 the host benchmark phases with the stats app's initial dashboard construction,
 style-only counter/bar animation, deterministic tab switch, and repeated text
-updates. Do not add a second demo app solely for memory measurement.
+updates. These are corresponding phases in a shared workload profile, not a
+byte-identical event sequence. Do not add a second demo app solely for memory measurement.
 
 - [ ] **Step 2: Verify PSP JSONL fields before changing the schema**
 
@@ -195,7 +196,8 @@ PSP_SDK="$PSP_SDK" BENCH_PPSSPP_TIMEOUT=60 \
 
 Record the report path, PPSSPP revision, git revision, selected app, sample
 count, `arena_bump_bytes`, `avg_tick_us`, `avg_work_us`, and checksum. The
-receipt must state that the target workload is `stats`.
+receipt must state that the target is the representative `stats` workload and
+must report any checksum difference explicitly.
 
 - [ ] **Step 4: Run the capped arena scan**
 

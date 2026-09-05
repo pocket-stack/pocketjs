@@ -7,9 +7,11 @@ Receipt schema version: **1**
 **No measurements were recorded.** All metric fields remain `null` because no
 benchmark command reached the PSP app.
 
-The canonical target workload is **`stats`**, using the existing fixed input
-script and the existing PSP JSONL schema. No second demo or Taffy A/B run was
-added.
+The PSP target is the **`stats` representative workload**, using the existing
+fixed input script and PSP JSONL schema. It corresponds to phases in the Rust
+synthetic workload profile; the two journeys are not byte-identical event
+sequences. No second demo or Taffy A/B run was added. Any checksum difference
+must be reported explicitly when measurements are available.
 
 ## Commands
 
@@ -62,7 +64,7 @@ PPSSPPHeadless not found at /Users/quake/ppsspp-src/build/PPSSPPHeadless
 
 `report_path` is the expected generated JSON report path under `dist/bench/`,
 using `ppsspp-bench-<timestamp>.json`; it is `null` because no report was
-generated. `checksum` is the checksum of the benchmark drawlist; it is `null`
+generated. `checksum` is the checksum of the representative workload drawlist; it is `null`
 because no benchmark ran.
 
 ## Metrics

@@ -32,6 +32,10 @@ use pocketjs_psp::{arena, audio_mod, dbg, ffi, ge, host, pak, svc, switch, veil,
 psp::module!("pocketjs", 1, 1);
 
 const CORE_TICKS_PER_SECOND: u32 = 60;
+#[cfg(feature = "bench")]
+const DRAWLIST_CHECKSUM_OFFSET: u64 = 0xcbf29ce484222325;
+#[cfg(feature = "bench")]
+const DRAWLIST_CHECKSUM_PRIME: u64 = 0x100000001b3;
 // The full launcher originally consumed about 42 ms of CPU work on real PSP
 // hardware. Batching cuts that to about 12 ms, but the texture-heavy GE pass
 // still completes across the third vblank. A multi-app package therefore
@@ -161,6 +165,7 @@ struct BenchState {
     previous_frame_start_us: u64,
     frame_interval_sum_us: u64,
     max_frame_interval_us: u64,
+    drawlist_checksum: u64,
 }
 
 #[cfg(feature = "bench")]
@@ -184,6 +189,7 @@ impl BenchState {
             previous_frame_start_us: 0,
             frame_interval_sum_us: 0,
             max_frame_interval_us: 0,
+            drawlist_checksum: DRAWLIST_CHECKSUM_OFFSET,
         }
     }
 }
@@ -307,6 +313,20 @@ unsafe fn bench_record_frame(
 }
 
 #[cfg(feature = "bench")]
+unsafe fn bench_record_drawlist(frame_count: u32, words: &[u32]) {
+    let (start, n) = bench_window();
+    if frame_count < start || frame_count >= start + n {
+        return;
+    }
+    for word in words {
+        BENCH.drawlist_checksum ^= u64::from(*word);
+        BENCH.drawlist_checksum = BENCH
+            .drawlist_checksum
+            .wrapping_mul(DRAWLIST_CHECKSUM_PRIME);
+    }
+}
+
+#[cfg(feature = "bench")]
 unsafe fn bench_record_gpu(frame_count: u32, gpu_us: u64) {
     let (start, n) = bench_window();
     if frame_count < start || frame_count >= start + n {
@@ -335,7 +355,7 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
     let stack_free_bytes =
         sys::sceKernelGetThreadStackFreeSize(sys::SceUid(sys::sceKernelGetThreadId())).max(0);
     let line = alloc::format!(
-        "{{\"app\":\"{}\",\"sim_hz\":{},\"frames\":{},\"window_start\":{},\"window_n\":{},\"eval_us\":{},\"boot_to_eval_begin_us\":{},\"boot_to_frame0_us\":{},\"avg_frame_interval_us\":{},\"max_frame_interval_us\":{},\"avg_js_us\":{},\"avg_jobs_us\":{},\"avg_tick_us\":{},\"avg_draw_us\":{},\"avg_render_us\":{},\"avg_work_us\":{},\"max_work_us\":{},\"avg_gpu_us\":{},\"max_gpu_us\":{},\"stack_free_bytes\":{},\"bundle_bytes\":{},\"pak_bytes\":{},\"arena_capacity_bytes\":{},\"arena_bump_bytes\":{},\"arena_tail_free_bytes\":{},\"arena_init_free_bytes\":{},\"arena_configured_bytes\":{}}}\n",
+         "{{\"app\":\"{}\",\"sim_hz\":{},\"frames\":{},\"window_start\":{},\"window_n\":{},\"eval_us\":{},\"boot_to_eval_begin_us\":{},\"boot_to_frame0_us\":{},\"avg_frame_interval_us\":{},\"max_frame_interval_us\":{},\"avg_js_us\":{},\"avg_jobs_us\":{},\"avg_tick_us\":{},\"avg_draw_us\":{},\"avg_render_us\":{},\"avg_work_us\":{},\"max_work_us\":{},\"avg_gpu_us\":{},\"max_gpu_us\":{},\"stack_free_bytes\":{},\"bundle_bytes\":{},\"pak_bytes\":{},\"arena_capacity_bytes\":{},\"arena_bump_bytes\":{},\"arena_tail_free_bytes\":{},\"arena_init_free_bytes\":{},\"arena_configured_bytes\":{},\"drawlist_checksum\":\"{:016x}\"}}\n",
         POCKETJS_APP_NAME,
         if switch::multi() { MULTI_APP_SIM_HZ } else { CORE_TICKS_PER_SECOND },
         BENCH.frames,
@@ -363,6 +383,7 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
         arena_stats.tail_free_bytes,
         arena_stats.init_free_bytes,
         arena_stats.configured_bytes,
+        BENCH.drawlist_checksum,
     );
     bench_write(line.as_bytes());
 }
@@ -719,6 +740,8 @@ unsafe fn run_guest(
             let dl = ui.draw();
             (dl.words.as_ptr(), dl.words.len())
         };
+        #[cfg(feature = "bench")]
+        bench_record_drawlist(guest_frame, core::slice::from_raw_parts(words_ptr, words_len));
         #[cfg(feature = "bench")]
         let bench_after_draw = bench_now_us();
         if guest_frame == 0 {

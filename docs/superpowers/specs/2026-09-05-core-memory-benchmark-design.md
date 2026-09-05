@@ -17,8 +17,8 @@ This work covers:
 - corrected separation between benchmark workload allocations and harness
   allocations;
 - machine-readable canonical memory and layout metrics;
-- PSP/PPSSPP collection of `arena_bump_bytes` and layout timing for the same
-  workload;
+- PSP/PPSSPP collection of `arena_bump_bytes` and layout timing for a
+  representative workload with the shared workload profile;
 - baseline receipts from the latest `origin/main`.
 
 This work does not merge the Taffy storage rebuild strategy. That strategy is
@@ -72,9 +72,11 @@ Use one deterministic UI journey with explicit phases:
 5. optional burst phase for peak allocation behavior.
 
 The journey must keep its input data and output buffers outside the measured
-allocation window. The same logical workload must be runnable by the host
-benchmark and the PSP/PPSSPP benchmark, with target-specific launch wrappers
-only where required.
+allocation window. The host benchmark defines a shared workload profile. PSP/
+PPSSPP uses the existing stats app as a representative workload with
+corresponding phases and target-specific launch wrappers. The two journeys are
+not required to use byte-identical event sequences; acceptance requires
+reporting any drawlist checksum difference explicitly.
 
 ## A/B Boundary
 
@@ -84,7 +86,8 @@ The benchmark defines, but does not yet merge, two layout implementations:
 - candidate: rebuild Taffy storage using the structural subtree capacity.
 
 Both variants must use identical workload inputs and produce the same drawlist
-checksum. Candidate acceptance requires no regression in canonical peak bytes,
+checksum. The host and PSP representative workloads report their checksums
+separately. Candidate acceptance requires no regression in canonical peak bytes,
 PSP arena high-water, average/max layout timing, or frame work timing.
 
 ## Implementation Shape

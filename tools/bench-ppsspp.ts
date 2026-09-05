@@ -47,6 +47,7 @@ interface BenchLine {
   arena_tail_free_bytes: number;
   arena_init_free_bytes: number;
   arena_configured_bytes: number;
+  drawlist_checksum?: string;
 }
 
 interface Sample extends BenchLine {
@@ -303,6 +304,7 @@ const report = {
     ]),
   ),
   comparison: frameworks.length > 1 ? buildComparison(samplesOut, selectedSpecs) : undefined,
+  drawlist_checksums: summarizeChecksums(samplesOut, selectedSpecs),
   memory_scan: memoryScanReport,
 };
 writeFileSync(summaryPath, JSON.stringify(report, null, 2));
@@ -364,6 +366,9 @@ async function runBenchSample(
     throw new Error(`${spec.app} sample ${sample}: expected 1 bench line, got ${lines.length}`);
   }
   const parsed = JSON.parse(lines[0]) as BenchLine;
+  if (parsed.drawlist_checksum !== undefined && !/^[0-9a-f]{16}$/.test(parsed.drawlist_checksum)) {
+    throw new Error(`${spec.app} sample ${sample}: invalid drawlist checksum`);
+  }
   if (parsed.frames !== spec.capN || parsed.window_n !== spec.capN) {
     throw new Error(`${spec.app} sample ${sample}: bench window mismatch (${parsed.frames}/${parsed.window_n}, expected ${spec.capN})`);
   }
@@ -559,6 +564,20 @@ function summarizeApp(
   >;
 }
 
+function summarizeChecksums(rows: Sample[], specs: Spec[]) {
+  return Object.fromEntries(
+    specs.map((spec) => [
+      spec.app,
+      Object.fromEntries(
+        frameworks.map((fw) => [
+          fw,
+          [...new Set(rows.filter((r) => isAppRow(r, spec.app, fw)).map((r) => r.drawlist_checksum).filter(Boolean))],
+        ]),
+      ),
+    ]),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Cross-framework comparison (PR #6 methodology): per metric, the geometric
 // mean over apps of ratio(framework mean / baseline mean), baseline = the
@@ -642,6 +661,7 @@ function renderMarkdown(report: {
   frame_budget_us: number;
   apps: Record<string, Record<string, Record<Metric, ReturnType<typeof summarize>>>>;
   comparison?: ReturnType<typeof buildComparison>;
+  drawlist_checksums: Record<string, Record<string, string[]>>;
   memory_scan?: ReturnType<typeof renderMemoryScanReport>;
 }) {
   const lines = [
@@ -693,6 +713,8 @@ function renderMarkdown(report: {
         );
       }
       lines.push("");
+      const checksums = report.drawlist_checksums[app]?.[fw] ?? [];
+      lines.push(`Drawlist checksums: ${checksums.length ? checksums.join(", ") : "unavailable"}`, "");
     }
   }
 
