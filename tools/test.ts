@@ -133,6 +133,11 @@ const SUITE: readonly Stage[] = [
     ],
   },
   {
+    name: "ranger scope (M0)",
+    // SWF-less: asserts checked-in scope constants + compact inventory facts.
+    tests: ["tests/ranger-scope.test.ts"],
+  },
+  {
     name: "cafe sim (determinism)",
     prep: [["bun", "tools/build.ts", "cafe-main"]],
     browser: true,

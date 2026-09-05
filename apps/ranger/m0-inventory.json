@@ -1,0 +1,3096 @@
+{
+  "_generatedBy": "tools/ranger-cook/scan.ts",
+  "_swfRef": "swf:fws6:root19f",
+  "_doNotEdit": true,
+  "header": {
+    "stageW": 600,
+    "stageH": 330,
+    "frameRate": 24,
+    "rootFrames": 19,
+    "background": "#003399"
+  },
+  "tagCounts": {
+    "DefineBitsLossless2": 3,
+    "SetBackgroundColor": 1,
+    "DefineSprite": 621,
+    "SoundStreamHead2": 622,
+    "ShowFrame": 10680,
+    "DoAction": 1551,
+    "End": 622,
+    "ExportAssets": 482,
+    "DefineShape": 111,
+    "PlaceObject2": 55100,
+    "DefineShape2": 71,
+    "DefineShape3": 365,
+    "DefineMorphShape": 40,
+    "RemoveObject2": 2513,
+    "DefineSound": 36,
+    "StartSound": 43,
+    "DefineButton2": 2,
+    "DefineFont2": 78,
+    "DefineEditText": 156,
+    "FrameLabel": 144
+  },
+  "doAbc": 0,
+  "rootLabels": [],
+  "exportAssets": [
+    {
+      "name": "e_hpb",
+      "charId": 1193,
+      "exports": 1
+    },
+    {
+      "name": "ef_hit1",
+      "charId": 370,
+      "exports": 83
+    },
+    {
+      "name": "ef_hit11",
+      "charId": 1185,
+      "exports": 1
+    },
+    {
+      "name": "ef_hit12",
+      "charId": 1171,
+      "exports": 1
+    },
+    {
+      "name": "ef_hit2",
+      "charId": 1172,
+      "exports": 1
+    },
+    {
+      "name": "ef_hit3",
+      "charId": 1175,
+      "exports": 1
+    },
+    {
+      "name": "ef_hit4",
+      "charId": 1177,
+      "exports": 1
+    },
+    {
+      "name": "ef_hit5",
+      "charId": 1178,
+      "exports": 1
+    },
+    {
+      "name": "ef_hit6",
+      "charId": 1182,
+      "exports": 1
+    },
+    {
+      "name": "ef_hit7",
+      "charId": 1183,
+      "exports": 1
+    },
+    {
+      "name": "enemy1",
+      "charId": 1158,
+      "exports": 1
+    },
+    {
+      "name": "enemy11",
+      "charId": 962,
+      "exports": 1
+    },
+    {
+      "name": "enemy12",
+      "charId": 1009,
+      "exports": 1
+    },
+    {
+      "name": "enemy13",
+      "charId": 1079,
+      "exports": 1
+    },
+    {
+      "name": "enemy14",
+      "charId": 1141,
+      "exports": 1
+    },
+    {
+      "name": "enemy15",
+      "charId": 1114,
+      "exports": 1
+    },
+    {
+      "name": "enemy17",
+      "charId": 1049,
+      "exports": 1
+    },
+    {
+      "name": "enemy2",
+      "charId": 1161,
+      "exports": 1
+    },
+    {
+      "name": "enemy3",
+      "charId": 1163,
+      "exports": 1
+    },
+    {
+      "name": "enemy4",
+      "charId": 1166,
+      "exports": 1
+    },
+    {
+      "name": "event",
+      "charId": 438,
+      "exports": 1
+    },
+    {
+      "name": "event1",
+      "charId": 427,
+      "exports": 1
+    },
+    {
+      "name": "event101",
+      "charId": 434,
+      "exports": 1
+    },
+    {
+      "name": "event102",
+      "charId": 433,
+      "exports": 1
+    },
+    {
+      "name": "event103",
+      "charId": 386,
+      "exports": 1
+    },
+    {
+      "name": "event104",
+      "charId": 377,
+      "exports": 1
+    },
+    {
+      "name": "eventboss1",
+      "charId": 1208,
+      "exports": 1
+    },
+    {
+      "name": "eventboss101",
+      "charId": 432,
+      "exports": 1
+    },
+    {
+      "name": "eventboss102",
+      "charId": 430,
+      "exports": 1
+    },
+    {
+      "name": "eventboss103",
+      "charId": 428,
+      "exports": 1
+    },
+    {
+      "name": "eventboss104",
+      "charId": 382,
+      "exports": 1
+    },
+    {
+      "name": "eventboss2",
+      "charId": 1210,
+      "exports": 1
+    },
+    {
+      "name": "eventboss3",
+      "charId": 1213,
+      "exports": 1
+    },
+    {
+      "name": "eventboss4",
+      "charId": 1216,
+      "exports": 1
+    },
+    {
+      "name": "eventboss5",
+      "charId": 1219,
+      "exports": 1
+    },
+    {
+      "name": "eventboss6",
+      "charId": 1222,
+      "exports": 1
+    },
+    {
+      "name": "eventboss7",
+      "charId": 1225,
+      "exports": 1
+    },
+    {
+      "name": "eventname",
+      "charId": 1206,
+      "exports": 1
+    },
+    {
+      "name": "haikei_front1",
+      "charId": 1170,
+      "exports": 1
+    },
+    {
+      "name": "hits",
+      "charId": 3,
+      "exports": 1
+    },
+    {
+      "name": "hits2",
+      "charId": 2,
+      "exports": 1
+    },
+    {
+      "name": "hits3",
+      "charId": 1,
+      "exports": 1
+    },
+    {
+      "name": "ito",
+      "charId": 1104,
+      "exports": 180
+    },
+    {
+      "name": "jimen",
+      "charId": 446,
+      "exports": 1
+    },
+    {
+      "name": "maku",
+      "charId": 449,
+      "exports": 2
+    },
+    {
+      "name": "nige1",
+      "charId": 1147,
+      "exports": 1
+    },
+    {
+      "name": "p_hpb",
+      "charId": 1190,
+      "exports": 1
+    },
+    {
+      "name": "player1",
+      "charId": 546,
+      "exports": 1
+    },
+    {
+      "name": "player2",
+      "charId": 606,
+      "exports": 1
+    },
+    {
+      "name": "player3",
+      "charId": 695,
+      "exports": 1
+    },
+    {
+      "name": "player4",
+      "charId": 808,
+      "exports": 1
+    },
+    {
+      "name": "player5",
+      "charId": 759,
+      "exports": 1
+    },
+    {
+      "name": "player6",
+      "charId": 915,
+      "exports": 1
+    },
+    {
+      "name": "se_1",
+      "charId": 211,
+      "exports": 1
+    },
+    {
+      "name": "se_101",
+      "charId": 199,
+      "exports": 1
+    },
+    {
+      "name": "se_11",
+      "charId": 201,
+      "exports": 1
+    },
+    {
+      "name": "se_2",
+      "charId": 263,
+      "exports": 1
+    },
+    {
+      "name": "se_21",
+      "charId": 189,
+      "exports": 1
+    },
+    {
+      "name": "se_22",
+      "charId": 195,
+      "exports": 1
+    },
+    {
+      "name": "se_23",
+      "charId": 191,
+      "exports": 1
+    },
+    {
+      "name": "se_24",
+      "charId": 197,
+      "exports": 1
+    },
+    {
+      "name": "se_25",
+      "charId": 187,
+      "exports": 1
+    },
+    {
+      "name": "se_3",
+      "charId": 219,
+      "exports": 1
+    },
+    {
+      "name": "se_31",
+      "charId": 193,
+      "exports": 1
+    },
+    {
+      "name": "se_32",
+      "charId": 206,
+      "exports": 1
+    },
+    {
+      "name": "se_36",
+      "charId": 204,
+      "exports": 1
+    },
+    {
+      "name": "se_37",
+      "charId": 209,
+      "exports": 1
+    },
+    {
+      "name": "se_38",
+      "charId": 203,
+      "exports": 1
+    },
+    {
+      "name": "se_39",
+      "charId": 261,
+      "exports": 1
+    },
+    {
+      "name": "se_41",
+      "charId": 215,
+      "exports": 1
+    },
+    {
+      "name": "se_42",
+      "charId": 213,
+      "exports": 1
+    },
+    {
+      "name": "se_43",
+      "charId": 217,
+      "exports": 1
+    },
+    {
+      "name": "se_44",
+      "charId": 259,
+      "exports": 1
+    },
+    {
+      "name": "se_45",
+      "charId": 226,
+      "exports": 1
+    },
+    {
+      "name": "se_51",
+      "charId": 221,
+      "exports": 1
+    },
+    {
+      "name": "se_52",
+      "charId": 247,
+      "exports": 1
+    },
+    {
+      "name": "se_53",
+      "charId": 208,
+      "exports": 1
+    },
+    {
+      "name": "se_6",
+      "charId": 228,
+      "exports": 1
+    },
+    {
+      "name": "se_61",
+      "charId": 232,
+      "exports": 1
+    },
+    {
+      "name": "se_62",
+      "charId": 224,
+      "exports": 1
+    },
+    {
+      "name": "se_63",
+      "charId": 236,
+      "exports": 1
+    },
+    {
+      "name": "se_64",
+      "charId": 238,
+      "exports": 1
+    },
+    {
+      "name": "se_65",
+      "charId": 243,
+      "exports": 1
+    },
+    {
+      "name": "se_66",
+      "charId": 245,
+      "exports": 1
+    },
+    {
+      "name": "se_67",
+      "charId": 223,
+      "exports": 1
+    },
+    {
+      "name": "se_70",
+      "charId": 257,
+      "exports": 1
+    },
+    {
+      "name": "se_81",
+      "charId": 249,
+      "exports": 1
+    },
+    {
+      "name": "se_82",
+      "charId": 230,
+      "exports": 1
+    },
+    {
+      "name": "se_83",
+      "charId": 251,
+      "exports": 1
+    },
+    {
+      "name": "se_84",
+      "charId": 234,
+      "exports": 1
+    },
+    {
+      "name": "se_85",
+      "charId": 240,
+      "exports": 1
+    },
+    {
+      "name": "se_86",
+      "charId": 242,
+      "exports": 1
+    },
+    {
+      "name": "se_87",
+      "charId": 255,
+      "exports": 1
+    },
+    {
+      "name": "se_88",
+      "charId": 253,
+      "exports": 1
+    },
+    {
+      "name": "se_89",
+      "charId": 188,
+      "exports": 1
+    },
+    {
+      "name": "tettai01",
+      "charId": 461,
+      "exports": 1
+    },
+    {
+      "name": "tettai02",
+      "charId": 550,
+      "exports": 1
+    },
+    {
+      "name": "tettai03",
+      "charId": 613,
+      "exports": 1
+    },
+    {
+      "name": "tettai05",
+      "charId": 697,
+      "exports": 1
+    },
+    {
+      "name": "tobi1",
+      "charId": 185,
+      "exports": 1
+    },
+    {
+      "name": "tobi11",
+      "charId": 142,
+      "exports": 1
+    },
+    {
+      "name": "tobi13",
+      "charId": 140,
+      "exports": 1
+    },
+    {
+      "name": "tobi14",
+      "charId": 127,
+      "exports": 1
+    },
+    {
+      "name": "tobi15",
+      "charId": 135,
+      "exports": 1
+    },
+    {
+      "name": "tobi16",
+      "charId": 138,
+      "exports": 1
+    },
+    {
+      "name": "tobi2",
+      "charId": 145,
+      "exports": 1
+    },
+    {
+      "name": "tobi3",
+      "charId": 118,
+      "exports": 1
+    },
+    {
+      "name": "tobi4",
+      "charId": 175,
+      "exports": 1
+    },
+    {
+      "name": "tobi5",
+      "charId": 179,
+      "exports": 1
+    },
+    {
+      "name": "tobi51",
+      "charId": 131,
+      "exports": 1
+    },
+    {
+      "name": "tobi52",
+      "charId": 112,
+      "exports": 1
+    },
+    {
+      "name": "tobi6",
+      "charId": 39,
+      "exports": 1
+    },
+    {
+      "name": "tobi7",
+      "charId": 133,
+      "exports": 1
+    },
+    {
+      "name": "tobi8",
+      "charId": 129,
+      "exports": 1
+    },
+    {
+      "name": "tobi9",
+      "charId": 149,
+      "exports": 1
+    },
+    {
+      "name": "toujouH1",
+      "charId": 1146,
+      "exports": 1
+    },
+    {
+      "name": "toujouH11",
+      "charId": 936,
+      "exports": 1
+    },
+    {
+      "name": "toujouH12",
+      "charId": 982,
+      "exports": 17
+    },
+    {
+      "name": "toujouH13",
+      "charId": 1062,
+      "exports": 1
+    },
+    {
+      "name": "toujouH14",
+      "charId": 1143,
+      "exports": 1
+    },
+    {
+      "name": "toujouH15",
+      "charId": 1115,
+      "exports": 1
+    },
+    {
+      "name": "toujouH16",
+      "charId": 698,
+      "exports": 1
+    },
+    {
+      "name": "toujouH17",
+      "charId": 1022,
+      "exports": 1
+    },
+    {
+      "name": "toujouJ1",
+      "charId": 1145,
+      "exports": 1
+    },
+    {
+      "name": "toujouS01",
+      "charId": 460,
+      "exports": 1
+    },
+    {
+      "name": "toujouS02",
+      "charId": 549,
+      "exports": 1
+    },
+    {
+      "name": "toujouS03",
+      "charId": 612,
+      "exports": 1
+    },
+    {
+      "name": "toujouS10",
+      "charId": 374,
+      "exports": 1
+    },
+    {
+      "name": "toujouS11",
+      "charId": 294,
+      "exports": 1
+    },
+    {
+      "name": "txt1",
+      "charId": 444,
+      "exports": 1
+    },
+    {
+      "name": "txt2",
+      "charId": 442,
+      "exports": 1
+    },
+    {
+      "name": "yararekie1",
+      "charId": 426,
+      "exports": 73
+    }
+  ],
+  "exportTotals": {
+    "rows": 482,
+    "uniqueNames": 132
+  },
+  "sounds": [
+    {
+      "id": 186,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 1763,
+      "dataBytes": 834
+    },
+    {
+      "id": 190,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 3995,
+      "dataBytes": 1250
+    },
+    {
+      "id": 192,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 1468,
+      "dataBytes": 730
+    },
+    {
+      "id": 194,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 1126,
+      "dataBytes": 730
+    },
+    {
+      "id": 196,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 2987,
+      "dataBytes": 1042
+    },
+    {
+      "id": 198,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 29352,
+      "dataBytes": 5826
+    },
+    {
+      "id": 200,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 716,
+      "dataBytes": 626
+    },
+    {
+      "id": 202,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 1912,
+      "dataBytes": 834
+    },
+    {
+      "id": 205,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 4590,
+      "dataBytes": 1354
+    },
+    {
+      "id": 207,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 6120,
+      "dataBytes": 1562
+    },
+    {
+      "id": 210,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 2486,
+      "dataBytes": 938
+    },
+    {
+      "id": 212,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 1700,
+      "dataBytes": 834
+    },
+    {
+      "id": 214,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 6205,
+      "dataBytes": 1562
+    },
+    {
+      "id": 216,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 6885,
+      "dataBytes": 1770
+    },
+    {
+      "id": 218,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 4292,
+      "dataBytes": 1250
+    },
+    {
+      "id": 220,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 10543,
+      "dataBytes": 2394
+    },
+    {
+      "id": 222,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 5167,
+      "dataBytes": 1458
+    },
+    {
+      "id": 225,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 26945,
+      "dataBytes": 5306
+    },
+    {
+      "id": 227,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 4564,
+      "dataBytes": 1354
+    },
+    {
+      "id": 229,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 9515,
+      "dataBytes": 2186
+    },
+    {
+      "id": 231,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 17376,
+      "dataBytes": 3642
+    },
+    {
+      "id": 233,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 14682,
+      "dataBytes": 3122
+    },
+    {
+      "id": 235,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 4484,
+      "dataBytes": 1146
+    },
+    {
+      "id": 237,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 2635,
+      "dataBytes": 938
+    },
+    {
+      "id": 239,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 12813,
+      "dataBytes": 2810
+    },
+    {
+      "id": 241,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 7480,
+      "dataBytes": 1874
+    },
+    {
+      "id": 244,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 13541,
+      "dataBytes": 2914
+    },
+    {
+      "id": 246,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 4824,
+      "dataBytes": 1354
+    },
+    {
+      "id": 248,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 1078,
+      "dataBytes": 522
+    },
+    {
+      "id": 250,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 4374,
+      "dataBytes": 1250
+    },
+    {
+      "id": 252,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 13493,
+      "dataBytes": 2914
+    },
+    {
+      "id": 254,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 10752,
+      "dataBytes": 2394
+    },
+    {
+      "id": 256,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 21463,
+      "dataBytes": 4370
+    },
+    {
+      "id": 258,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 9095,
+      "dataBytes": 1978
+    },
+    {
+      "id": 260,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 3187,
+      "dataBytes": 1042
+    },
+    {
+      "id": 262,
+      "formatName": "MP3",
+      "rateHz": 11025,
+      "bits": 16,
+      "channels": 1,
+      "samples": 906,
+      "dataBytes": 626
+    }
+  ],
+  "soundScope": {
+    "reachableSounds": [
+      198
+    ],
+    "uncertainSounds": [
+      186,
+      190,
+      192,
+      194,
+      196,
+      200,
+      202,
+      205,
+      207,
+      210,
+      212,
+      214,
+      216,
+      218,
+      220,
+      222,
+      225,
+      227,
+      229,
+      231,
+      233,
+      235,
+      237,
+      239,
+      241,
+      244,
+      246,
+      248,
+      250,
+      252,
+      254,
+      256,
+      258,
+      260,
+      262
+    ],
+    "inScopeSounds": [],
+    "literalSpawnRefs": [
+      {
+        "emitterName": "se_101",
+        "spawnerLoc": "tag#72602:DoAction@root:f15"
+      }
+    ],
+    "staticPlacedEmitters": [],
+    "emitterHostCount": 36,
+    "triggerTotal": 43,
+    "rationale": "43 StartSound triggers cover all 36 sounds inside dedicated se_* host sprites, but only se_101 has a literal attachMovie spawn edge (from root f15 story-event dispatch, out of the fight slice) and no host sprite is statically placed; dynamic linkage construction cannot be excluded, so the remaining 35 emitters are uncertain rather than reachable, and the M1 conversion allowlist is empty until spawn evidence is produced."
+  },
+  "buttonSoundRefs": [],
+  "startSoundTriggers": [
+    {
+      "soundId": 186,
+      "n": 3,
+      "syncStop": 0
+    },
+    {
+      "soundId": 190,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 192,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 194,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 196,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 198,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 200,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 202,
+      "n": 2,
+      "syncStop": 0
+    },
+    {
+      "soundId": 205,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 207,
+      "n": 2,
+      "syncStop": 0
+    },
+    {
+      "soundId": 210,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 212,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 214,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 216,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 218,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 220,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 222,
+      "n": 3,
+      "syncStop": 0
+    },
+    {
+      "soundId": 225,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 227,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 229,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 231,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 233,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 235,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 237,
+      "n": 2,
+      "syncStop": 0
+    },
+    {
+      "soundId": 239,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 241,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 244,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 246,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 248,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 250,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 252,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 254,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 256,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 258,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 260,
+      "n": 1,
+      "syncStop": 0
+    },
+    {
+      "soundId": 262,
+      "n": 1,
+      "syncStop": 0
+    }
+  ],
+  "streamHeads": {
+    "count": 622,
+    "nonEmpty": 0
+  },
+  "bitmaps": [
+    {
+      "id": 1409,
+      "tag": "DefineBitsLossless2",
+      "format": 5,
+      "w": 556,
+      "h": 313
+    },
+    {
+      "id": 1411,
+      "tag": "DefineBitsLossless2",
+      "format": 5,
+      "w": 444,
+      "h": 123
+    },
+    {
+      "id": 1412,
+      "tag": "DefineBitsLossless2",
+      "format": 5,
+      "w": 444,
+      "h": 123
+    }
+  ],
+  "placeObject2": {
+    "count": 55100,
+    "named": 760,
+    "withClipActions": 86
+  },
+  "placementSummary": {
+    "edges": 4334,
+    "containers": 543,
+    "rootPlacedChars": [
+      11,
+      15,
+      17,
+      19,
+      21,
+      147,
+      273,
+      274,
+      276,
+      278,
+      282,
+      301,
+      302,
+      304,
+      306,
+      308,
+      310,
+      313,
+      315,
+      321,
+      323,
+      325,
+      327,
+      330,
+      332,
+      334,
+      341,
+      343,
+      345,
+      370,
+      426,
+      449,
+      450,
+      451,
+      452,
+      453,
+      454,
+      455,
+      460,
+      461,
+      546,
+      549,
+      550,
+      606,
+      612,
+      613,
+      695,
+      697,
+      698,
+      759,
+      808,
+      915,
+      922,
+      924,
+      926,
+      930,
+      932,
+      936,
+      962,
+      964,
+      972,
+      974,
+      976,
+      978,
+      980,
+      982,
+      1009,
+      1010,
+      1011,
+      1018,
+      1020,
+      1022,
+      1024,
+      1049,
+      1057,
+      1059,
+      1061,
+      1062,
+      1079,
+      1081,
+      1083,
+      1085,
+      1087,
+      1092,
+      1104,
+      1114,
+      1115,
+      1121,
+      1122,
+      1124,
+      1128,
+      1141,
+      1143,
+      1145,
+      1146,
+      1147,
+      1158,
+      1161,
+      1163,
+      1166,
+      1170,
+      1171,
+      1172,
+      1175,
+      1177,
+      1178,
+      1182,
+      1183,
+      1185,
+      1190,
+      1193,
+      1206,
+      1208,
+      1210,
+      1213,
+      1216,
+      1219,
+      1222,
+      1225,
+      1226,
+      1227,
+      1228,
+      1230,
+      1231,
+      1232,
+      1236,
+      1238,
+      1241,
+      1243,
+      1245,
+      1246,
+      1247,
+      1248,
+      1249,
+      1250,
+      1251,
+      1252,
+      1253,
+      1254,
+      1255,
+      1256,
+      1257,
+      1258,
+      1259,
+      1260,
+      1262,
+      1263,
+      1264,
+      1265,
+      1266,
+      1267,
+      1268,
+      1269,
+      1270,
+      1271,
+      1272,
+      1274,
+      1275,
+      1276,
+      1277,
+      1278,
+      1279,
+      1280,
+      1281,
+      1282,
+      1283,
+      1284,
+      1285,
+      1286,
+      1288,
+      1289,
+      1290,
+      1291,
+      1292,
+      1293,
+      1294,
+      1295,
+      1296,
+      1297,
+      1298,
+      1299,
+      1300,
+      1301,
+      1302,
+      1303,
+      1304,
+      1305,
+      1306,
+      1307,
+      1308,
+      1309,
+      1310,
+      1311,
+      1312,
+      1313,
+      1314,
+      1315,
+      1316,
+      1317,
+      1318,
+      1319,
+      1320,
+      1321,
+      1322,
+      1323,
+      1324,
+      1325,
+      1326,
+      1327,
+      1328,
+      1329,
+      1330,
+      1331,
+      1332,
+      1333,
+      1334,
+      1335,
+      1336,
+      1337,
+      1338,
+      1339,
+      1340,
+      1341,
+      1342,
+      1343,
+      1344,
+      1345,
+      1353,
+      1356,
+      1357,
+      1365,
+      1392,
+      1393,
+      1395,
+      1396,
+      1397,
+      1398,
+      1399,
+      1400,
+      1401,
+      1402,
+      1403,
+      1404,
+      1405,
+      1406,
+      1407
+    ],
+    "graphHash": "f162d5a9"
+  },
+  "clipActionsWidth": 32,
+  "clipEvents": [
+    {
+      "flag": "0x1",
+      "name": "Load",
+      "n": 41
+    },
+    {
+      "flag": "0x2",
+      "name": "EnterFrame",
+      "n": 50
+    },
+    {
+      "flag": "0x10",
+      "name": "MouseDown",
+      "n": 26
+    },
+    {
+      "flag": "0x40",
+      "name": "KeyDown",
+      "n": 18
+    },
+    {
+      "flag": "0x800",
+      "name": "Release",
+      "n": 2
+    }
+  ],
+  "clipKeyCodes": [],
+  "clipUncertain": [],
+  "buttons2": {
+    "count": 2,
+    "condBlocks": 0,
+    "condKeyPress": [],
+    "noAction": 2
+  },
+  "actionScopes": {
+    "doActionTags": 1551,
+    "doInitActionTags": 0,
+    "doActionRecordsInclEnd": 102063,
+    "doActionRecordsExclEnd": 100512,
+    "doInitActionRecordsInclEnd": 0,
+    "doInitActionRecordsExclEnd": 0,
+    "clipActionRecordsInclEnd": 10696,
+    "clipActionRecordsExclEnd": 10559,
+    "buttonCondRecordsInclEnd": 0,
+    "buttonCondRecordsExclEnd": 0,
+    "endTerminators": 1688,
+    "totalRecordsInclEnd": 112759,
+    "totalRecordsExclEnd": 111071
+  },
+  "contractBaselineApprox": 100512,
+  "baselineNote": "Contract baseline ~100,512 = DoAction semantic records excl. End framing (see actionScopes.doActionRecordsExclEnd). Totals incl. End plus ClipActions and button-cond records use a wider scope and are reported separately — different scopes, never a contradiction.",
+  "functionNames": {
+    "effect": 1,
+    "s_effect": 1,
+    "txt": 1,
+    "damage": 1,
+    "e_damage": 1,
+    "yarare": 1,
+    "tobi_dougu": 1,
+    "p_HPb": 1,
+    "e_HPb": 1,
+    "e_toujou": 1,
+    "e_yararekie": 1,
+    "enemy": 1,
+    "p_toujou": 1,
+    "change": 1,
+    "change5": 1,
+    "keycode0": 1
+  },
+  "attachMovieCooccurrence": [
+    {
+      "id": "ef_hit1",
+      "blocks": 48
+    },
+    {
+      "id": "ef_hit7",
+      "blocks": 24
+    },
+    {
+      "id": "ef_hit12",
+      "blocks": 23
+    },
+    {
+      "id": "ef_hit11",
+      "blocks": 13
+    },
+    {
+      "id": "ef_hit2",
+      "blocks": 13
+    },
+    {
+      "id": "event",
+      "blocks": 12
+    },
+    {
+      "id": "player5",
+      "blocks": 11
+    },
+    {
+      "id": "player1",
+      "blocks": 10
+    },
+    {
+      "id": "maku",
+      "blocks": 9
+    },
+    {
+      "id": "nige1",
+      "blocks": 6
+    },
+    {
+      "id": "eventname",
+      "blocks": 5
+    },
+    {
+      "id": "haikei_front1",
+      "blocks": 4
+    },
+    {
+      "id": "ito",
+      "blocks": 4
+    },
+    {
+      "id": "player6",
+      "blocks": 3
+    },
+    {
+      "id": "hits2",
+      "blocks": 2
+    },
+    {
+      "id": "hits3",
+      "blocks": 2
+    },
+    {
+      "id": "player4",
+      "blocks": 2
+    },
+    {
+      "id": "e_hpb",
+      "blocks": 1
+    },
+    {
+      "id": "event1",
+      "blocks": 1
+    },
+    {
+      "id": "event101",
+      "blocks": 1
+    },
+    {
+      "id": "event102",
+      "blocks": 1
+    },
+    {
+      "id": "event103",
+      "blocks": 1
+    },
+    {
+      "id": "event104",
+      "blocks": 1
+    },
+    {
+      "id": "hits",
+      "blocks": 1
+    },
+    {
+      "id": "jimen",
+      "blocks": 1
+    },
+    {
+      "id": "p_hpb",
+      "blocks": 1
+    },
+    {
+      "id": "se_101",
+      "blocks": 1
+    },
+    {
+      "id": "toujouS10",
+      "blocks": 1
+    },
+    {
+      "id": "toujouS11",
+      "blocks": 1
+    }
+  ],
+  "attachDynamicPossible": true,
+  "attachMovieStatic": [
+    {
+      "id": "ef_hit12",
+      "n": 25
+    },
+    {
+      "id": "ef_hit7",
+      "n": 24
+    },
+    {
+      "id": "ef_hit11",
+      "n": 14
+    },
+    {
+      "id": "player5",
+      "n": 11
+    },
+    {
+      "id": "player1",
+      "n": 10
+    },
+    {
+      "id": "maku",
+      "n": 9
+    },
+    {
+      "id": "nige1",
+      "n": 6
+    },
+    {
+      "id": "eventname",
+      "n": 5
+    },
+    {
+      "id": "haikei_front1",
+      "n": 4
+    },
+    {
+      "id": "ito",
+      "n": 4
+    },
+    {
+      "id": "player6",
+      "n": 3
+    },
+    {
+      "id": "hits",
+      "n": 2
+    },
+    {
+      "id": "hits2",
+      "n": 2
+    },
+    {
+      "id": "hits3",
+      "n": 2
+    },
+    {
+      "id": "player4",
+      "n": 2
+    },
+    {
+      "id": "e_hpb",
+      "n": 1
+    },
+    {
+      "id": "event",
+      "n": 1
+    },
+    {
+      "id": "event1",
+      "n": 1
+    },
+    {
+      "id": "event101",
+      "n": 1
+    },
+    {
+      "id": "event102",
+      "n": 1
+    },
+    {
+      "id": "event103",
+      "n": 1
+    },
+    {
+      "id": "event104",
+      "n": 1
+    },
+    {
+      "id": "jimen",
+      "n": 1
+    },
+    {
+      "id": "p_hpb",
+      "n": 1
+    },
+    {
+      "id": "se_101",
+      "n": 1
+    },
+    {
+      "id": "toujouS10",
+      "n": 1
+    },
+    {
+      "id": "toujouS11",
+      "n": 1
+    }
+  ],
+  "attachMovieDynamicSites": [
+    {
+      "loc": "tag#11121:DoAction@sprite377:f10",
+      "kind": "callFunction"
+    },
+    {
+      "loc": "tag#11870:DoAction@sprite386:f13",
+      "kind": "callFunction"
+    },
+    {
+      "loc": "tag#14854:DoAction@sprite427:f2",
+      "kind": "callFunction"
+    },
+    {
+      "loc": "tag#15765:DoAction@sprite433:f13",
+      "kind": "callFunction"
+    },
+    {
+      "loc": "tag#15946:DoAction@sprite434:f13",
+      "kind": "callFunction"
+    },
+    {
+      "loc": "tag#16095:DoAction@sprite438:f2",
+      "kind": "callFunction"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    },
+    {
+      "loc": "tag#16684:DoAction@root:f3",
+      "kind": "callMethod"
+    }
+  ],
+  "rootFrames": [
+    {
+      "frame": 1,
+      "doActions": 0,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 2,
+      "doActions": 1,
+      "clipActions": 1,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 3,
+      "doActions": 1,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 4,
+      "doActions": 0,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 5,
+      "doActions": 0,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 6,
+      "doActions": 1,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 7,
+      "doActions": 1,
+      "clipActions": 2,
+      "startSounds": 0,
+      "placedNames": [
+        "hit1",
+        "hit2",
+        "hit4",
+        "hit3",
+        "hit0",
+        "kasoru1"
+      ]
+    },
+    {
+      "frame": 8,
+      "doActions": 0,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 9,
+      "doActions": 0,
+      "clipActions": 1,
+      "startSounds": 0,
+      "placedNames": [
+        "hit1",
+        "hit2",
+        "hit3",
+        "hit4",
+        "hit5",
+        "hit6",
+        "hit0",
+        "hit8",
+        "hit7",
+        "kasoru"
+      ]
+    },
+    {
+      "frame": 10,
+      "doActions": 0,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 11,
+      "doActions": 0,
+      "clipActions": 11,
+      "startSounds": 0,
+      "placedNames": [
+        "hit0",
+        "hit1",
+        "hit2",
+        "hit3",
+        "hit4",
+        "hit5",
+        "k00",
+        "k01",
+        "k11",
+        "k22",
+        "k31",
+        "k02",
+        "k10",
+        "k20",
+        "k30",
+        "k21",
+        "kasoru",
+        "kasoru0",
+        "kasoru1",
+        "kasoru2",
+        "kasoru3"
+      ]
+    },
+    {
+      "frame": 12,
+      "doActions": 0,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 13,
+      "doActions": 1,
+      "clipActions": 1,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 14,
+      "doActions": 0,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 15,
+      "doActions": 1,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": [
+        "haikei",
+        "s0",
+        "s1"
+      ]
+    },
+    {
+      "frame": 16,
+      "doActions": 0,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 17,
+      "doActions": 1,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 18,
+      "doActions": 0,
+      "clipActions": 0,
+      "startSounds": 0,
+      "placedNames": []
+    },
+    {
+      "frame": 19,
+      "doActions": 0,
+      "clipActions": 2,
+      "startSounds": 0,
+      "placedNames": [
+        "hit1",
+        "hit8",
+        "hit7",
+        "hit6",
+        "hit4",
+        "hit3",
+        "hit2",
+        "hit11",
+        "hit0",
+        "kasoru",
+        "hit9",
+        "hit10",
+        "hit5"
+      ]
+    }
+  ],
+  "opHistAllSourcesTop": {
+    "Push": 48256,
+    "GetVariable": 17492,
+    "GetMember": 12551,
+    "SetMember": 6198,
+    "Not": 3849,
+    "Multiply": 3022,
+    "If": 2980,
+    "CallMethod": 2607,
+    "Subtract": 2233,
+    "Pop": 2060,
+    "Jump": 1721,
+    "End": 1688,
+    "Add2": 1476,
+    "Equals2": 1222,
+    "ConstantPool": 1057,
+    "Less2": 963,
+    "Greater": 675,
+    "SetVariable": 447,
+    "PushDuplicate": 382,
+    "Divide": 354,
+    "DefineLocal": 274,
+    "GoToFrame": 206,
+    "GetProperty": 191,
+    "Play": 176,
+    "Stop": 145,
+    "RemoveSprite": 137,
+    "Increment": 125,
+    "Modulo": 87,
+    "Decrement": 53,
+    "SetProperty": 46,
+    "GoToFrame2": 19,
+    "NewObject": 19,
+    "DefineFunction": 16,
+    "InitObject": 16,
+    "CallFunction": 6,
+    "DefineLocal2": 6,
+    "BitAnd": 1,
+    "InitArray": 1,
+    "Return": 1,
+    "StopSounds": 1
+  },
+  "handlers": {},
+  "keyInventory": {
+    "totalCallMethodSites": 2607,
+    "totalCallFunctionSites": 6,
+    "totalNewMethodSites": 0,
+    "otherCalls": 2558,
+    "resolvedIsDown": 54,
+    "resolvedGetCode": 1,
+    "isDownArgLiterals": [],
+    "isDownArgVars": [
+      {
+        "name": "var(_root).key1",
+        "n": 17
+      },
+      {
+        "name": "var(_root).keyL",
+        "n": 11
+      },
+      {
+        "name": "var(_root).keyR",
+        "n": 11
+      },
+      {
+        "name": "var(_root).keyD",
+        "n": 6
+      },
+      {
+        "name": "var(_root).keyU",
+        "n": 5
+      },
+      {
+        "name": "var(_root).key3",
+        "n": 3
+      },
+      {
+        "name": "var(_root).key2",
+        "n": 1
+      }
+    ],
+    "getCodeArgKinds": [
+      {
+        "kind": "arity-0",
+        "n": 1
+      }
+    ],
+    "unresolved": []
+  },
+  "pushIntUniverseTop": [
+    {
+      "code": 1,
+      "n": 4611
+    },
+    {
+      "code": 2,
+      "n": 1715
+    },
+    {
+      "code": 100,
+      "n": 1444
+    },
+    {
+      "code": 0,
+      "n": 999
+    },
+    {
+      "code": 3,
+      "n": 536
+    },
+    {
+      "code": 6,
+      "n": 448
+    },
+    {
+      "code": 11,
+      "n": 418
+    },
+    {
+      "code": 4,
+      "n": 319
+    },
+    {
+      "code": 7,
+      "n": 302
+    },
+    {
+      "code": -1,
+      "n": 278
+    },
+    {
+      "code": 300,
+      "n": 266
+    },
+    {
+      "code": 5,
+      "n": 209
+    },
+    {
+      "code": 20,
+      "n": 209
+    },
+    {
+      "code": 10,
+      "n": 194
+    },
+    {
+      "code": 40,
+      "n": 145
+    },
+    {
+      "code": 12,
+      "n": 136
+    },
+    {
+      "code": 50,
+      "n": 135
+    },
+    {
+      "code": -2,
+      "n": 104
+    },
+    {
+      "code": 15,
+      "n": 95
+    },
+    {
+      "code": 90,
+      "n": 95
+    },
+    {
+      "code": 13,
+      "n": 94
+    },
+    {
+      "code": 8,
+      "n": 93
+    },
+    {
+      "code": -10,
+      "n": 88
+    },
+    {
+      "code": 200,
+      "n": 82
+    },
+    {
+      "code": 23,
+      "n": 67
+    },
+    {
+      "code": 30,
+      "n": 65
+    },
+    {
+      "code": 70,
+      "n": 63
+    },
+    {
+      "code": 14,
+      "n": 62
+    },
+    {
+      "code": 21,
+      "n": 62
+    },
+    {
+      "code": -20,
+      "n": 60
+    },
+    {
+      "code": -4,
+      "n": 59
+    },
+    {
+      "code": -3,
+      "n": 57
+    },
+    {
+      "code": 51,
+      "n": 53
+    },
+    {
+      "code": 9,
+      "n": 52
+    },
+    {
+      "code": 33,
+      "n": 51
+    },
+    {
+      "code": -14,
+      "n": 50
+    },
+    {
+      "code": 17,
+      "n": 50
+    },
+    {
+      "code": 150,
+      "n": 49
+    },
+    {
+      "code": -6,
+      "n": 45
+    },
+    {
+      "code": 41,
+      "n": 45
+    },
+    {
+      "code": 35,
+      "n": 44
+    },
+    {
+      "code": 180,
+      "n": 43
+    },
+    {
+      "code": 37,
+      "n": 42
+    },
+    {
+      "code": -100,
+      "n": 41
+    },
+    {
+      "code": 36,
+      "n": 39
+    },
+    {
+      "code": 400,
+      "n": 38
+    },
+    {
+      "code": 600,
+      "n": 36
+    },
+    {
+      "code": -8,
+      "n": 35
+    },
+    {
+      "code": 16,
+      "n": 34
+    },
+    {
+      "code": 38,
+      "n": 34
+    },
+    {
+      "code": 337,
+      "n": 31
+    },
+    {
+      "code": 19,
+      "n": 30
+    },
+    {
+      "code": 46,
+      "n": 30
+    },
+    {
+      "code": 52,
+      "n": 30
+    },
+    {
+      "code": 63,
+      "n": 30
+    },
+    {
+      "code": 80,
+      "n": 30
+    },
+    {
+      "code": 25,
+      "n": 29
+    },
+    {
+      "code": 47,
+      "n": 29
+    },
+    {
+      "code": -12,
+      "n": 28
+    },
+    {
+      "code": -5,
+      "n": 28
+    },
+    {
+      "code": 26,
+      "n": 27
+    },
+    {
+      "code": 60,
+      "n": 27
+    },
+    {
+      "code": 22,
+      "n": 26
+    },
+    {
+      "code": 360,
+      "n": 26
+    }
+  ],
+  "pushIntUniverseNote": "Raw Push-int constants (coordinates, counters, frame numbers dominate). NOT decoded Key arguments — use keyInventory for call-site arguments.",
+  "methodCallsTop": [
+    {
+      "method": "gotoAndStop",
+      "kind": "callMethod",
+      "n": 701,
+      "sigs": {
+        "literal-int#1": 695,
+        "property-var#1": 1,
+        "unknown#1": 5
+      }
+    },
+    {
+      "method": "floor",
+      "kind": "callMethod",
+      "n": 314,
+      "sigs": {
+        "unknown#1": 314
+      }
+    },
+    {
+      "method": "random",
+      "kind": "callMethod",
+      "n": 310,
+      "sigs": {
+        "#0": 310
+      }
+    },
+    {
+      "method": "s_effect",
+      "kind": "callMethod",
+      "n": 279,
+      "sigs": {
+        "literal-int#1": 279
+      }
+    },
+    {
+      "method": "attachMovie",
+      "kind": "callMethod",
+      "n": 150,
+      "sigs": {
+        "const-str,const-str,const-str#3": 4,
+        "literal-int,const-str,const-str#3": 72,
+        "literal-int,const-str,unknown#3": 4,
+        "unknown,unknown,const-str#3": 59,
+        "unknown,unknown,unknown#3": 11
+      }
+    },
+    {
+      "method": "e_damage",
+      "kind": "callMethod",
+      "n": 135,
+      "sigs": {
+        "literal-int,literal-int,literal-int,property-var,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int#11": 16,
+        "literal-int,literal-int,literal-int,property-var,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int,unknown#11": 2,
+        "property-var,literal-int,literal-int,property-var,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int#11": 65,
+        "property-var,literal-int,literal-int,property-var,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int,unknown#11": 21,
+        "property-var,literal-int,literal-int,property-var,unknown,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int#11": 10,
+        "property-var,literal-int,literal-int,property-var,unknown,literal-int,literal-int,literal-int,literal-int,literal-int,unknown#11": 3,
+        "property-var,literal-int,literal-int,property-var,unknown,unknown,unknown,unknown,literal-int,literal-int,literal-int#11": 9,
+        "property-var,literal-int,literal-int,property-var,unknown,unknown,unknown,unknown,literal-int,literal-int,unknown#11": 5,
+        "unknown,literal-int,literal-int,property-var,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int#11": 3,
+        "unknown,literal-int,literal-int,property-var,literal-int,literal-int,literal-int,literal-int,literal-int,unknown,literal-int#11": 1
+      }
+    },
+    {
+      "method": "abs",
+      "kind": "callMethod",
+      "n": 76,
+      "sigs": {
+        "property-var#1": 32,
+        "unknown#1": 44
+      }
+    },
+    {
+      "method": "damage",
+      "kind": "callMethod",
+      "n": 76,
+      "sigs": {
+        "literal-int,literal-int,literal-int,property-var,literal-int,unknown,literal-int,literal-int,literal-int,literal-int,literal-int,unknown#12": 2,
+        "literal-int,literal-int,property-var,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int#11": 2,
+        "literal-int,literal-int,property-var,literal-int,literal-int,literal-int,literal-int,unknown,literal-int,literal-int,literal-int#11": 2,
+        "literal-int,literal-int,property-var,literal-int,literal-int,literal-int,unknown,unknown,literal-int,literal-int,literal-int#11": 1,
+        "literal-int,literal-int,property-var,literal-int,literal-int,unknown,literal-int,unknown,literal-int,literal-int,literal-int#11": 7,
+        "literal-int,literal-int,property-var,literal-int,literal-int,unknown,unknown,unknown,literal-int,literal-int,literal-int#11": 5,
+        "literal-int,literal-int,property-var,literal-int,unknown,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int#11": 16,
+        "literal-int,literal-int,property-var,literal-int,unknown,literal-int,literal-int,literal-int,literal-int,literal-int,unknown#11": 7,
+        "literal-int,literal-int,property-var,literal-int,unknown,literal-int,literal-int,unknown,literal-int,literal-int,literal-int#11": 1,
+        "literal-int,literal-int,property-var,literal-int,unknown,literal-int,unknown,literal-int,literal-int,literal-int,literal-int#11": 1,
+        "literal-int,literal-int,property-var,literal-int,unknown,unknown,literal-int,unknown,literal-int,literal-int,literal-int#11": 4,
+        "literal-int,literal-int,property-var,literal-int,unknown,unknown,unknown,unknown,literal-int,literal-int,literal-int#11": 7,
+        "literal-int,literal-int,property-var,literal-int,unknown,unknown,unknown,unknown,literal-int,literal-int,unknown#11": 2,
+        "literal-int,literal-int,property-var,unknown,literal-int,literal-int,literal-int,unknown,literal-int,literal-int,literal-int#11": 3,
+        "literal-int,literal-int,property-var,unknown,literal-int,unknown,unknown,unknown,literal-int,literal-int,literal-int#11": 1,
+        "literal-int,literal-int,property-var,unknown,unknown,literal-int,literal-int,unknown,literal-int,literal-int,unknown#11": 1,
+        "unknown,literal-int,literal-int,literal-int,literal-int,unknown,unknown,literal-int,unknown,literal-int,unknown,literal-int#12": 4,
+        "unknown,literal-int,literal-int,property-var,literal-int,unknown,literal-int,literal-int,literal-int,literal-int,literal-int,literal-int#12": 5,
+        "unknown,literal-int,literal-int,property-var,literal-int,unknown,literal-int,literal-int,literal-int,literal-int,unknown,literal-int#12": 1,
+        "unknown,literal-int,literal-int,property-var,literal-int,unknown,unknown,literal-int,unknown,literal-int,literal-int,literal-int#12": 3,
+        "unknown,literal-int,property-var,literal-int,unknown,literal-int,unknown,literal-int,literal-int,literal-int,unknown#11": 1
+      }
+    },
+    {
+      "method": "gotoAndPlay",
+      "kind": "callMethod",
+      "n": 72,
+      "sigs": {
+        "literal-int#1": 72
+      }
+    },
+    {
+      "method": "hitTest",
+      "kind": "callMethod",
+      "n": 65,
+      "sigs": {
+        "property-var#1": 47,
+        "unknown,property-var,property-var#3": 18
+      }
+    },
+    {
+      "method": "tobi_dougu",
+      "kind": "callMethod",
+      "n": 56,
+      "sigs": {
+        "literal-int,literal-int,literal-int,literal-int,property-var,literal-int#6": 2,
+        "literal-int,unknown,literal-int,property-var,property-var,literal-int#6": 1,
+        "literal-int,unknown,literal-int,unknown,property-var,literal-int#6": 1,
+        "literal-int,unknown,unknown,literal-int,property-var,literal-int#6": 2,
+        "literal-int,unknown,unknown,property-var,unknown,literal-int#6": 5,
+        "literal-int,unknown,unknown,unknown,property-var,literal-int#6": 2,
+        "property-var,literal-int,literal-int,property-var,property-var,literal-int#6": 4,
+        "property-var,unknown,literal-int,property-var,property-var,literal-int#6": 3,
+        "property-var,unknown,unknown,literal-int,property-var,literal-int#6": 4,
+        "property-var,unknown,unknown,property-var,property-var,literal-int#6": 8,
+        "property-var,unknown,unknown,unknown,property-var,literal-int#6": 2,
+        "unknown,unknown,literal-int,property-var,property-var,literal-int#6": 1,
+        "unknown,unknown,unknown,literal-int,property-var,literal-int#6": 7,
+        "unknown,unknown,unknown,property-var,property-var,literal-int#6": 8,
+        "unknown,unknown,unknown,unknown,property-var,literal-int#6": 6
+      }
+    },
+    {
+      "method": "enemy",
+      "kind": "callMethod",
+      "n": 41,
+      "sigs": {
+        "literal-int,literal-int,literal-int,literal-int,literal-int,literal-int#6": 14,
+        "literal-int,literal-int,literal-int,literal-int,literal-int,property-var#6": 4,
+        "property-var,property-var,literal-int,unknown,property-var,literal-int#6": 2,
+        "property-var,property-var,unknown,unknown,property-var,literal-int#6": 21
+      }
+    },
+    {
+      "method": "atan2",
+      "kind": "callMethod",
+      "n": 33,
+      "sigs": {
+        "property-var,property-var#2": 33
+      }
+    },
+    {
+      "method": "change",
+      "kind": "callMethod",
+      "n": 27,
+      "sigs": {
+        "literal-int,property-var,unknown,unknown#4": 9,
+        "property-var,property-var,property-var#3": 9,
+        "unknown,property-var,unknown,unknown#4": 9
+      }
+    },
+    {
+      "method": "txt",
+      "kind": "callMethod",
+      "n": 27,
+      "sigs": {
+        "const-str,literal-int,literal-int,literal-int#4": 6,
+        "literal-int,literal-int,unknown,property-var#4": 8,
+        "unknown,literal-int,literal-int,literal-int#4": 1,
+        "unknown,literal-int,unknown,property-var#4": 12
+      }
+    },
+    {
+      "method": "sin",
+      "kind": "callMethod",
+      "n": 26,
+      "sigs": {
+        "unknown#1": 26
+      }
+    },
+    {
+      "method": "cos",
+      "kind": "callMethod",
+      "n": 25,
+      "sigs": {
+        "unknown#1": 25
+      }
+    },
+    {
+      "method": "e_toujou",
+      "kind": "callMethod",
+      "n": 22,
+      "sigs": {
+        "literal-int,literal-int,literal-int#3": 21,
+        "property-var,literal-int,literal-int#3": 1
+      }
+    },
+    {
+      "method": "setTransform",
+      "kind": "callMethod",
+      "n": 20,
+      "sigs": {
+        "property-var#1": 20
+      }
+    },
+    {
+      "method": "yarare",
+      "kind": "callMethod",
+      "n": 16,
+      "sigs": {
+        "property-var#1": 16
+      }
+    },
+    {
+      "method": "keycode0",
+      "kind": "callMethod",
+      "n": 15,
+      "sigs": {
+        "property-var#1": 15
+      }
+    },
+    {
+      "method": "effect",
+      "kind": "callMethod",
+      "n": 13,
+      "sigs": {
+        "property-var,property-var,property-var,literal-int#4": 1,
+        "property-var,property-var,unknown,literal-int#4": 1,
+        "unknown,property-var,property-var,literal-int#4": 3,
+        "unknown,property-var,property-var,property-var#4": 2,
+        "unknown,property-var,unknown,literal-int#4": 2,
+        "unknown,property-var,unknown,property-var#4": 2,
+        "unknown,unknown,property-var,property-var#4": 1,
+        "unknown,unknown,unknown,property-var#4": 1
+      }
+    },
+    {
+      "method": "p_HPb",
+      "kind": "callMethod",
+      "n": 11,
+      "sigs": {
+        "literal-int,literal-int,literal-int#3": 4,
+        "literal-int,literal-int,unknown#3": 7
+      }
+    },
+    {
+      "method": "e_HPb",
+      "kind": "callMethod",
+      "n": 9,
+      "sigs": {
+        "property-var,literal-int,property-var#3": 9
+      }
+    },
+    {
+      "method": "sqrt",
+      "kind": "callMethod",
+      "n": 9,
+      "sigs": {
+        "unknown#1": 9
+      }
+    },
+    {
+      "method": "e_yararekie",
+      "kind": "callMethod",
+      "n": 8,
+      "sigs": {
+        "property-var,property-var,property-var,property-var,property-var,literal-int#6": 8
+      }
+    },
+    {
+      "method": "attachMovie",
+      "kind": "callFunction",
+      "n": 6,
+      "sigs": {
+        "literal-int,const-str,unknown#3": 6
+      }
+    },
+    {
+      "method": "play",
+      "kind": "callMethod",
+      "n": 6,
+      "sigs": {
+        "#0": 6
+      }
+    },
+    {
+      "method": "getBytesLoaded",
+      "kind": "callMethod",
+      "n": 3,
+      "sigs": {
+        "#0": 3
+      }
+    },
+    {
+      "method": "getBytesTotal",
+      "kind": "callMethod",
+      "n": 3,
+      "sigs": {
+        "#0": 3
+      }
+    },
+    {
+      "method": "p_toujou",
+      "kind": "callMethod",
+      "n": 2,
+      "sigs": {
+        "#0": 2
+      }
+    },
+    {
+      "method": "change5",
+      "kind": "callMethod",
+      "n": 1,
+      "sigs": {
+        "property-var,property-var,property-var#3": 1
+      }
+    },
+    {
+      "method": "fromCharCode",
+      "kind": "callMethod",
+      "n": 1,
+      "sigs": {
+        "property-var#1": 1
+      }
+    }
+  ],
+  "methodCallDistinct": 33,
+  "pushDoubles": {
+    "distinct": 53,
+    "nonFinite": 0,
+    "top": [
+      {
+        "v": 0,
+        "n": 2380
+      },
+      {
+        "v": 0.017453292519943295,
+        "n": 51
+      },
+      {
+        "v": 57.29577951308232,
+        "n": 33
+      },
+      {
+        "v": -0.5,
+        "n": 32
+      },
+      {
+        "v": 1.5,
+        "n": 16
+      },
+      {
+        "v": 2.5,
+        "n": 13
+      },
+      {
+        "v": 1.3,
+        "n": 9
+      },
+      {
+        "v": 0.5,
+        "n": 8
+      },
+      {
+        "v": 0.9,
+        "n": 8
+      },
+      {
+        "v": 1.8,
+        "n": 8
+      },
+      {
+        "v": 6.4,
+        "n": 8
+      },
+      {
+        "v": 1.6,
+        "n": 7
+      },
+      {
+        "v": 0.6,
+        "n": 6
+      },
+      {
+        "v": 26.2,
+        "n": 6
+      },
+      {
+        "v": 1.1,
+        "n": 5
+      },
+      {
+        "v": 3.8,
+        "n": 5
+      },
+      {
+        "v": 0.035,
+        "n": 4
+      },
+      {
+        "v": 3.5,
+        "n": 4
+      },
+      {
+        "v": 12.2,
+        "n": 4
+      },
+      {
+        "v": 0.03,
+        "n": 3
+      },
+      {
+        "v": 1.7,
+        "n": 3
+      },
+      {
+        "v": 4.7,
+        "n": 3
+      },
+      {
+        "v": 0.4,
+        "n": 2
+      },
+      {
+        "v": 1.2,
+        "n": 2
+      },
+      {
+        "v": 2.2,
+        "n": 2
+      },
+      {
+        "v": 4.3,
+        "n": 2
+      },
+      {
+        "v": 4.5,
+        "n": 2
+      },
+      {
+        "v": 47.9,
+        "n": 2
+      },
+      {
+        "v": -137.9,
+        "n": 1
+      },
+      {
+        "v": -112.3,
+        "n": 1
+      },
+      {
+        "v": -86.5,
+        "n": 1
+      },
+      {
+        "v": -60.9,
+        "n": 1
+      }
+    ]
+  },
+  "clipSignals": {
+    "0x1:Load": {
+      "_parent": 62,
+      "_root": 59,
+      "_x": 31,
+      "s0": 28,
+      "ito": 24,
+      "coun": 18,
+      "scale": 11,
+      "_y": 11,
+      "spx": 10,
+      "r": 10,
+      "muki": 9,
+      "f": 9
+    },
+    "0x2:EnterFrame": {
+      "_parent": 779,
+      "_root": 346,
+      "_x": 242,
+      "s0": 207,
+      "muki": 149,
+      "ito": 97,
+      "a": 93,
+      "r": 83,
+      "_y": 82,
+      "spx": 77,
+      "_currentframe": 53,
+      "scale": 52
+    },
+    "0x10:MouseDown": {
+      "_root": 138,
+      "_x": 38,
+      "_parent": 35,
+      "_ymouse": 28,
+      "_xmouse": 28,
+      "hitTest": 28,
+      "keyhen": 27,
+      "keyhii": 24,
+      "gotoAndPlay": 21,
+      "gotoAndStop": 15,
+      "s0": 14,
+      "event": 14
+    },
+    "0x40:KeyDown": {
+      "_root": 131,
+      "keyhen": 79,
+      "_parent": 58,
+      "Key": 50,
+      "isDown": 49,
+      "_x": 41,
+      "key1": 30,
+      "keyhen2": 24,
+      "gotoAndPlay": 21,
+      "gotoAndStop": 17,
+      "kasoru0": 17,
+      "kasoru2": 17
+    },
+    "0x800:Release": {
+      "_root": 6,
+      "playmode": 6
+    }
+  },
+  "keySlotSignals": {
+    "keyL": 9,
+    "keyR": 9,
+    "keyU": 10,
+    "keyD": 10,
+    "key1": 30,
+    "key2": 2,
+    "key3": 6,
+    "keyhen": 79,
+    "keycode0": 2
+  },
+  "memberNames": [
+    "aaa",
+    "act",
+    "ak",
+    "asi",
+    "back000",
+    "d0",
+    "d1",
+    "d2",
+    "d3",
+    "d4",
+    "d5",
+    "d6",
+    "d7",
+    "d8",
+    "ef",
+    "faces",
+    "haikei",
+    "hit0",
+    "hit1",
+    "hit10",
+    "hit11",
+    "hit2",
+    "hit3",
+    "hit4",
+    "hit5",
+    "hit6",
+    "hit7",
+    "hit8",
+    "hit9",
+    "hpb",
+    "hpb1",
+    "hpb2",
+    "k",
+    "k00",
+    "k01",
+    "k02",
+    "k10",
+    "k11",
+    "k20",
+    "k21",
+    "k22",
+    "k30",
+    "k31",
+    "kage",
+    "kasoru",
+    "kasoru0",
+    "kasoru1",
+    "kasoru2",
+    "kasoru3",
+    "laser",
+    "mino",
+    "mino2",
+    "nerai",
+    "s0",
+    "s1",
+    "sen",
+    "shot",
+    "spb",
+    "timeb"
+  ],
+  "external": {
+    "getUrls": [],
+    "getUrl2Count": 0,
+    "apiHits": {}
+  },
+  "soundRefs": {},
+  "stringCount": 536,
+  "stringHash": "ce3cec93",
+  "uncertainty": [
+    "Static scan only: observed references are not proofs of reachability or call order (no CFG, no AVM1 execution).",
+    "Key arguments come from basic-block abstract interpretation (keyInventory); Push-int constants are a raw universe, not arguments.",
+    "Unresolved call sites are listed exhaustively in keyInventory.unresolved with reasons — none are dropped.",
+    "attachMovie refs are literal string constants; dynamic linkage construction (\"ef_hit\"+i / \"se_\"+i style) cannot be excluded.",
+    "Sound audibility needs emitter instantiation: only statically reachable hosts count as reachable; the rest are uncertain.",
+    "ClipActions KeyPress bit assumed 1<<17 (0x20000); action streams parsed at that boundary — see clipUncertain for misparses (must stay empty).",
+    "ClipEventFlags parsed as 32-bit (SWF v6 >= 6); width validated — see clipActionsWidth."
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.ranger",
+  "name": "pocketjs-ranger",
+  "title": "OO Ranger: SF2000 Battle Slice",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": ["input.buttons", "text.glyphs.baked"]
+    }
+  },
+  "app": {
+    "entry": "apps/ranger/main.tsx",
+    "output": "ranger",
+    "framework": "solid",
+    "viewport": {
+      "fixed": {
+        "logical": [320, 240],
+        "presentation": "native"
+      }
+    }
+  }
+}
