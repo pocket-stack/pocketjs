@@ -83,8 +83,6 @@
     "output": "dist/symbian/pocketjs-e7-probe.sis"
   },
   "runtime": {
-    "uid": "0xE7A11010",
-    "output": "dist/symbian/pocketjs-e7-runtime.sis",
     "sisVersion": "1.0.0",
     "rustToolchain": "nightly-2026-07-02",
     "frameRate": 30

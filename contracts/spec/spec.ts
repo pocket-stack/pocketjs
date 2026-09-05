@@ -219,9 +219,10 @@ export const OP = {
   //                      Launching `current` relaunches it fresh — there is
   //                      no suspend anywhere in this protocol.
   appShot: 41, //         () -> handle | -1. Texture of the frozen frame the
-  //                      SELECT summon captured: the FULL 480x272 frame
-  //                      downscaled into 256x128 PSM_8888 (stored slightly
-  //                      squeezed — draw it at screen aspect to undo it).
+  //                      SELECT summon captured: the FULL current logical
+  //                      frame downscaled into 256x128 PSM_8888 (stored
+  //                      squeezed — draw it at current viewport aspect to
+  //                      undo it; consoles are 480x272).
   //                      Valid inside the summoned launcher guest until the
   //                      next switch; -1 otherwise.
 } as const;

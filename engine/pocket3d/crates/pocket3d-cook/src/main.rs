@@ -3,6 +3,7 @@
 //! ```sh
 //! cargo run -p pocket3d-cook -- de_dust2.bsp --wads ~/cs/support -o dust2.p3d
 //! cargo run -p pocket3d-cook -- ~/cs/maps/de_dust2.bsp --verify
+//! cargo run -p pocket3d-cook -- --verify-cooked dust2.p3d
 //! ```
 //!
 //! WADs are also auto-discovered next to the map (its directory plus sibling
@@ -27,6 +28,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<()> {
     let mut bsp: Option<PathBuf> = None;
+    let mut cooked: Option<PathBuf> = None;
     let mut out: Option<PathBuf> = None;
     let mut wad_dirs: Vec<PathBuf> = Vec::new();
     let mut opts = CookOptions::default();
@@ -45,10 +47,14 @@ fn run() -> Result<()> {
                     .context("bad --subdivide value")?;
             }
             "--verify" => verify = true,
+            "--verify-cooked" => {
+                cooked = Some(args.next().context("--verify-cooked needs a path")?.into());
+            }
             "-h" | "--help" => {
                 println!(
                     "usage: pocket3d-cook <map.bsp> [-o out.p3d] [--wads DIR]... \
-                     [--subdivide UNITS] [--verify]"
+                     [--subdivide UNITS] [--verify]\n       \
+                     pocket3d-cook --verify-cooked <map.p3d>"
                 );
                 return Ok(());
             }
@@ -56,22 +62,22 @@ fn run() -> Result<()> {
             _ => bail!("unexpected argument {a:?}"),
         }
     }
+    if let Some(cooked) = cooked {
+        if bsp.is_some() || out.is_some() || !wad_dirs.is_empty() || verify {
+            bail!("--verify-cooked cannot be combined with BSP cooking options");
+        }
+        let bytes = std::fs::read(&cooked)
+            .with_context(|| format!("reading {}", cooked.display()))?;
+        print_cooked_verification(&cooked, &bytes)?;
+        return Ok(());
+    }
     let bsp = bsp.context("no .bsp given (see --help)")?;
     let out = out.unwrap_or_else(|| bsp.with_extension("p3d"));
 
     let (bytes, stats) = cook_map(&bsp, &wad_dirs, &opts)?;
 
     if verify {
-        let map = pocket3d_bsp::cooked::read(&bytes)
-            .map_err(|e| anyhow::anyhow!("verify failed: {e}"))?;
-        println!(
-            "verify: {} ok — {} leaves, {} visleaves, spawns {}/{}",
-            map.name,
-            map.vis.leaves.len(),
-            map.vis.num_visleaves,
-            map.ct_spawns.len(),
-            map.t_spawns.len(),
-        );
+        print_cooked_verification(&out, &bytes)?;
     }
 
     std::fs::write(&out, &bytes).with_context(|| format!("writing {}", out.display()))?;
@@ -93,4 +99,30 @@ fn run() -> Result<()> {
         stats.collision_bytes as f64 / 1024.0
     );
     Ok(())
+}
+
+fn print_cooked_verification(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
+    let map = pocket3d_bsp::cooked::read(bytes)
+        .map_err(|e| anyhow::anyhow!("verify failed for {}: {e}", path.display()))?;
+    println!(
+        "verify: {} ({}) ok — {} leaves, {} visleaves, spawns {}/{}",
+        map.name,
+        path.display(),
+        map.vis.leaves.len(),
+        map.vis.num_visleaves,
+        map.ct_spawns.len(),
+        map.t_spawns.len(),
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cooked_verifier_rejects_a_truncated_section_table() {
+        let bytes = b"P3D1\x01\0\0\0\x01\0\0\0\0\0\0\0";
+        assert!(print_cooked_verification(std::path::Path::new("bad.p3d"), bytes).is_err());
+    }
 }

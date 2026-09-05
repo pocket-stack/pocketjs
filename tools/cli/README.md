@@ -25,7 +25,7 @@ pocket symbian setup --yes
 pocket symbian build probe
 pocket symbian deploy dist/symbian/pocketjs-e7-probe.sis
 pocket symbian coda usb
-pocket symbian coda usb launch
+pocket symbian coda usb launch <executable.exe>
 pocket hw my-app         # build + run on a real PSP over PSPLINK
 pocket psplink           # interactive multi-app switcher on a real PSP
 pocket devtools my-app   # DevTools panel + USB debug bridge, one command

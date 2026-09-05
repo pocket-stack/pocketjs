@@ -7,6 +7,7 @@
 #                           lone standalone crates (see their Cargo.toml)
 #   pocket3d/crates/pocket3d-gu, gu-demo — PSP-only (cargo-psp toolchain)
 #   pocket3d/crates/pocket3d-vita        — Vita-only (vitasdk toolchain)
+#   pocket3d/crates/pocket3d-gles2       — no_std Symbian GLES2 backend
 [workspace]
 resolver = "2"
 members = [
@@ -29,6 +30,7 @@ exclude = [
     "pocket3d/crates/pocket3d-gu",
     "pocket3d/crates/gu-demo",
     "pocket3d/crates/pocket3d-vita",
+    "pocket3d/crates/pocket3d-gles2",
 ]
 
 [workspace.package]

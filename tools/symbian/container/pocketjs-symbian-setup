@@ -374,6 +374,18 @@ if test "$lowercase_status" != 0; then
     tail -n 80 "$setup_log"
     exit "$lowercase_status"
 fi
+# Qt's Linux-hosted Symbian mkspec includes the canonical Khronos directory
+# names, while the SDK extraction above exposes only lowercase aliases.
+# Restore the original case-sensitive include surface inside this immutable
+# generation rather than teaching every application about the SDK defect.
+for alias_pair in GLES2:gles2 EGL:egl GLES:gles; do
+    alias_name=${alias_pair%%:*}
+    target_name=${alias_pair#*:}
+    if test -d "$stage/sdk/epoc32/include/$target_name" &&
+        test ! -e "$stage/sdk/epoc32/include/$alias_name"; then
+        ln -s "$target_name" "$stage/sdk/epoc32/include/$alias_name"
+    fi
+done
 
 echo "Building native Qt 4.7.4 host tools"
 mkdir -p "$stage/work/qt"

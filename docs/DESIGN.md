@@ -196,14 +196,15 @@ PocketJS/
    plugin collects per-file: (a) candidate class strings, (b) text codepoints
    — both from AST literals *and template quasis*, never regex over quotes.
 2. **Compile styles & fonts.** `tailwind.ts` validates tokens (all-or-nothing
-   per literal), assigns styleIds, writes `styles.bin` + `styles.generated.ts`
-   (excluded from future scans). `bake-font.ts` bakes atlas slots for the
-   collected charset. `pak.ts` packs styles.bin + atlases + images →
-   `<app>.pak`.
+   per literal), assigns styleIds, writes `styles.bin`, and keeps an ignored
+   `styles.generated.ts` mirror for inspection (excluded from future scans).
+   `bake-font.ts` bakes atlas slots for the collected charset. `pak.ts` packs
+   styles.bin + atlases + images → `<app>.pak`.
 3. **Pass 2 — bundle.** `Bun.build` with an onLoad plugin that serves the
-   *cached* pass-1 transforms (styles.generated.ts now exists), `format:
-   "iife"`, `minify:false`, `target:"browser"`. Output `<app>.js` next to the
-   pak.
+   *cached* pass-1 transforms plus this build's in-memory generated style
+   module, `format:"iife"`, `minify:false`, `target:"browser"`. Output
+   `<app>.js` next to the pak. Parallel builds therefore cannot import one
+   another's transient style table.
 
 The PSP build (`tools/psp.ts`) then runs `rustup run nightly-2026-05-28
 cargo psp` with the exact env block from `runtime/build.ts` (LLVM PATH,

@@ -1,11 +1,14 @@
 TEMPLATE = app
-TARGET = PocketJsE7Runtime
-QT += core gui
+isEmpty(POCKETJS_SYMBIAN_TARGET): error(POCKETJS_SYMBIAN_TARGET is required)
+isEmpty(POCKETJS_SYMBIAN_CAPTION): error(POCKETJS_SYMBIAN_CAPTION is required)
+TARGET = $$POCKETJS_SYMBIAN_TARGET
+DEPLOYMENT.display_name = $$POCKETJS_SYMBIAN_CAPTION
+QT += core gui opengl
 CONFIG += release
 CONFIG -= debug app_bundle
 
 SOURCES += main.cpp
-HEADERS += pocketjs_symbian_core.h
+HEADERS += pocketjs_symbian_core.h pocketjs_symbian_extension.h pocketjs_symbian_keys.h
 RESOURCES += pocketjs-runtime.qrc
 
 isEmpty(POCKETJS_QUICKJS_INCLUDE): error(POCKETJS_QUICKJS_INCLUDE is required)

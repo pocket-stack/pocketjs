@@ -33,11 +33,20 @@ struct FontTexture {
     glyph_count: u16,
 }
 
-/// One live image texture, cached by core SLOT. `handle` is the
-/// generation-tagged handle the upload was made for; a slot whose current
-/// handle differs (freed, then reused) is re-uploaded by `sync_textures`.
-struct ImageBind {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ImageVersion {
     handle: i32,
+    revision: u64,
+}
+
+#[inline]
+fn image_cache_hit(cached: Option<ImageVersion>, current: ImageVersion) -> bool {
+    cached == Some(current)
+}
+
+/// One live image texture, cached by core SLOT.
+struct ImageBind {
+    version: ImageVersion,
     bind: wgpu::BindGroup,
 }
 
@@ -345,7 +354,7 @@ impl UiRenderer {
                     // mirroring the core contract.
                     let slot = (handle as u32 & spec::TEX_SLOT_MASK) as usize;
                     match self.images.get(slot).and_then(|i| i.as_ref()) {
-                        Some(i) if i.handle == handle => &i.bind,
+                        Some(i) if i.version.handle == handle => &i.bind,
                         _ => continue,
                     }
                 }
@@ -652,8 +661,8 @@ impl UiRenderer {
     /// Mirror the core's textures into GPU resources. Font atlases are
     /// append-only; image slots are not — `freeTexture` empties a slot and
     /// a later upload reuses it under a new generation-tagged handle, so
-    /// each slot re-uploads whenever its current handle changes and drops
-    /// its cache entry when the core frees it.
+    /// each slot re-uploads whenever its current handle or content revision
+    /// changes and drops its cache entry when the core frees it.
     fn sync_textures(&mut self, gpu: &Gpu, ui: &Ui) {
         // Font slots. A slot re-uploads when its glyph count moved — hosts
         // may extend an atlas at runtime (IME input rasterizing new
@@ -679,13 +688,17 @@ impl UiRenderer {
             self.images.resize_with(slots, || None);
         }
         for slot in 0..slots {
-            match ui.texture_at(slot as u32) {
-                Some((handle, view)) => {
-                    if self.images[slot].as_ref().is_some_and(|e| e.handle == handle) {
+            match ui.texture_at_versioned(slot as u32) {
+                Some((handle, revision, view)) => {
+                    let version = ImageVersion { handle, revision };
+                    if image_cache_hit(
+                        self.images[slot].as_ref().map(|entry| entry.version),
+                        version,
+                    ) {
                         continue;
                     }
                     self.images[slot] = to_rgba8(&view).map(|rgba| ImageBind {
-                        handle,
+                        version,
                         bind: self.upload_image(gpu, &rgba, view.w, view.h, view.linear),
                     });
                 }
@@ -822,6 +835,29 @@ impl UiRenderer {
                 },
             ],
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{image_cache_hit, ImageVersion};
+
+    #[test]
+    fn image_cache_decision_reuploads_in_place_content_revision() {
+        let cached = ImageVersion { handle: 7, revision: 4 };
+        assert!(image_cache_hit(
+            Some(cached),
+            ImageVersion { handle: 7, revision: 4 },
+        ));
+        assert!(!image_cache_hit(
+            Some(cached),
+            ImageVersion { handle: 7, revision: 5 },
+        ));
+        assert!(!image_cache_hit(
+            Some(cached),
+            ImageVersion { handle: 8, revision: 4 },
+        ));
+        assert!(!image_cache_hit(None, cached));
     }
 }
 

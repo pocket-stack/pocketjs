@@ -39,6 +39,7 @@ export const SYMBIAN_E7_DEV_CONTRACTS = definePlatformContractRegistry(
       },
       capabilities: [
         "input.buttons",
+        "input.touch",
         "display.viewport.live",
         "text.glyphs.baked",
       ],

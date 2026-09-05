@@ -1,6 +1,6 @@
 # The Pocket Launcher — in-device app switching
 
-One console package — PSP EBOOT or Vita VPK — with every target-compatible
+One device package — PSP EBOOT, Vita VPK, or Nokia E7 SIS — with every target-compatible
 app inside and a Cover Flow picker on top. This document is the contract for
 the multi-app host, the three `app*` surface ops, and the SELECT summon policy.
 RUNTIMES.md owns the ontology; nothing here changes it — a launcher is an
@@ -28,7 +28,7 @@ the system summon chord.
 |----|------|-----------|-----------|
 | 39 | `appTable` | `() -> string` | JSON `{ apps: [{output, id, title}], current, resume }`. `current` is the running bundle's output name; `resume` is the app interrupted by the last SELECT summon (null after a cold boot or an explicit launch). Hosts without app switching omit the op (same rule as `debugStats`). |
 | 40 | `appLaunch` | `(output: string) -> 0\|1` | Request a switch. The host finishes the CURRENT frame (draw + present), then swaps guests before the next one. Returns 0 for an unknown output (no switch scheduled). Calling it with `current` relaunches fresh. |
-| 41 | `appShot` | `() -> handle \| -1` | Texture handle of the frozen frame captured when the running app was summoned away: the FULL 480×272 frame downscaled into 256×128 PSM_8888 (stored slightly squeezed; drawn at screen aspect, which undoes it). Valid in the guest booted by a summon until the next switch; -1 otherwise. |
+| 41 | `appShot` | `() -> handle \| -1` | Texture handle of the frozen frame captured when the running app was summoned away: the full current logical frame downscaled into 256×128 PSM_8888 (stored squeezed; drawn at the current viewport aspect, which undoes it). Console frames are 480×272. Valid in the guest booted by a summon until the next switch; -1 otherwise. |
 
 `@pocketjs/framework/launcher` wraps these (`appTable()`, `launchApp()`,
 `frozenShot()`, `launcherActive()`) and degrades to `null`/no-op on hosts
@@ -50,6 +50,12 @@ Single-app EBOOTs/VPKs have an APPS table of length 1: no interception and no
 ops behavior change. Apps that bind SELECT (e.g. Pocket Talk) keep it in their
 standalone package and lose it under the launcher — that is the price of a
 system chord, stated here once.
+
+The E7 host spells the same system action with the physical QWERTY
+Backspace/Home keys. It forwards that action to the launcher as SELECT and
+strips it from every other guest. Escape remains CROSS. Q/E map to the
+left/right triggers and T/S to TRIANGLE/SQUARE, so the launcher remains fully
+operable without an on-screen controller.
 
 ## Admission
 
@@ -82,14 +88,17 @@ boots the next package; vita2d and input remain process-owned.
 
 ## Build pipeline
 
-`bun tools/launcher.ts` owns the artifact chain. `--target psp|vita`
+`bun tools/launcher.ts` owns the artifact chain. `--target psp|vita|symbian`
 selects admission, bundle variants, packages, and the native backend; `psp`
 is the default for compatibility:
 
 1. **scan** — resolve every app manifest for the selected target and dedupe
    by `app.output`. PSP writes `dist/launcher-registry.{json,tsv}`; Vita writes
    `dist/launcher/vita/launcher-registry.{json,tsv}`. The committed display
-   registry is the PSP/Vita union, while `appTable()` remains the runtime truth.
+   registry is the PSP/Vita/Symbian union, while `appTable()` remains the runtime truth.
+   A plain in-repository `scan` is the only command that updates
+   `apps/launcher/{registry.generated.ts,images.json}`; external scans leave
+   those files untouched.
 2. **covers** — boot each admitted app in `hosts/sim`, settle 90 virtual frames,
    render, box-downscale the full frame to 256×128, write
    `apps/launcher/covers/cover-<output>.png` (generated, deterministic —
@@ -98,7 +107,10 @@ is the default for compatibility:
 3. **pack** — every admitted app + the launcher becomes a `.pocket`
    package (`contracts/spec/pocket-package.ts`) with the selected target variant. PSP uses
    `dist/packages/`; Vita uses `dist/launcher/vita/packages/` so density-2
-   bundles never overwrite the PSP/sim outputs.
+   bundles never overwrite the PSP/sim outputs. Pack/build materialize a private
+   `.launcher-source` under `dist/launcher/<target>/` containing the selected
+   registry, image metadata, entry, and cover assets; compiler/watch processes
+   never observe a temporary target registry in the committed source tree.
 4. **build** — the selected backend embeds those packages VERBATIM
    (`hosts/psp/build.rs` or `hosts/vita/build.rs`; the core reader extracts
    js/pak zero-copy at boot). PSP retains its aggregate FNV-1a64 build
@@ -107,10 +119,33 @@ is the default for compatibility:
    `dist/vita/launcher-main.vpk`; ordinary single-app builds retain their
    classic inline embed.
 
+For `symbian`, scan uses the private `symbian-e7-dev` resolver rather than
+pretending the experimental host is a production target. Only apps with a
+real dynamic/live viewport are admitted (currently Hero and Note); fixed
+480×272 PSP apps are not silently letterboxed into the E7 catalog. The
+committed launcher manifest stays byte-identical for PSP/Vita; inside the
+locked Symbian transaction the tool derives its E7-only dynamic viewport and
+touch/live enhancements. The Symbian pack step always recompiles every guest,
+then writes an eight-field `catalog.tsv` and a 16-byte-aligned `catalog.bin`
+containing those exact target-thinned `.pocket` files. The Qt host validates
+each package footer, target, ABI, and identity before boot. The native builder
+reserves a 1 MiB-aligned GCCE writable-data base from the full raw embedded
+byte count, so a large catalog cannot overlap the executable's qrc rodata.
+
 ```sh
 bun tools/launcher.ts build --target psp -- --release
 bun tools/launcher.ts build --target vita -- --release
+bun tools/launcher.ts build --target symbian
 ```
+
+The Symbian build may repeat `--include-manifest /absolute/path/to/pocket.json`
+to add explicitly requested external projects. The tool resolves each declared
+entry by walking up from that manifest, applies the same private E7 admission
+gate, and builds the launcher from its isolated target registry without ever
+writing the committed display registry; absolute local paths never enter the
+emitted registry or source diff. This
+extension is deliberately unavailable to PSP/Vita builds, whose computed
+in-repository admission set remains unchanged.
 
 ## Hosts
 
@@ -118,6 +153,12 @@ bun tools/launcher.ts build --target vita -- --release
 - **hosts/vita** — the same package-table and ops contract with a
   process-global frame/input tape across fresh guests, SELECT interception,
   CPU-oracle frozen shots, and an explicit GXM-safe guest-resource reset.
+- **hosts/symbian** — the E7 Qt process owns the fullscreen window, timer,
+  keyboard, touch stream, and catalog blob. Each switch happens after a
+  synchronous presented frame, then frees the complete QuickJS realm and
+  native `Ui` before the next package boots. The launcher background, frozen
+  shot, deck origin, title, and footer use the live 640×360/360×640 viewport;
+  touch divides the current width into browse/launch thirds.
 - **hosts/sim** — `hosts/sim/launcher.ts` drives the same protocol over
   per-guest `bootWorld`s: strips SELECT, performs the downscale with the
   same box filter, uploads the shot into the next world, answers the three

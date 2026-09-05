@@ -1,0 +1,4 @@
+// Tell Windows Mobile that the application handles the device's native DPI.
+// Without this resource, VGA Pocket PCs expose a virtual 240x320 QVGA screen
+// and scale the application's output for backward compatibility.
+HI_RES_AWARE CEUX { 1 }
