@@ -69,6 +69,21 @@ capture; see
 
 ## Build
 
+The `wm6-ipaq212` restoration uses `kyokuheishin/pocketjs` branch `wm6` at
+`427eb64086b50bd79dd29f4bf229e8bc7fbbf831`. The prebuilt ABI v3 DLL and Hero
+assets are included; rebuilding them is optional when only compiling the
+VS2005 host projects.
+
+Copy this entire directory to a fresh VM folder (for example `Y:\vs2005-restored`)
+to avoid reusing old build products or machine-specific debugger settings.
+From the **Visual Studio 2005 Command Prompt**, run `rebuild-release.cmd`.
+It rebuilds all three projects for the WM6 Professional ARMV4I Release
+configuration and saves the IDE output to `rebuild-release.log` here.
+Return that log when reporting build errors. Successful compilation requires
+all three projects to succeed and fresh Probe, Vapor, and QuickJS executables
+in `bin\Release`; the checked-in standalone probe is not proof of a new build.
+Keep `prebuilt` alongside the projects for DLL and guest-asset deployment.
+
 1. Install Visual Studio 2005 Standard or higher with **Visual C++ Smart
    Device Programmability**.
 2. Install Visual Studio 2005 SP1 and the relevant Vista update if the build

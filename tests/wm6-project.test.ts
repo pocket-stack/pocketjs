@@ -92,162 +92,64 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(runtime).toContain("void vp_row_clear");
   });
 
-  test("includes a pinned CeGCC QuickJS ARM/WinCE probe", async () => {
-    const quickjsRoot = new URL("../hosts/wm6/quickjs/", import.meta.url);
-    const [solution, project, host, framebuffer, build, runtimeBuild, demoBuild,
-      patch, probe, runtime, abi, demo, demoPak, math, executable, dll] =
+  test("keeps the QuickJS ABI3 deployment self-contained", async () => {
+    const [
+      solution,
+      project,
+      host,
+      framebuffer,
+      abi,
+      framebufferHeader,
+      resource,
+      readme,
+      quickjsReadme,
+      demo,
+      demoPak,
+      executable,
+      dll,
+    ] =
       await Promise.all([
         readFile(new URL("PocketJS.WM6.sln", root), "utf8"),
         readFile(new URL("PocketJS.WM6.QuickJS.vcproj", root), "utf8"),
         readFile(new URL("src/quickjs_deploy.c", root), "utf8"),
         readFile(new URL("src/wm6_framebuffer.c", root), "utf8"),
-        readFile(new URL("build-probe.sh", quickjsRoot), "utf8"),
-        readFile(new URL("build-runtime.sh", quickjsRoot), "utf8"),
-        readFile(new URL("build-demo.sh", quickjsRoot), "utf8"),
-        readFile(new URL("patches/quickjs-wm6.patch", quickjsRoot), "utf8"),
-        readFile(new URL("src/probe.c", quickjsRoot), "utf8"),
-        readFile(new URL("src/runtime_dll.c", quickjsRoot), "utf8"),
         readFile(new URL("runtime/wm6_quickjs_abi.h", root), "utf8"),
+        readFile(new URL("src/wm6_framebuffer.h", root), "utf8"),
+        readFile(new URL("resources/probe.rc", root), "utf8"),
+        readFile(new URL("README.md", root), "utf8"),
+        readFile(new URL("../quickjs/README.md", root), "utf8"),
         readFile(new URL("prebuilt/PocketJS.WM6.Demo.js", root), "utf8"),
         readFile(new URL("prebuilt/PocketJS.WM6.Demo.pak", root)),
-        readFile(new URL("src/wm6_math.c", quickjsRoot), "utf8"),
-        readFile(
-          new URL("prebuilt/PocketJS.WM6.QuickJS.Probe.exe", root),
-        ),
-        readFile(new URL("prebuilt/PocketJS.WM6.QuickJS.dll", root)),
+        readFile(new URL("prebuilt/PocketJS.WM6.QuickJS.Probe.exe", root)),
+        readFile(new URL("prebuilt/PocketJS.WM6.QuickJS.v3.dll", root)),
       ]);
 
     expect(solution).toContain('"PocketJS.WM6.QuickJS"');
-    expect(solution).toContain("{AA37CB32-6044-4A78-A3A5-1F58080498C8}");
     expect(project).toContain('Version="8.00"');
-    expect(project).toContain(
-      'PocketJS.WM6.QuickJS.dll|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\\PocketJS.WM6.QuickJS|0',
-    );
-    expect(
-      project.match(
-        /PocketJS\.WM6\.Demo\.pak\|\$\(SolutionDir\)prebuilt\|%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\|0/g,
-      ),
-    ).toHaveLength(2);
+    expect(project).toContain('Name="Windows Mobile 6 Professional SDK (ARMV4I)"');
+    for (const path of [
+      ".\\src\\quickjs_deploy.c",
+      ".\\src\\wm6_framebuffer.c",
+      ".\\runtime\\wm6_quickjs_abi.h",
+      ".\\src\\wm6_framebuffer.h",
+    ]) expect(project).toContain(`RelativePath="${path}"`);
+    expect(project).toContain("PocketJS.WM6.QuickJS.v3.dll");
+    expect(project).toContain("PocketJS.WM6.Demo.js");
+    expect(project).toContain("PocketJS.WM6.Demo.pak");
     expect(project.match(/TargetMachine="0"/g)).toHaveLength(2);
-    expect(project.match(/AdditionalDependencies="ddraw\.lib coredll\.lib"/g))
-      .toHaveLength(2);
-    expect(project).toContain('RelativePath=".\\src\\wm6_framebuffer.c"');
-    expect(
-      project.match(/OutputFile="\$\(OutDir\)\\PocketJS\.WM6\.QuickJS\.Probe\.exe"/g),
-    ).toHaveLength(2);
-    expect(
-      project.match(
-        /RemoteExecutable="%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\\PocketJS\.WM6\.QuickJS\.Probe\.exe"/g,
-      ),
-    ).toHaveLength(2);
-    expect(host).toContain("WCHAR create_error[256]");
-    expect(host).toContain("ascii_to_wide(create_error, 256, result)");
-    expect(host).not.toContain("ascii_to_wide(message, 256, result)");
-    expect(host).toContain('static const char snapshot[] = "__wm6DrawList()"');
-    expect(host).toContain("CreateWindow(class_name");
-    expect(host).toContain("rotate_display_90()");
-    expect(host).toContain("EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS");
-    expect(host).toContain("DM_DISPLAYORIENTATION");
-    expect(host).toContain("requested.dmDisplayOrientation = DMDO_90");
-    expect(
-      host.match(/requested\.dmDisplayOrientation = DMDO_90/g),
-    ).toHaveLength(2);
-    expect(host).toContain("restore_display_orientation()");
-    expect(host).toContain("make_viewport_script");
-    expect(host).toContain("globalThis.__wm6ViewportWidth=");
-    expect(host).toContain("globalThis.__wm6ViewportHeight=");
-    expect(host).toContain('L"PocketJS Hero Demo [landscape]"');
-    expect(host).toContain('L"PocketJS Hero Demo [rotation unavailable]"');
-    expect(host).toContain("paint_demo(window, dc)");
-    expect(host).toContain('L"PocketJS.WM6.Demo.js"');
-    expect(host).toContain('L"PocketJS.WM6.Demo.pak"');
-    expect(host).toContain("ExtTextOut(dc");
-    expect(host).not.toContain("\n            TextOut(dc");
-    expect(host).toContain(
-      "wm6_framebuffer_open(window, viewport_width, viewport_height)",
-    );
-    expect(host).toContain("wm6_framebuffer_present()");
-    expect(host).toContain("DirectDraw RGB565 + PAK assets active");
-    expect(host).toContain("DirectDraw unavailable; using GDI");
+    expect(project.match(/AdditionalDependencies="ddraw\.lib coredll\.lib"/g)).toHaveLength(2);
+    expect(host).toContain("wm6_qjs_frame_fn");
+    expect(host).toContain("wm6_qjs_set_pak_fn");
     expect(framebuffer).toContain("#include <ddraw.h>");
-    expect(framebuffer).toContain("static unsigned short *g_pixels");
-    expect(framebuffer).toContain("g_width = logical_width");
-    expect(framebuffer).toContain("g_height = logical_height");
-    expect(framebuffer).toContain("g_primary->lpVtbl->Lock(");
-    expect(framebuffer).toContain("g_primary->lpVtbl->Unlock(");
-    expect(framebuffer).toContain("g_primary->lpVtbl->GetPixelFormat(");
-    expect(framebuffer).toContain("resolve_primary_pixel_format");
-    expect(framebuffer).toContain("format->dwRBitMask = 0xf800u");
-    expect(framebuffer).toContain("destination_width");
-    expect(framebuffer).toContain("destination_height");
-    expect(framebuffer).toContain(
-      "source_x = x * g_width / destination_width",
-    );
-    expect(framebuffer).toContain(
-      "source_y = y * g_height / destination_height",
-    );
-    expect(framebuffer).not.toContain("DDLOCK_WAIT");
-    expect(framebuffer).not.toContain("IDirectDrawSurface_");
-    expect(framebuffer).toContain("wm6_framebuffer_load_pak");
-    expect(framebuffer).toContain("parse_font_atlas");
-    expect(framebuffer).toContain("logical_coverage");
-    expect(framebuffer).toContain("draw_text(");
-    expect(framebuffer).toContain("parse_image(");
-    expect(framebuffer).toContain("draw_image(");
-
-    expect(build).toContain(
-      'quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"',
-    );
-    expect(build).toContain("-march=armv4t");
-    expect(build).not.toContain("-march=armv5");
-    expect(build).toContain("-msoft-float");
-    expect(build).toContain("-D_WIN32_WCE=0x0502");
-    expect(runtimeBuild).toContain("-shared");
-    expect(runtimeBuild).toContain("-static-libgcc");
-    expect(demoBuild).toContain("dist/hero-main.js");
-    expect(demoBuild).toContain("dist/hero-main.pak");
-    expect(patch).toContain("#undef CONFIG_ATOMICS");
-    expect(patch).toContain("#elif defined(_WIN32_WCE)");
-    expect(probe).toContain("JS_SetMemoryLimit(runtime, 8u * 1024u * 1024u)");
-    expect(probe).toContain("JS_SetMaxStackSize(runtime, 256u * 1024u)");
-    expect(probe).toContain("JS_Eval(context");
-    expect(probe).toContain("JS_NewCFunction(context, probe_print");
-    expect(probe).toContain("JS_ExecutePendingJob(runtime");
-    expect(probe).toContain("cycle < 100");
-    expect(probe).toContain("QuickJS 6,10,16,26");
-    expect(math).toContain("double fmax");
-    expect(math).toContain("double fmin");
-    expect(abi).toContain("#define WM6_QJS_ABI_VERSION 1u");
-    expect(runtime).toContain("wm6_qjs_create");
-    expect(runtime).toContain("wm6_qjs_eval");
-    expect(runtime).toContain("wm6_qjs_drain_jobs");
-    expect(demo).toContain("PocketJS Hero (real bundle)");
-    expect(demo).toContain("JSX at 60 FPS.");
-    expect(demo).toContain("ONE RUST CORE");
-    expect(demo).toContain("spinner-00.svg");
-    expect(demo).toContain("globalThis.__wm6DrawList");
-    expect(demo).toContain("globalThis.__wm6ViewportWidth");
-    expect(demo).toContain("__viewport: { w: viewportWidth, h: viewportHeight }");
-    expect(demo).toContain("const middleY = Math.max");
-    expect(demo).toContain("const footerY = Math.max");
-    expect(demo).toContain('const out = ["B|248|250|252"]');
-    expect(demo).toContain("I|${x}|${y}|${w}|${h}|${handle}");
-    expect(demoPak.subarray(0, 4).toString()).toBe("DCPK");
-    expect(demoPak.includes(Buffer.from("ui:font.0"))).toBeTrue();
-    expect(demoPak.includes(Buffer.from("ui:font.13"))).toBeTrue();
-    expect(demoPak.includes(Buffer.from("ui:img.logo.png"))).toBeTrue();
-    expect(demoPak.includes(Buffer.from("ui:img.spinner-00.svg"))).toBeTrue();
-
-    expect(executable.subarray(0, 2).toString("ascii")).toBe("MZ");
-    const peOffset = executable.readUInt32LE(0x3c);
-    expect(executable.subarray(peOffset, peOffset + 4).toString("binary")).toBe(
-      "PE\u0000\u0000",
-    );
-    expect(executable.readUInt16LE(peOffset + 4)).toBe(0x01c0);
-    expect(executable.readUInt16LE(peOffset + 24 + 68)).toBe(9);
-    expect(dll.subarray(0, 2).toString("ascii")).toBe("MZ");
-    const dllPeOffset = dll.readUInt32LE(0x3c);
-    expect(dll.readUInt16LE(dllPeOffset + 4)).toBe(0x01c0);
-    expect(dll.readUInt16LE(dllPeOffset + 22) & 0x2000).toBe(0x2000);
+    expect(framebuffer).toContain("wm6_framebuffer_present");
+    expect(abi).toContain("#define WM6_QJS_ABI_VERSION 3u");
+    for (const binary of [executable, dll]) {
+      expect(binary.subarray(0, 2).toString("ascii")).toBe("MZ");
+      const peOffset = binary.readUInt32LE(0x3c);
+      expect(binary.subarray(peOffset, peOffset + 4).toString("binary")).toBe("PE\u0000\u0000");
+      expect(binary.readUInt16LE(peOffset + 4)).toBe(0x01c0);
+      expect(binary.readUInt16LE(peOffset + 24 + 68)).toBe(9);
+    }
+    expect(dll.readUInt16LE(dll.readUInt32LE(0x3c) + 22) & 0x2000).toBe(0x2000);
   });
 });

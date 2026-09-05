@@ -2,4 +2,5 @@
 *.suo
 *.user
 bin/
+rebuild-release.log
 obj/
