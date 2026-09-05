@@ -6,7 +6,7 @@ connection, or synchronous provider call.** The provider owns those resources.
 
 This implementation is independent of `feat/companion` (#360). It adds
 `@pocketjs/framework/offload`, a 3DS worker transport, and a Bun provider
-transport. Pocket Folio is a separate application using the capability.
+transport. Pocket Doc is a separate application using the capability.
 
 ## Frame contract
 
@@ -74,6 +74,13 @@ envelope, with a minimum dimension of eight. The 3DS decodes in C into reusable
 scratch storage; a guest does not need a pixel expansion loop. Undefined means
 unsupported; a negative handle means invalid input or exhausted frame credit.
 The guest owns returned texture handles and releases them with `freeTexture`.
+
+The optional fifth argument, `{ columns, palette }`, assigns a foreground color
+to each pixel column. `columns` contains exactly `width` lowercase hexadecimal
+indices. `palette` contains one to sixteen concatenated six-digit RGB colors.
+**Palette coloring uses the same scratch buffer and one texture upload.** This
+supports prearranged colored text without parsing tokens in the guest; it does
+not change the queue, payload or per-frame upload limits.
 
 ## Provider
 
