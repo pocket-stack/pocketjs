@@ -721,6 +721,7 @@ int main(void) {
   }
 #endif
   PocketRuntimeFailureLineage failures = {0};
+  input_init();
 #ifdef POCKETJS_OFFLOAD
   GuestChoice guest = package_choice(embedded, 0, &runtime_state);
   guest.commit_on_accept = false;
@@ -1017,6 +1018,7 @@ int main(void) {
 #endif
   );
   offload_stop();
+  input_shutdown();
   teardown_guest();
   C3D_FrameEnd(0);
   release_choice(&guest, embedded);

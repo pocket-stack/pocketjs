@@ -10,6 +10,8 @@
  * as (x << 8) | y with 128 the centre of each axis. Call hidScanInput() once
  * per frame before either. */
 int32_t input_buttons(void);
+void input_init(void);
+void input_shutdown(void);
 int32_t input_analog(void);
 /** Host-owned L+R+X edge. The complete chord is removed from app buttons. */
 bool input_reload_requested(void);
