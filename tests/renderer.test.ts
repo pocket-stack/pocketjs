@@ -93,6 +93,7 @@ import {
   type TileDoc,
 } from "../framework/src/deepzoom.ts";
 import { resetPack } from "../framework/src/pak.ts";
+import { ResourceImage, pending, ready, failed, type ResourceState, type TextureResource } from "../framework/src/resource.ts";
 import { encodeImageEntry, pack } from "../framework/compiler/pak.ts";
 import {
   BTN,
@@ -193,6 +194,39 @@ function childIds(node: NodeMirror): number[] {
 
 let host: MockHost;
 let root: NodeMirror;
+
+test("resource images retain their layout through fallback, retry and borrowed texture replacement", () => {
+  const [state, setState] = createSignal<ResourceState<TextureResource>>(pending());
+  let skeletons = 0, frees = 0;
+  host.ops.freeTexture = () => { frees++; };
+  const dispose = render(() => ResourceImage({
+    state, style: { width: 256, height: 16, overflow: 1 },
+    fallback: () => { skeletons++; return Text({ children: "Skeleton" }); },
+    errorFallback: () => Text({ children: "Retry" }),
+  }) as unknown as NodeMirror, root);
+  const frame = root.children[0];
+  expect(skeletons).toBe(1);
+  expect(host.of("setImage")).toHaveLength(0);
+  host.clear();
+  setState(pending());
+  expect(skeletons).toBe(1);
+  // Handle zero is valid. The component never uploads or frees borrowed images.
+  setState(ready({ handle: 0, width: 256, height: 16 })); runSweep();
+  const image = frame.children[0];
+  expect(host.of("setImage")).toEqual([["setImage", image.id, 0]]);
+  host.clear();
+  setState(ready({ handle: 7, width: 256, height: 16 }));
+  expect(frame.children[0]).toBe(image);
+  expect(host.of("setImage")).toEqual([["setImage", image.id, 7]]);
+  setState(failed("offline")); runSweep();
+  expect(host.of("setText").some(call => call[2] === "Retry")).toBe(true);
+  setState(pending()); runSweep();
+  expect(skeletons).toBe(2);
+  expect(root.children[0]).toBe(frame);
+  expect(host.of("setProp").filter(call => call[1] === frame.id)).toHaveLength(0);
+  expect(host.of("uploadTexture")).toHaveLength(0);
+  dispose(); runSweep(); expect(frees).toBe(0);
+});
 
 beforeEach(() => {
   host = makeMockHost();

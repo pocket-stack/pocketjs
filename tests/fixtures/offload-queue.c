@@ -21,6 +21,12 @@ int main(void) {
     assert(rgba[i * 4 + 3] == (i % 4) * 85);
   }
   assert(rgba[12 * 4] == 0);
+  /* Narrow document pane: 1024 packed bytes require two base64 padding bytes. */
+  char narrow[1368]; memset(narrow, 'A', sizeof narrow);
+  memcpy(narrow + sizeof narrow - 4, "5A==", 4);
+  assert(coverage_decode(narrow, sizeof narrow, 256, 16, 0xff123456, rgba) == 256);
+  for (unsigned i = 4092; i < 4096; i++) assert(rgba[i * 4 + 3] == (i % 4) * 85);
+  assert(coverage_decode("5OQ=", 4, 8, 1, 0xff123456, rgba) == 8);
   assert(!coverage_decode("!!!!", 4, 12, 1, 0, rgba));
   assert(!coverage_decode("5OTk", 4, 516, 1, 0, rgba));
   assert(!coverage_decode("5OTk", 4, 12, 17, 0, rgba));
