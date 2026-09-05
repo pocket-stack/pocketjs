@@ -167,7 +167,8 @@ read host input                     buttons + optional analog/touch snapshot
   ↓
 frame(buttons, analog?, touches?, hits?, touchSurfaces?)
                  ── JS ──►          advance virtual time, latch input, deliver
-                                    queued effects, run app hooks + focus,
+                                    queued effects, resolve contact lifecycles
+                                    (gestures), run app hooks + focus,
                                     then runSweep() (node reclamation) last
   ↓
 drain jobs                          while JS_ExecutePendingJob(rt, &ctx) > 0

@@ -4,9 +4,9 @@ Pocket DevTools is built into every bundle: a component inspector that
 highlights nodes **on the device screen** (real PSP included), pause and
 single-step for the whole world, a REPL and `console.log` from hardware, an
 always-on input-tape flight recorder, and on-demand screenshots. The design
-rests on one property: PocketJS is fixed-dt deterministic and its entire
-per-frame input is one button bitmask — so a recorded input tape replays any
-session byte-for-byte. Architecture deep-dive:
+rests on one property: PocketJS is fixed-dt deterministic and the recorder
+captures every input track it has — buttons, analog, touch — so a recorded
+input tape replays any session byte-for-byte. Architecture deep-dive:
 [the blog post](/blog/time-travel-devtools/) and
 [`docs/DEVTOOLS.md`](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md).
 
@@ -50,9 +50,11 @@ byte-identical with and without them).
 
 ## Time travel
 
-Every bundle runs a flight recorder unconditionally: one `u16` button mask per
-frame in a 36 000-frame ring (10 minutes ≈ 72 KB). Because the runtime is
-deterministic, that tape **is** the session.
+Every bundle runs a flight recorder unconditionally: one `u16` button mask plus
+packed analog per frame in a 36 000-frame ring (10 minutes ≈ 72 KB), with the
+touch track allocated on the first frame that carries contacts, so touch-free
+sessions never pay for it. Because the runtime is deterministic, that tape
+**is** the session.
 
 In the panel: **⏸ pause** freezes the entire world in the core — every
 animation, timeline and sprite clock holds, and stepping advances everything by
@@ -73,6 +75,17 @@ bun run tape tree   <app> session.tape.json --at 4120         # tree JSON at a f
 `--assert` turns a recorded session into a regression test: replay it against a
 new build and it names the exact frame where behavior changed. The repo ships
 one as a *session golden* (`bun run tape:check`).
+
+Tapes carry touch as well as buttons. `tape record` takes a `--touch` script
+alongside `--input`:
+
+```sh
+bun run tape record <app> --frames 60 --touch "12:0,240,136;20:-" --out t.json
+```
+
+Each entry is `frame:id,x,y`, `+` joins contacts that are down on the same
+frame, and `frame:-` releases. Entries are level-triggered: a contact stays
+down every frame until the next entry replaces it.
 
 ## REPL, console, errors
 

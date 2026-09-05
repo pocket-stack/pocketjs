@@ -14,9 +14,13 @@ here. For conceptual walkthroughs see [Components](/docs/components/),
 | `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
 | `vue` | `defineComponent`, `ref`, `computed`, `watchEffect`, `onMounted`, `onScopeDispose` |
 | `octane` | `useState`, `useEffect`, `useMemo`, `useRef`, `useLayoutEffect`, `useEffectEvent` |
-| `@pocketjs/framework/animation` | `animate`, `spring`, `cancelAnim` |
+| `@pocketjs/framework/animation` | `animate`, `spring`, `jump`, `cancelAnim` |
 | `@pocketjs/framework/lifecycle` | `onFrame`, `onButtonPress`, `analogX`, `analogY`, `analogRaw`, `createSpriteAnimation`, `pushButtonHandlerBlock` (Octane builds: `useFrame`, `useButtonPress`, `useSpriteAnimation`) |
 | `@pocketjs/framework/input` | `BTN`, `touches`, `auxiliaryTouches`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
+| `@pocketjs/framework/gesture` | `createGesture`, `attachGesture`, `pushTouchBlock`, gesture types (Solid and Vue Vapor) |
+| `@pocketjs/framework/kinetics` | `createScroller`, `bindDpadScroll`, `Scroller` / `ScrollerOptions` / `ScrollerState` types (Solid and Vue Vapor) |
+| `@pocketjs/framework/osk` | `Osk`, `TextField`, `createOsk`, `OSK_H`, `OSK_LAYERS` (Solid) |
+| `@pocketjs/framework/virtual-list` | `VirtualList`, `VirtualListProps`, `VirtualListHandle` (Solid) |
 | `@pocketjs/framework/display` | `auxiliaryViewport`, `hasAuxiliarySurface` |
 | `@pocketjs/framework/platform` | `platform`, `hasFeature` |
 | `@pocketjs/framework/clock` | `simulationHz`, `ticksPerFrame`, `virtualFrame`, `virtualNow`, `after` |
@@ -184,7 +188,7 @@ interface NodeMirror {
   children: NodeMirror[];
   text?: string;                      // text nodes only
   focusable?: boolean;                // focus traversal membership
-  onPress?: (() => void) | undefined; // CIRCLE handler while focused
+  onPress?: (() => void) | undefined; // activation: CIRCLE, tap, or cursor click
 }
 ```
 
@@ -216,7 +220,7 @@ The host primitives, wrapped React Native-style. `View` is the flex container/bo
 | --- | --- | --- |
 | `class` | `string` | Tailwind-subset class literal. |
 | `style` | `Record<string, number \| string>` | Inline spec props (escape hatch). |
-| `onPress` | `() => void` | Fired on CIRCLE while focused. |
+| `onPress` | `() => void` | Fired when the node is activated: CIRCLE while focused, a touch tap on the node, or a cursor click. See [App shell](/docs/app-shell/). |
 | `focusable` | `boolean` | Joins d-pad focus traversal. |
 | `ref` | `(node: NodeMirror) => void \| NodeMirror` | Node handle. |
 | `children` | `JSX.Element` | Child nodes. |
@@ -244,7 +248,9 @@ interface FocusableProps extends ViewProps { onPress?: () => void }
 function Focusable(props: FocusableProps): JSX.Element
 ```
 
-A `View` with `focusable: true`. Use `onPress` for the CIRCLE action.
+A `View` with `focusable: true`. `onPress` is the activation handler: CIRCLE
+while the node is focused, a touch tap on the node, or a cursor click all
+enter it through the same path. See [App shell](/docs/app-shell/).
 
 ### `FocusScope`
 
@@ -507,6 +513,16 @@ Tweens `prop` from its current value to `to`. For color props, `to` is a packed 
 
 **`EasingName`** — `"linear" | "in" | "out" | "in-out" | "out-back" | "spring" | "spring-bouncy"`.
 
+### `jump`
+
+```ts
+function jump(node: NodeMirror | number, prop: PropName, value: number | string): void
+```
+
+Sets an animatable prop for this frame with no tween. A `jump` on a transform
+prop is paint-only — one `setProp`, no relayout — which is what a finger-follow
+drag writes on every move frame.
+
 ### `spring`
 
 ```ts
@@ -633,6 +649,7 @@ interface TouchContact {
   readonly x: number;
   readonly y: number;
   readonly surface: "primary" | "auxiliary";
+  readonly hit?: number;
 }
 function touches(): readonly TouchContact[]
 function auxiliaryTouches(): readonly TouchContact[]
@@ -644,6 +661,20 @@ most eight contacts are delivered across both snapshots. No active touch is an
 empty snapshot, not an unavailable API. Declare `input.touch` for `touches()`
 or `input.touch.auxiliary` plus `display.auxiliary` for
 `auxiliaryTouches()`. Guard optional enhancements with `hasFeature()`.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `number` | Stable while the contact stays down; ids are reused after a release. |
+| `x` / `y` | `number` | Logical viewport position in this surface. |
+| `surface` | `"primary" \| "auxiliary"` | Which output's coordinate space the contact belongs to. |
+| `hit` | `number \| undefined` | Down-edge hit fact: the node id the host bounds-resolved under the contact when it landed, carried unchanged until the contact lifts. |
+
+`hit` is `0` when the host resolved the position and no node claimed it (a
+contact on bare background, or off-screen edge cases), and `undefined` when
+the host has no hit-fact channel at all — an older host, or a DevTools replay.
+Hosts derive the fact from the bounds hit test; see
+[Native contract](/docs/native-contract/) for the ops and the `frame()`
+argument that carries them.
 
 ### `focusNode`
 
@@ -690,6 +721,268 @@ Gives `node`'s subtree row/column d-pad semantics; returns a disposer that pops 
 | --- | --- | --- | --- |
 | `columns` | `number` | — | Grid column count (min `1`). Required. |
 | `wrap` | `boolean` | `false` | Wrap focus at row ends. |
+
+---
+
+## `@pocketjs/framework/gesture`
+
+Recognizers over the per-frame touch snapshot: tap, long press, axis-lockable
+pan, and two-contact pinch, plus the ownership model that decides which
+recognizer keeps a contact when several want it. The recognizer machinery is
+framework-neutral; Solid and Vue Vapor resolve their own `createGesture`
+shim over it, and Octane builds do not resolve this subpath. The pump runs
+once per frame from the framework entry, after effect delivery and before app
+frame hooks, so app code always reads this frame's completed output. On a host
+that delivers no contacts the recognizers never fire and cost nothing. See
+[Touch & gestures](/docs/touch-gestures/).
+
+### `createGesture` and `attachGesture`
+
+```ts
+function createGesture(opts: GestureOptions): GestureHandle
+function attachGesture(opts: GestureOptions): GestureHandle
+```
+
+`attachGesture` registers a recognizer and returns its handle; it stays
+registered until the caller calls `handle.dispose()`. `createGesture` makes the
+same registration and hands disposal to the surrounding component scope —
+`onCleanup` in Solid, `onScopeDispose` in Vue Vapor — so the recognizer
+unregisters with the component that created it. Use `createGesture` inside
+components and `attachGesture` when there is no component scope to own it.
+
+**`GestureOptions`**
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `surface` | `"primary" \| "auxiliary"` | `"primary"` | Output to observe. A recognizer only sees contacts on this surface. |
+| `region` | `GestureRegion` | — | Where the recognizer takes ownership. Omit for a whole-screen recognizer. |
+| `axis` | `"x" \| "y" \| "any"` | `"any"` | Pan axis lock, and the axis a pinch measures its span on. |
+| `tapSlop` | `number` | `8` | Max total travel per axis, logical px, for the contact to count as a tap. |
+| `panSlop` | `number` | `6` | Total travel, logical px, that starts a pan. |
+| `pinchSlop` | `number` | `10` | Span change, logical px, that starts a pinch. |
+| `longPressSeconds` | `number` | `0.5` | Hold duration in virtual seconds. The deadline is `max(1, round(longPressSeconds × simulationHz()))` virtual frames, so it holds the same wall time at every rate. |
+| `allowWhenBlocked` | `boolean` | `false` | Keep observing while a `pushTouchBlock` is held. |
+| `onDown` | `(c: GestureContact) => void` | — | Contact landed inside the region. |
+| `onMove` | `(c: GestureContact) => void` | — | Contact moved this frame, panning or not. |
+| `onUp` | `(c: GestureContact) => void` | — | Contact released. |
+| `onCancel` | `(c: GestureContact) => void` | — | Another owner claimed the contact, a touch block was pushed, or the handle was disposed or cancelled. |
+| `onTap` | `(c: GestureContact) => void` | — | Released within `tapSlop` with nothing claimed and no long press fired. |
+| `onLongPress` | `(c: GestureContact) => void` | — | Held past the deadline within `tapSlop`. Fires once, then claims. |
+| `onPanStart` | `(c: GestureContact) => void` | — | Travel crossed `panSlop` on the locked axis. Claims the contact. |
+| `onPanMove` | `(c: GestureContact) => void` | — | Every frame while panning, including hold frames where `fdx`/`fdy` are `0`. |
+| `onPanEnd` | `(c: GestureContact) => void` | — | Released while panning; `c.vx`/`c.vy` is the fling velocity. |
+| `onPinchStart` | `(p: GesturePinch) => void` | — | Span change beat `pinchSlop` and dominated the centroid's travel. Claims both members. |
+| `onPinchMove` | `(p: GesturePinch) => void` | — | Every frame while pinching, including hold frames where `fdspan` is `0`. |
+| `onPinchEnd` | `(p: GesturePinch) => void` | — | A member released, was cancelled, or the handle was disposed; `p` carries the final geometry. |
+
+An `axis` lock rejects cross-axis movement rather than killing the contact:
+while the recognizer is unclaimed the axis test is re-evaluated every frame, so
+a thumb that lands with wobble still pans once its intended axis dominates, and
+a drag whose dominant axis never matches never pans on that recognizer.
+
+A pan and a pinch on the same recognizer both need handlers to run: the pan
+pass skips a recognizer with no `onPanStart`/`onPanMove`/`onPanEnd`, and the
+pinch pass skips one with no `onPinchStart`/`onPinchMove`/`onPinchEnd`.
+
+**`GestureContact`**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `surface` | `"primary" \| "auxiliary"` | Output whose coordinate space holds this contact. |
+| `id` | `number` | Stable while the contact is down; ids are reused after a release. |
+| `x` / `y` | `number` | Current position, logical viewport px. |
+| `startX` / `startY` | `number` | Position at the down edge. |
+| `dx` / `dy` | `number` | Total travel since the down edge. |
+| `fdx` / `fdy` | `number` | Travel this frame — what a finger-follow drag consumes. |
+| `vx` / `vy` | `number` | Velocity in logical px per **virtual** second, estimated over a 3-frame window; on the release frame this is the fling velocity. |
+| `downFrame` | `number` | `virtualFrame()` at the down edge. |
+| `frames` | `number` | Frames since the down edge (`0` on the down frame). |
+| `hit` | `number \| undefined` | The down edge's [`TouchContact.hit`](#touches-and-auxiliarytouches) fact, carried for the contact's lifetime. |
+
+Velocity is an integer position delta over `k` fixed-length frames with one
+IEEE division per axis, so the same contact path produces the same number on
+every host.
+
+**`GesturePinch`**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ax` / `ay` | `number` | First member's current position, logical viewport px. |
+| `bx` / `by` | `number` | Second member's current position. |
+| `cx` / `cy` | `number` | Centroid of the two members. |
+| `span` | `number` | Distance between the members, projected onto the recognizer's locked axis; Euclidean when `axis` is `"any"`. |
+| `startSpan` | `number` | The span when the pair formed, before the slop was crossed. |
+| `dspan` | `number` | `span - startSpan`; positive when the members moved apart. |
+| `fdspan` | `number` | Span change this frame — what an opening gap consumes. |
+
+**`GestureRegion`**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `node` | `() => NodeMirror \| null \| undefined` | Own contacts whose down-edge hit lands inside this node's subtree. |
+| `rect` | `() => { x, y, w, h } \| null \| undefined` | Logical-px geometry: the fallback when the hit misses, and the whole test when no `node` is given. |
+
+Both are getters, read at the down edge. Returning `null` from the getter (or
+supplying neither) means the recognizer owns nothing that frame, which is how
+a recognizer is switched off without disposing it.
+
+The down edge is resolved once and shared across every recognizer: the host's
+`hit` fact is used when the frame carried one, otherwise a single query through
+`hitTestBounds` when the host has it and `hitTest` otherwise. A resolution that
+lands **outside** the subtree fails the match and never falls through
+to `rect` — ink painted above the region occludes it. A resolution that hits
+nothing falls through to `rect`, so gaps between rows still reach a list's pan
+recognizer.
+
+**`GestureHandle`**
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `dispose()` | `() => void` | Cancel in-flight contacts, end an in-flight pinch, and unregister. |
+| `cancel()` | `() => void` | Force-cancel this recognizer's in-flight contacts (fires `onCancel`) without unregistering. |
+| `panning` | `boolean` | True while any contact is mid-pan under this recognizer. |
+| `pinching` | `boolean` | True while a pinch is in flight under this recognizer. |
+
+### `pushTouchBlock`
+
+```ts
+function pushTouchBlock(): () => void
+```
+
+The touch mirror of [`pushButtonHandlerBlock`](#pushbuttonhandlerblock).
+Pushing cancels the in-flight contacts of every recognizer without
+`allowWhenBlocked` inside the call, so those owners see `onCancel` on this
+frame rather than a release later, and suppresses new downs for them while
+the block is held; the returned disposer pops it. Recognizers with
+`allowWhenBlocked` keep observing. Blocks nest, and the depth only reaches zero when every
+disposer has run. The system keyboard pushes one for its own panel; `Modal`
+pushes the button block only.
+
+### Ownership
+
+These rules decide which recognizer keeps a contact when several observe it.
+
+- **Owners are resolved at the down edge.** Every non-disposed recognizer whose
+  `surface` and `region` match the contact becomes an owner and observes
+  `onDown`, `onMove` and `onUp`.
+- **Priority is registration order, last registered first.** Mount order is
+  deterministic, so priority is too. A component registering a richer touch
+  model after mount outranks anything registered before it.
+- **A claim cancels every other owner.** A pan crossing `panSlop`, a long press firing,
+  or a pinch forming claims the contact for that recognizer, and every other
+  owner of that contact receives `onCancel`. A pinch claims both its members at
+  once.
+- **Cancellation is terminal for that contact.** A cancelled recognizer
+  observes nothing further from it — no `onMove`, no `onUp`, no `onTap` — until
+  the contact lifts and a new one lands.
+- **Tap and long press single-fire.** Each resolves on the highest-priority
+  owner that carries the handler, and no lower-priority owner sees it. Tap
+  death is per-owner: each recognizer applies its own `tapSlop`.
+- **The pinch pass runs before the pan pass.** Two diverging contacts become a
+  pinch even when each alone would satisfy a pan. Two contacts travelling
+  together, with the span steady and the centroid moving, stay available to the
+  pan recognizers. The pair a recognizer measures is the first two unclaimed
+  contacts it still observes.
+- **Contact and pinch objects are pooled and mutable.** They are valid only for
+  the duration of the callback. Never retain one across frames or store it in
+  state; copy the numbers you need.
+
+---
+
+## `@pocketjs/framework/kinetics`
+
+A one-axis kinetic scroller: finger-follow tracking with a rubber-banded
+overscroll, an exponential-decay fling, an edge spring that carries the
+incoming velocity, a per-frame chase for d-pad and stick-to-bottom scrolling,
+and a programmatic tween. The state machine is framework-neutral; the Solid
+shim binds the offset to a signal and the Vue Vapor shim to a `shallowRef`, and
+Octane builds do not resolve this subpath. See
+[Touch & gestures](/docs/touch-gestures/).
+
+The physics are fixed platform literals, not app knobs: the decay rates
+(`0.998/ms` and `0.99/ms`, pre-baked per tick), the `0.55` rubber-band
+coefficient, the `K = 170` / `C = 26` edge spring, and the chase pump's `0.3`
+rate all live in the module. Fling and spring integrate per **core tick**, so a
+30 Hz host follows the 60 Hz trajectory subsampled; chase advances once per
+frame by design. Every formula is `+ − * /` over literals, so trajectories are
+bit-identical on every host.
+
+### `createScroller`
+
+```ts
+function createScroller(opts: ScrollerOptions): Scroller
+```
+
+Creates a scroller whose `offset` is a reactive cell of the active framework.
+Bind `translateY: -s.offset()` on the content canvas — a translate is
+paint-only, one `setProp` per moving frame with no relayout — and call
+`s.step()` once per frame from `onFrame`. Nothing advances without that pump.
+
+**`ScrollerOptions`**
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `max` | `() => number` | — | Range end; for a list that scrolls its content, `max(0, contentH - viewH)`. Read on every step, so a growing list needs no re-registration. Required. |
+| `extent` | `() => number` | screen height | Viewport extent, which is the rubber band's asymptote. |
+| `initial` | `number` | `0` | Starting offset. |
+| `overscroll` | `number` | `48` | Cap on rubber-band travel in px; `0` hard-clamps at the edges. |
+| `decay` | `"normal" \| "fast"` | `"normal"` | Fling decay preset: `"normal"` is the iOS `0.998/ms` rate, `"fast"` the `0.99/ms` paging rate. |
+| `snap` | `((projectedRest: number, velocity: number) => number) \| null` | `null` | Applied at `endDrag` instead of a fling: receives the projected rest position and the release velocity, returns the position to tween to. This is how paging and row alignment are built. |
+| `onSettle` | `(offset: number) => void` | — | A moving state reached rest. The settled offset is rounded to 1/64 px so settled framebuffers hash to the same value. |
+
+**`ScrollerState`**
+
+```ts
+type ScrollerState = "idle" | "tracking" | "fling" | "spring" | "chase" | "tween"
+```
+
+`tracking` is finger-follow, `fling` the decay from a release velocity,
+`spring` the edge bounce-back (entered mid-fling when a fling crosses an edge,
+carrying its momentum), `chase` the per-frame ease toward a target, `tween` a
+programmatic `scrollTo`, and `idle` at rest.
+
+**`Scroller`**
+
+| Member | Signature | Description |
+| --- | --- | --- |
+| `offset` | `() => number` | Current offset in logical px. Reactive. |
+| `velocity` | `() => number` | Instantaneous velocity in px per virtual second; meaningful in `fling` and `spring`. |
+| `state` | `() => ScrollerState` | The current state. |
+| `beginDrag` | `() => void` | Enter finger-follow. Wire to a pan start. |
+| `drag` | `(deltaPx: number) => void` | Content-space delta for **this** frame; a vertical list passes `-c.fdy`. |
+| `endDrag` | `(releaseVelocity: number) => void` | Release; a vertical list passes `-c.vy`. Decides between fling, edge spring, `snap`, and settling in place. |
+| `scrollTo` | `(to: number, opts?: { durMs?: number } \| { immediate: true }) => void` | Programmatic scroll, tweening over 200 ms by default. |
+| `scrollBy` | `(delta: number, opts?: { durMs?: number } \| { immediate: true }) => void` | Same, relative to the in-flight target when one exists. |
+| `stop` | `() => void` | Freeze in place. No settle callback. |
+| `nudge` | `(delta: number) => void` | Move the chase target by a delta — the d-pad and analog primitive. |
+| `chaseTo` | `(to: number) => void` | Chase an absolute target (focus-follow, stick-to-bottom). |
+| `rebase` | `(delta: number) => void` | Shift the offset **and** every in-flight anchor by `delta`. |
+| `intent` | `() => number` | Where the scroller is heading: the chase or tween target when one is in flight, the current offset otherwise. |
+| `isAtEnd` | `(slackPx?: number) => boolean` | Whether the range end is reached, judged on `intent()` rather than the current position. `slackPx` defaults to `1`. |
+| `projectFling` | `(v: number) => number` | Rest position a fling from `v` would reach. Use it inside a `snap` function. |
+| `step` | `() => void` | Advance one frame. Call once per frame from `onFrame`. |
+
+`rebase` exists for prepends. Shifting only the offset would leave a drag
+position, a chase target, a spring bound, or a tween's endpoints pointing at
+pre-prepend coordinates; `rebase` moves all of them together, so backfilling
+content above the viewport never moves what the reader is looking at, even
+mid-fling.
+
+### `bindDpadScroll`
+
+```ts
+function bindDpadScroll(s: Scroller, opts?: DpadScrollOptions): void
+```
+
+Registers an `onFrame` hook that turns held UP/DOWN and the analog stick into
+`nudge` calls against the scroller's chase target. The caller still owns
+`step()`.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `stepPx` | `number` | `6` | Px per held frame of UP/DOWN. |
+| `nubPx` | `number` | `10` | Px per frame at full analog deflection. |
+| `active` | `() => boolean` | always on | Gate the hook, for example `() => !osk.isOpen()`. Raw button reads are not muted by a touch or button block. |
 
 ---
 

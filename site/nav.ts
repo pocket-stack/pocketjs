@@ -29,6 +29,7 @@ export const DOC_NAV: DocSection[] = [
       { slug: "reactivity", title: "Reactivity" },
       { slug: "animation", title: "Animation" },
       { slug: "input-focus", title: "Input & focus" },
+      { slug: "touch-gestures", title: "Touch & gestures" },
       { slug: "app-shell", title: "App shell & overlays" },
       { slug: "devtools", title: "DevTools" },
       { slug: "esp-idf", title: "ESP-IDF" },

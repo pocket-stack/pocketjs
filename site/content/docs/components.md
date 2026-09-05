@@ -73,8 +73,8 @@ input.
 :::
 
 A `View` becomes interactive by adding `focusable` and an `onPress` handler.
-`onPress` fires when the node is focused and the user presses the confirm
-button (Circle):
+`onPress` fires when the node is activated: CIRCLE while it is focused, a tap
+on a touch host, or a cursor click (see [App shell](/docs/app-shell/)):
 
 :::framework-code
 ```tsx solid

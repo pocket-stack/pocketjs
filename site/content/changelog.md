@@ -421,7 +421,7 @@ JavaScript where no browser fits.
   `TextField`, the editable activation semantic. DevTools tapes add a
   sparse touch track, e2e gains scripted touch input and the first touch
   goldens, and
-  [docs/TOUCH.md](https://github.com/pocket-stack/pocketjs/blob/main/docs/TOUCH.md)
+  [Touch & gestures](/docs/touch-gestures/)
   writes down the measured cost model.
 - **Audio, credit-based and deterministic.** `globalThis.audio` is a
   spec-first PCM streaming interface: apps push samples against a credit

@@ -72,8 +72,10 @@ clearly at the call site; `<Focusable onPress={...}>` and
 </Focusable>
 ```
 
-CIRCLE fires the `onPress` of the focused node, bubbling to the nearest ancestor
-handler. The `focus:` style variant is applied by the core with zero extra JS —
+`onPress` fires on activation: CIRCLE on the focused node, a tap on a touch
+host, or a cursor click. Whichever the source, the press bubbles to the
+nearest ancestor handler. The `focus:` style variant is applied by the core
+with zero extra JS —
 see [Input & focus](/docs/input-focus/) for the full model.
 
 ## FocusScope

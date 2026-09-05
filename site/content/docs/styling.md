@@ -144,8 +144,12 @@ the matching variant natively — **zero JS runs on the state change**.
 
 Here `focus:bg-blue-500` and `active:scale-95` live in the same record as the
 base styles. Setting focus (`setFocus`) or pressing the node applies the variant
-without touching JavaScript or reconciling the tree. See
-[/docs/input-focus/](/docs/input-focus/) for how focus moves.
+without touching JavaScript or reconciling the tree. Under touch the `active:`
+variant is held from the contact's down edge and cleared as soon as another
+recognizer claims that contact, which is why a row's pressed look drops away
+the moment the list starts scrolling. See
+[/docs/input-focus/](/docs/input-focus/) for how focus moves and
+[/docs/touch-gestures/](/docs/touch-gestures/) for the claim model.
 
 ## `rounded-full` needs a known size
 

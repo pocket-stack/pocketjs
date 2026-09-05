@@ -237,6 +237,7 @@
     "site:build": "bun tools/site-build.ts",
     "site:icons": "bun tools/icons.ts",
     "site:verify-playground": "bun run site:build && bun site/verify-playground.ts",
+    "site:verify-doc-demos": "bun run site:build && bun site/verify-doc-demos.ts",
     "gba:imagegen": "bun imagegen",
     "vapor": "bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx",
     "vapor:play": "bun vapor/scripts/play.ts",

@@ -225,6 +225,23 @@ Explicit subpaths are useful for framework-specific examples, tests, and
 integration code. Most apps should prefer the generic PocketJS subpaths and keep
 framework state imports native.
 
+Not every subpath resolves under every framework. `framework/compiler/subpaths.ts`
+is the registry, and it declares:
+
+- **`gesture` and `kinetics` resolve under Solid and Vue Vapor.** The
+  recognizer and scroller machinery lives in framework-neutral core modules;
+  each of the two frameworks gets a thin shim that binds disposal to its own
+  lifecycle.
+- **`osk` and `virtual-list` resolve under Solid only.** Nothing else is
+  meant to reach their Solid-flavored implementations.
+- **What a framework does not resolve is not walked in pass 1**, so class
+  strings from another framework's module never enter this build's
+  `styles.bin`. The bare specifier still carries an npm export pointing at
+  the Solid file, so an Octane build importing `@pocketjs/framework/gesture`
+  compiles against the Solid module — and **the Octane entry runs no gesture
+  pump and installs no tap-to-press recognizer**, so an Octane app sees touch
+  only through `touches()`.
+
 ## Octane notes
 
 Octane is React's programming model, compiled: hooks and JSX, no VDOM. Hooks

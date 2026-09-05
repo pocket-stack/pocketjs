@@ -3,9 +3,9 @@
 PocketJS's portable interaction baseline is a d-pad and a handful of face
 buttons. A single **focus manager** tracks one focused node, the d-pad moves
 focus between focusable nodes, and **CIRCLE** activates whatever is focused.
-The Vita profile additionally exposes front-panel contacts without changing
-that controller fallback, and apps that want a pointer instead of a focus
-walk can opt in to the [virtual cursor](#virtual-cursor).
+Targets that declare the `input.touch` capability expose front-panel contacts
+without changing that controller fallback, and apps that want a pointer
+instead of a focus walk can opt in to the [virtual cursor](#virtual-cursor).
 
 Everything here runs identically on real PSP hardware, PPSSPP, the browser host, and
 headless Bun. The browser and Bun hosts just remap keys onto the same
@@ -62,9 +62,13 @@ onFrame(() => {
 });
 ```
 
-The snapshot is immutable and becomes empty after release. PocketJS reports
-contacts rather than prescribing tap, drag, or pinch semantics, so reusable
-gesture recognizers remain ordinary deterministic application code. Put
+The snapshot is immutable and becomes empty after release. It is the raw
+contact latch: one frame of positions, with nothing interpreted on top. Tap,
+long press, axis-lockable pan and two-contact pinch recognizers ship in
+`@pocketjs/framework/gesture`, and **mounting an app installs a tap-to-`onPress`
+recognizer**, so a `Focusable` with an `onPress` answers a tap with no extra
+wiring. Read `touches()` yourself only for behavior the recognizers do not
+cover — see [Touch & gestures](/docs/touch-gestures/). Put
 `input.touch` in `enhances` when the same app must still build for PSP.
 
 Targets with a separate touch display expose `input.touch.auxiliary` instead:
@@ -78,8 +82,9 @@ const contact = auxiliaryTouches()[0];
 **`touches()` contains only primary-surface contacts;
 `auxiliaryTouches()` contains only auxiliary-surface contacts.** Each contact's
 `surface` field is `"primary"` or `"auxiliary"`, and `x`/`y` stay in that
-surface's logical coordinate space. Touch activation and gestures resolve hits
-only against the matching surface tree. The two capability ids are independent:
+surface's logical coordinate space. Touch activation and
+[gestures](/docs/touch-gestures/) resolve hits only against the matching
+surface tree. The two capability ids are independent:
 a bottom-screen touch panel does not imply that the primary display is touchable.
 
 ## Virtual cursor
@@ -410,6 +415,7 @@ focus, Enter/Z confirms, `L` / `R` page the shoulder-driven UI, and your
 
 ## Related
 
+- [Touch & gestures](/docs/touch-gestures/) — tap, long press, pan, pinch, and the kinetic scroller over these contacts.
 - [App shell](/docs/app-shell/) — `Focusable`, `FocusScope`, `FocusGrid`, `Modal`, and `ActionBar` components.
 - [Components](/docs/components/) — `View`, `Text`, `Image`, and how Solid control flow maps onto the native tree.
 - [Styling](/docs/styling/) — the `focus:` / `active:` variants and the Tailwind subset.
