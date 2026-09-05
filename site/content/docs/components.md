@@ -502,7 +502,7 @@ The Solid module `@pocketjs/framework/classic` shares a shaded bezel and color
 palette across buttons, keyboard faces, panels and selection indicators.
 
 ```tsx
-import { ClassicButton, ClassicPanel } from "@pocketjs/framework/classic";
+import { ClassicButton, ClassicPanel, ClassicSheet } from "@pocketjs/framework/classic";
 
 <ClassicButton label="Save" tone="primary" surface="auxiliary"
   style={{ posType: 1, insetL: 240, insetT: 4, width: 72, height: 24 }}
@@ -527,6 +527,23 @@ returns matching gradient, border and label colors for other UI elements.
 small native hosts. Insets preserve its corners without requiring an image
 mask. Its `active` property uses the blue header palette, and `headerHeight`
 defaults to 27 logical pixels.
+
+`ClassicSheet` accepts `open`, `title`, `message`, up to four `actions`,
+`cancelLabel` and `onCancel`. Each action supplies a label, tone and callback.
+**The host animates the panel translation and backdrop opacity.** The component
+keeps its fixed action subtree mounted and blocks other touch gestures until
+the closing transition ends. `onModalChange` includes that closing interval so
+applications can also gate hardware buttons. Reopening cancels the old closing
+deadline; unmounting cancels animations, the deadline and the touch block.
+
+```tsx
+<ClassicSheet open={confirmDiscard()} surface="auxiliary"
+  title="Discard unsaved changes?"
+  actions={[{ label: "Discard Changes", tone: "danger", onPress: discard }]}
+  cancelLabel="Keep Editing" onCancel={() => setConfirmDiscard(false)}
+  onModalChange={setInputBlocked} />
+```
+
 
 ## App-shell primitives
 

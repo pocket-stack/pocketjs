@@ -1,7 +1,9 @@
-import { createEffect, createMemo, createSignal } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { View, Text, type ViewProps } from "./primitives.ts";
 import { insert, type NodeMirror } from "./renderer.ts";
-import { createGesture } from "./gesture.ts";
+import { createGesture, pushTouchBlock } from "./gesture.ts";
+import { animate, cancelAnim, jump } from "./anim.ts";
+import { after } from "./clock.ts";
 import { resolveTouchHit } from "./input.ts";
 import type { SurfaceId } from "./display.ts";
 
@@ -107,5 +109,62 @@ export function ClassicPanel(props: ClassicPanelProps) {
     height: 5, bgColor: "#f7f9fc" }; } });
   insert(frame as unknown as NodeMirror, [fill, body, squareTop]);
   insert(frame as unknown as NodeMirror, () => props.children);
+  return frame;
+}
+
+export interface ClassicSheetProps {
+  open: boolean;
+  title: string;
+  message?: string;
+  actions: readonly { label: string; tone?: ClassicTone; disabled?: boolean; onPress(): void }[];
+  cancelLabel?: string;
+  onCancel(): void;
+  surface?: SurfaceId;
+  /** Includes the closing transition, so callers can also gate hardware input. */
+  onModalChange?(active: boolean): void;
+  debugName?: string;
+}
+
+/** Native slide/fade transitions keep touch modal until the sheet leaves.
+ * Fixed action children are retained through close/reopen; no frame JS writes. */
+export function ClassicSheet(props: ClassicSheetProps) {
+  if (props.actions.length > 4) throw new RangeError("ClassicSheet supports at most four actions");
+  const height = 64 + (props.actions.length + 1) * 38 + 8;
+  const [shown, setShown] = createSignal(false);
+  const frame = View({ debugName: props.debugName ?? "ClassicSheet",
+    get style() { return { posType: 1, insetL: 0, insetR: 0, insetT: 0, insetB: 0, display: shown() ? 0 : 1 }; } });
+  const scrim = View({ style: { posType: 1, insetL: 0, insetR: 0, insetT: 0, insetB: 0, bgColor: "#10203866", opacity: 0 } });
+  const body = View({ style: { posType: 1, insetL: 0, insetR: 0, insetB: 0, height, translateY: height,
+    borderWidth: 1, borderColor: "#657489", gradDir: 1, gradFrom: "#b1bbc9", gradTo: "#657891" } });
+  const title = Text({ class: "text-sm font-bold", get children() { return props.title; },
+    style: { posType: 1, insetL: 8, insetR: 8, insetT: 11, textAlign: 1, textColor: "#243955" } });
+  const message = Text({ class: "text-xs", get children() { return props.message ?? ""; },
+    style: { posType: 1, insetL: 8, insetR: 8, insetT: 32, textAlign: 1, textColor: "#344d6c" } });
+  const buttons = [...props.actions, { get label() { return props.cancelLabel ?? "Cancel"; }, onPress: props.onCancel }].map((action, index) =>
+    ClassicButton({ get label() { return action.label; }, get tone() { return "tone" in action ? action.tone : "neutral"; },
+      get disabled() { return !props.open || ("disabled" in action && action.disabled); },
+      surface: props.surface, allowWhenBlocked: true, onPress: () => { if (props.open) action.onPress(); },
+      style: { posType: 1, insetL: 16, insetR: 16, insetT: 60 + index * 38, height: 34 } }));
+  insert(body as unknown as NodeMirror, [title, message, ...buttons]);
+  insert(frame as unknown as NodeMirror, [scrim, body]);
+  let unblock: (() => void) | undefined, deadline: (() => void) | undefined;
+  let slide = 0, fade = 0;
+  const release = () => { unblock?.(); unblock = undefined; props.onModalChange?.(false); };
+  createEffect(() => {
+    const open = props.open;
+    deadline?.(); deadline = undefined;
+    if (slide) cancelAnim(slide); if (fade) cancelAnim(fade);
+    if (open) {
+      if (!unblock) { unblock = pushTouchBlock(); props.onModalChange?.(true); }
+      setShown(true);
+      slide = animate(body as unknown as NodeMirror, "translateY", 0, { dur: 220, easing: "out" });
+      fade = animate(scrim as unknown as NodeMirror, "opacity", 1, { dur: 220 });
+    } else if (unblock) {
+      slide = animate(body as unknown as NodeMirror, "translateY", height, { dur: 180, easing: "in" });
+      fade = animate(scrim as unknown as NodeMirror, "opacity", 0, { dur: 180 });
+      deadline = after(0.18, () => { setShown(false); release(); deadline = undefined; });
+    } else { jump(body as unknown as NodeMirror, "translateY", height); }
+  });
+  onCleanup(() => { deadline?.(); if (slide) cancelAnim(slide); if (fade) cancelAnim(fade); release(); });
   return frame;
 }

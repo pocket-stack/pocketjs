@@ -21,6 +21,14 @@ int main(void) {
     assert(rgba[i * 4 + 3] == (i % 4) * 85);
   }
   assert(rgba[12 * 4] == 0);
+  assert(coverage_colorize("000000111111", 12, "123456abcdef", 12, 12, 1, 16, rgba));
+  assert(rgba[0] == 0x12 && rgba[1] == 0x34 && rgba[2] == 0x56);
+  assert(rgba[6 * 4] == 0xab && rgba[6 * 4 + 3] == 170);
+  assert(rgba[12 * 4] == 0); /* padded columns remain transparent */
+  assert(!coverage_colorize("000000222222", 12, "123456abcdef", 12, 12, 1, 16, rgba));
+  assert(!coverage_colorize("00000011111z", 12, "123456abcdef", 12, 12, 1, 16, rgba));
+  assert(!coverage_colorize("000000111111", 11, "123456abcdef", 12, 12, 1, 16, rgba));
+  assert(!coverage_colorize("000000111111", 12, "12345gabcdef", 12, 12, 1, 16, rgba));
   /* Narrow document pane: 1024 packed bytes require two base64 padding bytes. */
   char narrow[1368]; memset(narrow, 'A', sizeof narrow);
   memcpy(narrow + sizeof narrow - 4, "5A==", 4);

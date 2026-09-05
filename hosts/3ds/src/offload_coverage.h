@@ -39,4 +39,29 @@ static inline int coverage_decode(const char *base64, size_t length, unsigned wi
   }
   return (int)envelope;
 }
+static inline int coverage_hex(char c) {
+  return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+}
+/* Optional horizontal palette: one hex index per column, up to 16 RGB colors.
+ * Fixed work, same scratch allocation and one uploaded texture. */
+static inline int coverage_colorize(const char *columns, size_t columns_length,
+    const char *palette, size_t palette_length, unsigned width, unsigned height, unsigned envelope, uint8_t *rgba) {
+  if (!width || width > 512 || !height || height > 16 || envelope < width || envelope > 512 ||
+      columns_length != width || !palette_length || palette_length > 96 || palette_length % 6) return 0;
+  uint8_t colors[16][3];
+  for (size_t i = 0; i < palette_length; i += 2) {
+    int a = coverage_hex(palette[i]), b = coverage_hex(palette[i + 1]);
+    if (a < 0 || b < 0) return 0;
+    colors[i / 6][(i % 6) / 2] = (uint8_t)((a << 4) | b);
+  }
+  for (unsigned x = 0; x < width; x++) {
+    int ink = coverage_hex(columns[x]);
+    if (ink < 0 || (unsigned)ink >= palette_length / 6) return 0;
+  }
+  for (unsigned y = 0; y < height; y++) for (unsigned x = 0; x < width; x++) {
+    uint8_t *p = rgba + (y * envelope + x) * 4;
+    memcpy(p, colors[coverage_hex(columns[x])], 3);
+  }
+  return 1;
+}
 #endif

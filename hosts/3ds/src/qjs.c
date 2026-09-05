@@ -436,6 +436,21 @@ static JSValue host_operation(
           (uint32_t)argument_int(ctx, argc, argv, 3), coverage_pixels) : 0;
       if (text) JS_FreeCString(ctx, text);
       if (!envelope) return JS_NewInt32(ctx, -1);
+      if (argc > 4 && !JS_IsUndefined(argv[4])) {
+        if (argc < 6 || !JS_IsString(argv[4]) || !JS_IsString(argv[5])) return JS_NewInt32(ctx, -1);
+        for (int i = 4; i < 6; i++) {
+          JSValue size_value = JS_GetPropertyStr(ctx, argv[i], "length");
+          int32_t size = 0; JS_ToInt32(ctx, &size, size_value); JS_FreeValue(ctx, size_value);
+          if (size > (i == 4 ? 512 : 96)) return JS_NewInt32(ctx, -1);
+        }
+        size_t columns_length = 0, palette_length = 0;
+        const char *columns = JS_ToCStringLen2(ctx, &columns_length, argv[4], 0);
+        const char *palette = JS_ToCStringLen2(ctx, &palette_length, argv[5], 0);
+        int valid = columns && palette && coverage_colorize(columns, columns_length, palette, palette_length,
+          argument_int(ctx, argc, argv, 1), height, envelope, coverage_pixels);
+        if (columns) JS_FreeCString(ctx, columns); if (palette) JS_FreeCString(ctx, palette);
+        if (!valid) return JS_NewInt32(ctx, -1);
+      }
       unsigned padded_height = 8; while (padded_height < (unsigned)height) padded_height *= 2;
       return JS_NewInt32(ctx, ui_upload_texture(coverage_pixels, envelope * padded_height * 4, envelope, padded_height, 3));
     }
@@ -499,7 +514,7 @@ static void set_named_property(JSValueConst object, const uint8_t *name, size_t 
 static void install_host(void) {
 #ifdef POCKETJS_OFFLOAD
   JSValue offload = JS_NewObject(context);
-  add_operation(offload, "uploadCoverage", 4, HostOffloadCoverage);
+  add_operation(offload, "uploadCoverage", 6, HostOffloadCoverage);
   add_operation(offload, "session", 0, HostOffloadSession);
   add_operation(offload, "submit", 1, HostOffloadSubmit);
   add_operation(offload, "take", 0, HostOffloadTake);

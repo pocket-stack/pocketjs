@@ -3,9 +3,12 @@ import { registerServicePump } from "./services.ts";
 
 export { OFFLOAD };
 export type { OffloadOps };
-/** Fixed-budget native resource upload when implemented by the host. */
-export function uploadCoverage(base64: string, width: number, height: number, foreground: number): number | undefined {
-  return (globalThis as unknown as { offload?: OffloadOps }).offload?.uploadCoverage?.(base64, width, height, foreground);
+/** Fixed-budget native resource upload when implemented by the host.
+ * Optional column colors use one hex palette index per pixel column and
+ * up to 16 concatenated RGB hex colors. They retain the one-upload budget. */
+export function uploadCoverage(base64: string, width: number, height: number, foreground: number,
+  colors?: { columns: string; palette: string }): number | undefined {
+  return (globalThis as unknown as { offload?: OffloadOps }).offload?.uploadCoverage?.(base64, width, height, foreground, colors?.columns, colors?.palette);
 }
 export type OffloadResult = { ok: true; value: string } | { ok: false; error: string };
 type Pending = { record: string; callback: (result: OffloadResult) => void; deadline: number; sent: boolean; session: number };

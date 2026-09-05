@@ -86,7 +86,7 @@ import {
   View,
 } from "../framework/src/components.ts";
 import { getAuxiliarySurfaceRoots } from "../framework/src/display.ts";
-import { ClassicButton } from "../framework/src/classic.ts";
+import { ClassicButton, ClassicSheet } from "../framework/src/classic.ts";
 import { __runGestures, resetGestures, pushTouchBlock } from "../framework/src/gesture.ts";
 import { __packTouch, __setTouches, __resetTouches } from "../framework/src/touch.ts";
 import { __advanceClock, resetClock } from "../framework/src/clock.ts";
@@ -221,6 +221,28 @@ test("classic buttons provide press, slide-out, disabled and cancelled feedback"
   setDisabled(false); pump(true); const unblock = pushTouchBlock(); pump(false); unblock(); expect(clicked).toBe(1);
   pump(true); pump(false); expect(clicked).toBe(2);
   dispose(); resetGestures(); __resetTouches();
+});
+
+test("classic sheets animate natively and retain modality through close and reopen", () => {
+  resetGestures(); resetClock(); registerStyles({ "text-xs font-bold": 1, "text-xs": 2, "text-sm font-bold": 3 });
+  const [open, setOpen] = createSignal(false);
+  const modal: boolean[] = [];
+  const dispose = render(() => ClassicSheet({ get open() { return open(); }, title: "Discard?", actions: [],
+    onCancel() {}, onModalChange(value) { modal.push(value); },
+  }) as unknown as NodeMirror, root);
+  const frame = root.children[0], body = frame.children[1];
+  host.clear(); setOpen(true);
+  expect(modal).toEqual([true]);
+  expect(host.of("animate").some(c => c[1] === body.id && c[2] === PROP.translateY && c[3] === 0)).toBe(true);
+  setOpen(false); for (let i = 0; i < 4; i++) __advanceClock();
+  expect(modal).toEqual([true]);
+  setOpen(true); for (let i = 0; i < 15; i++) __advanceClock();
+  expect(modal).toEqual([true]); // stale closing deadline cannot hide a reopened sheet
+  setOpen(false); for (let i = 0; i < 12; i++) __advanceClock();
+  expect(modal).toEqual([true, false]);
+  setOpen(true); dispose();
+  expect(modal.at(-1)).toBe(false);
+  resetGestures(); resetClock();
 });
 
 test("resource images retain their layout through fallback, retry and borrowed texture replacement", () => {
