@@ -1,7 +1,8 @@
 import { $ } from "bun";
 import { expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const COMMAND = [
   "cargo",
   "run",
@@ -30,17 +31,28 @@ const TIMING_FIELDS = new Set(["avg_layout_us", "max_layout_us"]);
 type Receipt = Record<(typeof REQUIRED_FIELDS)[number], string>;
 
 function parseReceipt(output: string): Receipt {
-  const receipt = Object.fromEntries(
-    output
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        const separator = line.indexOf("=");
-        expect(separator).toBeGreaterThan(0);
-        return [line.slice(0, separator), line.slice(separator + 1)];
-      }),
-  ) as Partial<Receipt>;
+  const lines = output.endsWith("\n")
+    ? output.slice(0, -1).split("\n")
+    : output.split("\n");
+  expect(lines).toHaveLength(REQUIRED_FIELDS.length);
+
+  const seen = new Set<string>();
+  const entries = lines.map((line) => {
+    const separator = line.indexOf("=");
+    expect(separator).toBeGreaterThan(0);
+    expect(line.indexOf("=", separator + 1)).toBe(-1);
+
+    const field = line.slice(0, separator);
+    const value = line.slice(separator + 1);
+    expect((REQUIRED_FIELDS as readonly string[]).includes(field)).toBe(true);
+    expect(seen.has(field)).toBe(false);
+    expect(value).not.toBe("");
+    seen.add(field);
+    return [field, value];
+  });
+
+  expect(seen.size).toBe(REQUIRED_FIELDS.length);
+  const receipt = Object.fromEntries(entries) as Partial<Receipt>;
 
   for (const field of REQUIRED_FIELDS) {
     expect(receipt[field]).toBeDefined();
@@ -55,17 +67,48 @@ function parseReceipt(output: string): Receipt {
       expect(receipt[field]).toMatch(/^[0-9a-f]{16}$/);
     } else {
       expect(receipt[field]).toMatch(/^\d+$/);
-      expect(Number(receipt[field])).toBeGreaterThanOrEqual(0);
+      const value = Number(receipt[field]);
+      expect(Number.isFinite(value)).toBe(true);
+      expect(Number.isInteger(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(0);
     }
   }
 
   for (const field of TIMING_FIELDS) {
     expect(receipt[field]).toMatch(/^\d+$/);
-    expect(Number(receipt[field])).toBeGreaterThanOrEqual(0);
+    const value = Number(receipt[field]);
+    expect(Number.isFinite(value)).toBe(true);
+    expect(Number.isInteger(value)).toBe(true);
+    expect(value).toBeGreaterThanOrEqual(0);
   }
 
   return receipt as Receipt;
 }
+
+const VALID_RECEIPT = REQUIRED_FIELDS.map((field) => {
+  if (field === "text_mode" || field === "texture_mode") return `${field}=atlas`;
+  if (field === "drawlist_checksum") return `${field}=0000000000000000`;
+  return `${field}=0`;
+}).join("\n");
+
+test("receipt parser rejects unknown and duplicate fields", () => {
+  expect(() => parseReceipt(`${VALID_RECEIPT}\nunknown=0`)).toThrow();
+  expect(() => parseReceipt(`${VALID_RECEIPT}\npeak_requested_bytes=0`)).toThrow();
+});
+
+test("receipt parser rejects non-finite and non-integer numbers", () => {
+  expect(() =>
+    parseReceipt(
+      VALID_RECEIPT.replace(
+        "peak_requested_bytes=0",
+        `peak_requested_bytes=${"9".repeat(400)}`,
+      ),
+    ),
+  ).toThrow();
+  expect(() =>
+    parseReceipt(VALID_RECEIPT.replace("peak_requested_bytes=0", "peak_requested_bytes=1.5")),
+  ).toThrow();
+});
 
 function canonicalReceipt(receipt: Receipt): Partial<Receipt> {
   return Object.fromEntries(
