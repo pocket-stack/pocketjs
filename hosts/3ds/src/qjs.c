@@ -38,7 +38,13 @@
  * host presents at the same rate, so the advertised simulation rate is 60. */
 #define POCKETJS_SIMULATION_HZ 60
 /* QuickJS recurses; the 3DS main thread's stack is set in main.c. */
-#define POCKETJS_JS_STACK_SIZE (192 * 1024)
+/* A QuickJS call frame is expensive and mounting a UI descends the tree, so
+ * this budget is spent on JSX NESTING DEPTH rather than node count. 192 KiB
+ * was not enough for an ordinary windowed app: opening one Pocket Shell
+ * applet whose rows carried a wrapper view overflowed it mid-frame, and the
+ * runtime rolled the whole guest back to last-good. The main thread's own
+ * stack is 1 MiB (main.c) and this limit costs nothing until it is used. */
+#define POCKETJS_JS_STACK_SIZE (384 * 1024)
 
 typedef enum {
   HostCreateNode,

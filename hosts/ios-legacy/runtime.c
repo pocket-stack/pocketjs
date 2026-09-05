@@ -1,4 +1,13 @@
 #include "pocket_runtime.h"
+/* The svc transport's state, for the acceptance record: "absent" on builds
+ * without the network channel, else discover / connecting / hello / up /
+ * up-usb / backoff (svcwire.c). */
+#ifdef POCKET_SVC_WIRE
+#include "svcwire.h"
+#define POCKET_SVC_STATE_NAME() svcwire_state_name()
+#else
+#define POCKET_SVC_STATE_NAME() "absent"
+#endif
 
 #include <fcntl.h>
 #include <stddef.h>
@@ -359,7 +368,7 @@ static void write_acceptance_record(void) {
     "frame_us=%lu\nsubmit_us=%lu\npresent_us=%lu\n"
     "window_frames=%lu\nwindow_us=%lu\nblit_us=%lu\n"
     "damage_attempts=%lu\ndamage_failures=%lu\ndamage_full_redraws=%lu\n"
-    "damage_pixels=%lu\ncomposites=%lu\ndamage_regions_last=%lu\nerror=%s\n",
+    "damage_pixels=%lu\ncomposites=%lu\ndamage_regions_last=%lu\nsvc=%s\nerror=%s\n",
     POCKET_BUILD_ID,
     state,
     (long)getpid(),
@@ -392,6 +401,7 @@ static void write_acceptance_record(void) {
     pocket_runtime_damage_pixels(),
     g_composites,
     g_damage_regions_last,
+    POCKET_SVC_STATE_NAME(),
     g_state == POCKET_STATE_FAILED ? g_status_message : ""
   );
   g_last_record_attempt_frame = g_guest_frames;
@@ -1680,11 +1690,20 @@ static void launch_application(id self, id application) {
   Class hardware_class = objc_getClass("UIHardware");
   Class window_class = objc_getClass("UIWindow");
   CGRect frame;
+  CGRect window_frame;
+  int landscape;
 
   if (g_window != NULL) {
     return;
   }
 
+#ifdef POCKET_KEEP_AWAKE
+  /* A remote control must not auto-lock under the thumb: the idle timer is
+   * the device's, and the app disables it for its own lifetime. */
+  if (responds_to(application, "setIdleTimerDisabled:")) {
+    send_void_bool(application, "setIdleTimerDisabled:", YES);
+  }
+#endif
   if (responds_to(application, "setStatusBarHidden:")) {
     send_void_bool(application, "setStatusBarHidden:", YES);
   } else {
@@ -1692,18 +1711,33 @@ static void launch_application(id self, id application) {
     send_void_float((id)hardware_class, "_setStatusBarHeight:", 0.0f);
     send_status_bar_mode(application, 2, 0, 0.0f, 0);
   }
+  /*
+   * The panel is portrait. A landscape plan (logical width > height) keeps
+   * the window at the panel's own size and rotates the content view a
+   * quarter turn about its centre — the home button ends up on the right.
+   * UIKit inverts that transform for locationInView:, so touches arrive in
+   * the view's own 480x320 space and the touch mapping below stays the same;
+   * the CAEAGLLayer's drawable follows the view's bounds, so the GL path
+   * gets exactly logical x density pixels either way.
+   */
+  landscape = POCKET_LOGICAL_WIDTH > POCKET_LOGICAL_HEIGHT;
   frame.origin.x = 0.0f;
   frame.origin.y = 0.0f;
   frame.size.width = (float)POCKET_LOGICAL_WIDTH;
   frame.size.height = (float)POCKET_LOGICAL_HEIGHT;
   g_content_frame = frame;
+  window_frame = frame;
+  if (landscape) {
+    window_frame.size.width = frame.size.height;
+    window_frame.size.height = frame.size.width;
+  }
   if (responds_to(application, "setStatusBarHidden:")) {
-    g_window = send_id_rect(send_id((id)window_class, "alloc"), "initWithFrame:", frame);
+    g_window = send_id_rect(send_id((id)window_class, "alloc"), "initWithFrame:", window_frame);
   } else {
     g_window = send_id_rect(
       send_id((id)window_class, "alloc"),
       "initWithContentRect:",
-      frame
+      window_frame
     );
   }
   g_view = send_id_rect(send_id(objc_getClass("PocketJSRuntimeView"), "alloc"), "initWithFrame:", frame);
@@ -1712,6 +1746,21 @@ static void launch_application(id self, id application) {
     g_state = POCKET_STATE_FAILED;
     copy_status_message("UIKit could not create the PocketJS window");
     return;
+  }
+  if (landscape) {
+    /* CGAffineTransformMakeRotation(+pi/2): a = cos, b = sin, c = -sin,
+     * d = cos. The view's centre moves to the window's centre; bounds stay
+     * the logical 480x320. */
+    CGAffineTransform quarter_turn = {0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f};
+    CGPoint window_centre;
+    window_centre.x = window_frame.size.width / 2.0f;
+    window_centre.y = window_frame.size.height / 2.0f;
+    ((void (*)(id, SEL, CGAffineTransform))objc_msgSend)(
+      g_view,
+      sel_registerName("setTransform:"),
+      quarter_turn
+    );
+    ((void (*)(id, SEL, CGPoint))objc_msgSend)(g_view, sel_registerName("setCenter:"), window_centre);
   }
 
   if (POCKET_RASTER_DENSITY > 1) {
