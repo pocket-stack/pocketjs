@@ -2,8 +2,7 @@
 
 The primary app-facing exports of `@pocketjs/framework`, grouped by import
 path. Signatures are TypeScript-style; defaults are noted in parentheses.
-Framework-internal and tests/debug helpers are intentionally not exhaustive
-here. For conceptual walkthroughs see [Components](/docs/components/),
+Framework-internal and tests/debug helpers are not exhaustive here. For conceptual walkthroughs see [Components](/docs/components/),
 [Reactivity](/docs/reactivity/), [Animation](/docs/animation/), and
 [Input & focus](/docs/input-focus/).
 
@@ -16,7 +15,7 @@ here. For conceptual walkthroughs see [Components](/docs/components/),
 | `octane` | `useState`, `useEffect`, `useMemo`, `useRef`, `useLayoutEffect`, `useEffectEvent` |
 | `@pocketjs/framework/animation` | `animate`, `spring`, `jump`, `cancelAnim` |
 | `@pocketjs/framework/lifecycle` | `onFrame`, `onButtonPress`, `analogX`, `analogY`, `analogRaw`, `createSpriteAnimation`, `pushButtonHandlerBlock` (Octane builds: `useFrame`, `useButtonPress`, `useSpriteAnimation`) |
-| `@pocketjs/framework/input` | `BTN`, `touches`, `auxiliaryTouches`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
+| `@pocketjs/framework/input` | `BTN`, `touches`, `auxiliaryTouches`, `focusNode`, `getFocused`, `pressNode`, `setActiveNode`, `pushFocusScope`, `pushFocusGrid`, `pushFocusController`, `hitFocusable`, `hitNode`, `enableCursor`, `cursorX`, `cursorY` |
 | `@pocketjs/framework/gesture` | `createGesture`, `attachGesture`, `pushTouchBlock`, gesture types (Solid and Vue Vapor) |
 | `@pocketjs/framework/kinetics` | `createScroller`, `bindDpadScroll`, `Scroller` / `ScrollerOptions` / `ScrollerState` types (Solid and Vue Vapor) |
 | `@pocketjs/framework/osk` | `Osk`, `TextField`, `createOsk`, `OSK_H`, `OSK_LAYERS` (Solid) |
@@ -25,8 +24,20 @@ here. For conceptual walkthroughs see [Components](/docs/components/),
 | `@pocketjs/framework/platform` | `platform`, `hasFeature` |
 | `@pocketjs/framework/clock` | `simulationHz`, `ticksPerFrame`, `virtualFrame`, `virtualNow`, `after` |
 | `@pocketjs/framework/effects` | `installEffectDriver`, `runEffect`, effect types |
+| `@pocketjs/framework/net` | `fetch`, `NetError`, `PocketResponse`, `FetchOptions` |
+| `@pocketjs/framework/db` | `Database`, `Statement`, `SqlValue`, `SqlParams`, `RunResult` |
+| `@pocketjs/framework/fs` | `file`, `write`, `usage`, and the `node:fs` sync subset (`readFileSync`, `writeFileSync`, `appendFileSync`, `mkdirSync`, `readdirSync`, `rmSync`, `renameSync`, `statSync`, `existsSync`) |
+| `@pocketjs/framework/audio` | `decodeWav`, `createWavPlayer`, `WavPcm` / `WavPlayer` types |
+| `@pocketjs/framework/launcher` | `launcherActive`, `appTable`, `launchApp`, `frozenShot` |
+| `@pocketjs/framework/devtools` | `initDevtools`, `wrapFrameHandler`, tape expanders — see [DevTools](/docs/devtools/) |
 | `@pocketjs/framework/hot` | `text`, `prop` |
 | `@pocketjs/framework/manifest` | app and Pocket System schema/types/resolvers, `extractHostBuildInputs`, `hostBuildEnvironment`, `vitaTitleId` |
+
+`framework/compiler/subpaths.ts` is the registry these paths are declared in —
+one row per module, and a build resolves nothing that has no row. The rows it
+carries beyond this table (`/config`, `/host`, `/package`, `/prelude`,
+`/renderer`, `/idf-host`, `/vita-package`) are build and host-author surface
+rather than app API.
 
 ---
 
@@ -82,36 +93,12 @@ for the full `HostOps` surface.
 
 ### `HostOps`
 
-The synchronous `ui.*` op surface. Node ids are generation-tagged positive
-i32 values and reserve `0` for "none"; texture handles have separate 0-based
-or generation-tagged contracts. Each op is documented in full on the
-[Native contract](/docs/native-contract/) page; the summary:
-
-| Op | Signature | Purpose |
-| --- | --- | --- |
-| `createNode` | `(type: number) => number` | New node (spec `NODE_TYPE`) → id. |
-| `destroyNode` | `(id: number) => void` | Destroy subtree; free anim tracks; clear focus. |
-| `insertBefore` | `(parent, child, anchorOr0) => void` | Move/insert; anchor `0` = append. |
-| `removeChild` | `(parent, child) => void` | Detach but keep the node alive. |
-| `setStyle` | `(id, styleId) => void` | Apply a compiled style; `-1` clears. |
-| `setProp` | `(id, propId, value) => void` | Set one spec `PROP`. |
-| `setText` / `replaceText` | `(id, str) => void` | Text-node content. |
-| `uploadTexture` | `(buf, w, h, psm) => number` | Upload a pow2 image (≤512) → handle. |
-| `setImage` | `(id, texHandle) => void` | Bind an image; `<0` clears. |
-| `setSprite` | `(id, atlas, frames, cols, step) => void` | Bind/clear a native-ticked sprite atlas. |
-| `animate` | `(id, propId, to, durMs, easing, delayMs) => number` | Start a tween → animId. |
-| `cancelAnim` | `(animId) => void` | Stop a tween. |
-| `setFocus` | `(idOr0) => void` | Focus a node; `0` clears. |
-| `setActive?` | `(id, active) => void` | Apply/clear the native `active:` variant. |
-| `loadStyles?` | `(buf) => void` | web/test only — feed the style table. |
-| `loadFontAtlas?` | `(buf) => void` | web/test only — feed one baked atlas. |
-| `measureText` | `(str, fontSlot) => number` | Measured width in px. |
-| `loadTileTexture?` / `freeTexture?` | tile key/index or handle | Stream and release generation-tagged DeepZoom textures. |
-| `uploadImgEntry?` | `(blob) => number` | Upload a self-contained baked image entry; returns a handle or `-1`. |
-| `setCompositorSurface?` | `(id, surface, focused) => void` | Bind a Pocket System application surface to a type-3 node. |
-| `debugInspect?` … `debugStep?` | debug-only | Optional DevTools inspection and pause/step surface. |
-| `__surfaces?` | `Record<string, number>` | Installed package ids to native compositor handles; separate from textures. |
-| `__host?` / `__hostAbi?` | metadata | Native target and HostOps ABI handshake. |
+The synchronous `ui.*` op surface a host installs. Node ids are
+generation-tagged positive i32 values and reserve `0` for "none"; texture
+handles have separate 0-based or generation-tagged contracts. Its TypeScript
+declaration is `HostOps` in `framework/src/host.ts`, and the
+[Native contract](/docs/native-contract/) page owns the wire: every op number,
+signature, and which ops a host may omit.
 
 ### `Host`
 
@@ -138,7 +125,7 @@ function release(node: NodeMirror): void
 function runSweep(): void
 ```
 
-`retain` keeps a detached subtree alive across frames (skips the sweep); `release` undoes it so a still-detached node re-enters the next sweep. `runSweep` destroys every subtree removed during the frame and still detached — the runtime already calls it once per frame after user code and input, so remove-then-reinsert (Solid moves) never destroys live nodes. Reach for these only when hand-managing detached subtrees.
+`retain` keeps a detached subtree alive across frames (skips the sweep); `release` undoes it so a still-detached node re-enters the next sweep. `runSweep` destroys every subtree removed during the frame and still detached — the runtime calls it once per frame after user code and input, so remove-then-reinsert (Solid moves) never destroys live nodes. Reach for these only when hand-managing detached subtrees.
 
 ### `registerTexture`
 
@@ -165,7 +152,7 @@ function registerStyles(table: Record<string, number>): void
 function resolveStyle(cls: string): number | undefined
 ```
 
-`registerStyles` loads a class-literal → styleId table (the compiler's `STYLE_IDS`); it also registers a token-sorted alias so `"a b"` resolves the id for `"b a"`. `resolveStyle` returns the styleId for a class string, or `undefined` if the compiler never saw it (or the token reordering is ambiguous). See [Styling](/docs/styling/) and [Tailwind subset](/docs/tailwind/).
+`registerStyles` loads a class-literal → styleId table (the compiler's `STYLE_IDS`); it also registers a token-sorted alias so `"a b"` resolves the id for `"b a"`. `resolveStyle` returns the styleId for a class string, or `undefined` if the compiler never saw it (or the token reordering is ambiguous). See [Styling](/docs/styling/).
 
 ### Data pack (pak)
 
@@ -231,7 +218,7 @@ The host primitives, wrapped React Native-style. `View` is the flex container/bo
 **`SpriteProps`** — `class`, `sprite` (`string` — a `ui:sprite.<name>` atlas key), `style`, `ref`, `debugName`.
 **`CompositorSurfaceProps`** — `class`, `style`, `package` (installed reverse-DNS package id), `focused`, `ref`, `debugName`.
 
-`Sprite` is a native animated primitive: its atlas (a pow2 texture holding a grid of frames) is baked into the pak, and the Rust core cycles the frame cells per vblank — deterministic and with **zero per-frame JS**. It auto-plays from the first frame the moment it is displayed, so a sprite revealed by paging or a `Show`/`Lazy` starts animating on its own. Bake atlases by listing them in a demo's `sprites.json` (`{ "<atlas>.png": { cols, rows, frames, step } }`); `step` is vblanks per frame (fps = 60/step). See `apps/gallery` (its covers are shader-baked animated sprites).
+`Sprite` is a native animated primitive: its atlas (a pow2 texture holding a grid of frames) is baked into the pak, and the Rust core advances the frame cell from its own tick counter — deterministic and with **zero per-frame JS**. It auto-plays from the first frame the moment it is displayed, so a sprite revealed by paging or a `Show`/`Lazy` starts animating on its own. Bake atlases by listing them in a demo's `sprites.json` (`{ "<atlas>.png": { cols, rows, frames, step } }`); `step` is core ticks per frame, so the sprite runs at `tick rate / step` fps (`step: 2` is 30 fps on a 60 Hz bundle). See `apps/gallery` (its covers are shader-baked animated sprites).
 
 ### `Screen`
 
@@ -486,7 +473,8 @@ custom hooks by the `use[A-Z]` naming convention. Their signatures match
 ## `@pocketjs/framework/animation`
 
 Typed motion over `ops.animate`. JS declares the tween once; the Rust core
-advances it in exact `dt = 1/60 s` ticks. `prop` is a spec `PROP` name and must
+advances it one fixed tick at a time, `dt = 1 / tick rate` for the rate the
+bundle bakes (see [`clock`](#pocketjsframeworkclock)). `prop` is a spec `PROP` name and must
 be animatable (e.g. `opacity`, `translateY`, `scale`, and color props) —
 non-animatable props throw. See [Animation](/docs/animation/).
 
@@ -626,7 +614,11 @@ Pushes a global block so background `onButtonPress` handlers (those without `all
 
 ## `@pocketjs/framework/input`
 
-Programmatic focus, the button bitmask, and the imperative focus-scope/grid stack. Prefer the `FocusScope` / `FocusGrid` components in app code. See [Input & focus](/docs/input-focus/).
+Programmatic focus, the button bitmask, the touch snapshots, the virtual
+cursor, and the imperative focus-scope/grid/controller stack. Prefer the
+`FocusScope` / `FocusGrid` components in app code. The behavior these
+signatures produce — the traversal order, the press and bubble model, refocus
+on removal — is on [Input & focus](/docs/input-focus/).
 
 ### `BTN`
 
@@ -721,6 +713,63 @@ Gives `node`'s subtree row/column d-pad semantics; returns a disposer that pops 
 | --- | --- | --- | --- |
 | `columns` | `number` | — | Grid column count (min `1`). Required. |
 | `wrap` | `boolean` | `false` | Wrap focus at row ends. |
+
+### Virtual cursor
+
+```ts
+function enableCursor(opts?: CursorOptions): () => void
+function cursorX(): number
+function cursorY(): number
+```
+
+`enableCursor` replaces the d-pad focus walk with a pointer the analog nub
+steers, and returns a disposer that restores the d-pad model. Calling it again
+while enabled updates the options in place, and an unchanged `image` keeps the
+texture it uploaded. A host predating the cursor ops keeps the d-pad model.
+`cursorX` / `cursorY` read the position in logical px, `NaN` while the cursor
+is disabled or before its first frame. Declare `input.cursor` in `requires` or
+`enhances`. What changes on screen while it runs — hover as focus, the
+press-and-drag-off model, the suppressed d-pad traversal — is on
+[Input & focus](/docs/input-focus/#virtual-cursor).
+
+**`CursorOptions`**
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `image` | `string \| Uint8Array` | built-in 16×16 arrow | A pak IMG entry key, or a raw IMG entry blob. |
+| `hotspot` | `[number, number]` | `[0, 0]` | The sprite pixel the position points at. |
+| `size` | `[number, number]` | the texture's own size | Logical draw size. |
+| `speed` | `number` | `240` | Travel in px per **virtual** second at full nub deflection, so a tape replays the same path at every rate: 240 is 4 px per frame on a 60 Hz bundle. |
+| `dpadSpeed` | `number` | `0` | Steer with the d-pad at this px per virtual second while the nub is centered; `0` leaves the d-pad to the app. |
+| `button` | `number` | `BTN.CIRCLE` | Mask that presses the hovered node. |
+| `start` | `[number, number]` | viewport center | Initial position. |
+
+### Hit testing and programmatic activation
+
+```ts
+function pressNode(node: NodeMirror): void
+function setActiveNode(node: NodeMirror | null): void
+function pushFocusController(
+  node: NodeMirror,
+  move: (direction: FocusDirection) => boolean,
+): () => void
+function hitFocusable(x: number, y: number): NodeMirror | null
+function hitNode(x: number, y: number, surface?: "primary" | "auxiliary"): NodeMirror | null
+```
+
+`pressNode` focuses a node and fires its `onPress`, bubbling to the nearest
+ancestor handler — the path a touch tap and a cursor click both take.
+`setActiveNode` holds or clears the native `active:` variant through the one
+latch every input mode writes, so a pressed look cannot strand when the mode
+changes. `pushFocusController` gives a subtree custom d-pad traversal: while
+focus is inside `node`, each navigation press calls `move` instead of grid or
+linear traversal and a `false` return falls through to the default; the system
+keyboard drives its variable-width key rows this way. `hitFocusable` resolves
+a point to the nearest focusable inside the active focus scope — the filter
+cursor hover and touch activation share. `hitNode` returns the topmost painted
+node under a point with no focusable or scope filter, which is how the gesture
+layer resolves region ownership. Both return `null` where the host mounts no
+`hitTest` op.
 
 ---
 
@@ -1015,9 +1064,18 @@ frozen runtime map.
 | `virtualNow()` | Virtual seconds since boot. |
 | `after(seconds, callback)` | Schedule on the virtual clock; returns a disposer. |
 
-Use these instead of wall-clock timers for deterministic app behavior. The
-host may run at 60 Hz or a lower exact divisor while the same elapsed virtual
-time produces the same trajectory.
+Use these instead of wall-clock timers for deterministic app behavior: the
+same elapsed virtual time produces the same trajectory at every rate.
+
+**The tick rate is declared per realm and baked per bundle, not fixed at 60.**
+`tools/build.ts` writes it in from `--hz=N` — an integer from 1 through 240,
+default 60 — and the core takes it through `set_tick_rate` before the first
+tick (`MAX_TICK_HZ` is 240 in `engine/core/src/lib.rs`). `simulationHz()` is
+the host-selected virtual-frame rate and is a divisor of the baked rate, which
+is what makes `ticksPerFrame()` a whole number. A native mount whose
+`ui.__tickHz` disagrees with the baked rate throws before anything renders
+(`assertNativeHostContract`, `framework/src/host.ts`): a bundle runs at the
+rate it was built for and no other.
 
 ## `@pocketjs/framework/effects`
 
@@ -1029,9 +1087,205 @@ function runEffect<T>(kind: string, payload: unknown, onResult: (result: T) => v
 
 `runEffect` emits an outside-world command; its driver can complete at any
 time, but PocketJS delivers the result only at the next frame boundary. This
-callback surface deliberately avoids promise/microtask timing in deterministic
+callback surface keeps promise and microtask timing out of deterministic
 journeys. A host-injected `globalThis.__pocketEffectDriver` overrides the app
 driver for replay and simulation.
+
+## `@pocketjs/framework/net`
+
+A bounded HTTP client over the host's `net` namespace. Declare `net.http` in
+the manifest's `requires`; where no host mounts the module every call rejects
+with code `unavailable`.
+
+```ts
+import { fetch } from "@pocketjs/framework/net";
+
+const response = await fetch("https://api.example.com/items", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ name: "Pocket" }),
+  timeoutMs: 5_000,
+  maxBytes: 64 * 1024,
+});
+if (!response.ok) throw new Error(`HTTP ${response.status}`);
+const data = await response.json();
+```
+
+```ts
+function fetch(url: string, options?: FetchOptions): Promise<PocketResponse>
+```
+
+`url` must be an absolute `http://` or `https://` URL. `options.method` is one
+of `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS` (default `GET`;
+`GET` and `HEAD` reject a body), `options.body` a string, `Uint8Array`, or
+`ArrayBuffer`, and header names are lower-cased and rejected when malformed.
+`PocketResponse` carries `status`, `ok`, `url`, `headers`, `byteLength`, and
+the buffered reads `text()`, `json()`, `bytes()`, `arrayBuffer()`.
+
+The response is whole-body — the promise resolves once the body is complete
+and holds it — so the omitted surface is streams, cookies, cache, `Request`,
+`Headers`, `AbortSignal`, WebSocket, servers, and raw sockets.
+
+| Resource | Limit |
+| --- | ---: |
+| Concurrent requests | 2 |
+| Request body | 64 KiB |
+| Response body | 128 KiB default, 256 KiB maximum |
+| Headers | 32 fields / 8 KiB |
+| Timeout | 30 s default, 120 s maximum |
+| Redirects | 3 |
+
+A fetch settles at a tick boundary and never inside a native callback: the
+first pending request registers a service pump that makes one `net.poll()`
+call per tick and settles the whole batch that call returns, and the last
+completion removes the pump. An HTTP status never rejects — a 404 resolves
+with `ok === false`. A transport failure rejects with a `NetError` whose
+`code` is one of `unavailable`, `invalid_request`, `busy`, `dns`, `connect`,
+`tls`, `timeout`, `redirect`, `response_too_large`, `protocol`, `cancelled`,
+`other`.
+
+---
+
+The two data modules mount their own namespaces beside `ui` (`globalThis.db`,
+`globalThis.fs`). Every op is synchronous and completes inside the guest's
+turn: no events, no clock, no promises. Names and paths resolve under the
+app's own data root, and the vocabulary cannot spell another app's tree or an
+absolute path. Absence is not a no-op — every entry point throws where the
+namespace is unmounted, so declare `data.sqlite` or `data.fs` in the
+manifest's `requires` and let admission catch a missing module before the app
+runs.
+
+## `@pocketjs/framework/db`
+
+SQLite in the `bun:sqlite` shape, so code written against Bun's built-in
+driver runs against the mounted module unchanged.
+
+```ts
+import { Database } from "@pocketjs/framework/db";
+
+const db = new Database("notes.sqlite");
+db.exec("CREATE TABLE IF NOT EXISTS note (id INTEGER PRIMARY KEY, body TEXT)");
+
+const insert = db.query("INSERT INTO note (body) VALUES (?)");
+db.transaction(() => {
+  insert.run("first");
+  insert.run("second");
+})();
+
+for (const row of db.query("SELECT id, body FROM note").all()) {
+  console.log(row.id, row.body);
+}
+```
+
+| Member | Signature | Description |
+| --- | --- | --- |
+| `new Database` | `(name?: string)` | Open or create a database under the app's data root; the default is `":memory:"` (`DB_MEMORY`). Throws where `globalThis.db` is unmounted or the host refuses the name. |
+| `query` | `(sql: string) => Statement` | A `Statement` cached on this `Database` by SQL text. The prepared handle is host-side and keyed by the same string, so there is nothing to finalize and no handle to leak. |
+| `prepare` | `(sql: string) => Statement` | The uncached spelling. |
+| `run` | `(sql: string, params?: SqlParams) => RunResult` | One statement for effect, through the cache. |
+| `exec` | `(sql: string) => void` | One or more statements with no parameters and no result rows — the schema and migration path. |
+| `transaction` | `(fn: (...args) => R) => (...args) => R` | Wraps `fn` in `BEGIN`/`COMMIT`, `ROLLBACK` on throw; a nested call becomes a `SAVEPOINT`. Returns the wrapped function — call it. |
+| `close` | `() => void` | Drop the cached statements and close the handle. |
+
+A `Statement` takes positional values (`stmt.all(1, "x")`), one array, or one
+named-parameter object, and reads back through `get()` (first row as a
+column-keyed object, or `null`), `all()` (every row as objects), `values()`
+(every row as an array in column order), or `run()`
+(`{ changes, lastInsertRowid }`). `columnNames` holds the last execution's
+columns and is empty before the first run.
+
+A cell or a bound value is `null`, a number, a string, a boolean, or a
+`Uint8Array` for a `BLOB`. **An integer whose magnitude exceeds
+`DB_MAX_SAFE_INTEGER` (2^53 − 1) throws instead of losing precision**, and a
+non-finite number throws the same way — store money in cents.
+
+## `@pocketjs/framework/fs`
+
+Files in the Bun shape — `file(path)` plus the `node:fs` sync subset Bun
+implements — over the nine-op `fs` spec (`read`, `write`, `remove`, `list`,
+`stat`, `mkdir`, `rename`, `usage`, `lastError`). Every call is synchronous,
+and `await` on a plain value unwraps it, so `await file(p).text()` and
+`await write(p, data)` both run here.
+
+```ts
+import { file, write, readdirSync } from "@pocketjs/framework/fs";
+
+write("saves/slot1.json", JSON.stringify(state));
+if (file("saves/slot1.json").exists()) restore(file("saves/slot1.json").json());
+for (const name of readdirSync("saves")) console.log(name);
+```
+
+| Export | Signature | Description |
+| --- | --- | --- |
+| `file` | `(path: string) => PocketFile` | A lazy handle; nothing is read until a method runs. |
+| `PocketFile` | `.size`, `.exists()`, `.bytes()`, `.text()`, `.json()`, `.delete()` | `size` is `0` for a missing file (Bun's behavior); `exists()` is true only for a file. |
+| `write` | `(path, data: string \| Uint8Array) => number` | Replace the file, creating parent directories. Returns bytes written. |
+| `usage` | `() => { usedBytes: number; quotaBytes: number }` | The app's storage footprint and budget; `quotaBytes: 0` is unmetered. |
+| `readFileSync` | `(path, encoding?: "utf8") => Uint8Array \| string` | Bytes, or a string with `"utf8"`. |
+| `writeFileSync` / `appendFileSync` | `(path, data) => void` | Truncating and appending writes. |
+| `mkdirSync` | `(path) => void` | Recursive and idempotent: every missing ancestor is created. |
+| `readdirSync` | `(path, options?: { withFileTypes: true }) => string[] \| DirEntry[]` | Names, or `{ name, kind, size, isFile(), isDirectory() }` entries. |
+| `rmSync` | `(path, options?: { recursive?: boolean; force?: boolean }) => void` | `recursive` removes a tree; `force` swallows "not found". |
+| `renameSync` | `(from, to) => void` | Move within the data root. |
+| `statSync` | `(path) => { size, isFile(), isDirectory() }` | Throws where the path does not exist. |
+| `existsSync` | `(path) => boolean` | True for a file or a directory. |
+
+A path carries at most `FS_MAX_DEPTH` (8) segments, 64 bytes per segment and
+160 bytes in total. The SDK chunks reads and writes at `FS_MAX_IO_BYTES`
+(64 KiB), so a file's size is bounded by storage and any host quota rather
+than by the marshaling ceiling.
+
+## `@pocketjs/framework/audio`
+
+Streams s16 PCM to the host's `audio` namespace on a credit budget. Declare
+`audio.pcm` in the manifest. Where no host mounts the module every player call
+is a no-op and the app's tick-driven UI stays byte-identical, so an audio
+enhancement needs no branch around it.
+
+```ts
+import { createWavPlayer } from "@pocketjs/framework/audio";
+import { onFrame } from "@pocketjs/framework/lifecycle";
+
+const player = createWavPlayer();
+player.load("theme"); // the pak entry audio:wav.theme
+player.play();
+onFrame(() => player.pump());
+```
+
+**`pump()` must be called once per frame from the app's `onFrame`.** It drains
+the tick's event batch — the host's credit, underrun, and ended events — then
+refills the ring with at most one `writePcm` inside the credit the host
+granted, which is what keeps a frame's hot path free of host queries. Nothing
+plays without it: a track played before its first feed opens the tap inside
+the first `pump()` that pours into it.
+
+| Export | Signature | Description |
+| --- | --- | --- |
+| `decodeWav` | `(bytes: Uint8Array) => WavPcm` | Parse RIFF/WAVE into `{ sampleRate, channels, frames, data }`. Throws on anything but 16-bit PCM, mono or stereo, at a rate in `AUDIO_RATES`. |
+| `createWavPlayer` | `() => WavPlayer` | A player holding one track at a time. |
+
+`WavPlayer` is `load(name)` (a pak `audio:wav.<name>` entry) or
+`loadPcm(pcm)`, `play()`, `pause()`, `toggle()`, `stop()` (flush the ring and
+rewind to frame 0), `setVolume(0..1)`, `pump()`, `playing()`,
+`positionFrames()`, `durationFrames()`, `stats()` (`{ underruns }`), and
+`dispose()`.
+
+## `@pocketjs/framework/launcher`
+
+The guest side of whole-app switching on hosts that embed several bundles,
+over spec ops 39–41 (`appTable`, `appLaunch`, `appShot`). A single-app host
+omits the ops and each function degrades, so a launcher bundle stays
+admissible anywhere and renders its empty state.
+
+| Export | Signature | Description |
+| --- | --- | --- |
+| `launcherActive` | `() => boolean` | Whether the active host can switch apps. |
+| `appTable` | `() => AppTable \| null` | `{ apps: { output, id, title }[], current, resume }` in registry order; `null` without the op. `current` is the running bundle's output name; `resume` is the app the last SELECT summon interrupted, `null` after a cold boot or an explicit launch. |
+| `launchApp` | `(output: string) => boolean` | Request a whole-guest switch; the host swaps after the current frame presents. `false` for an unknown output or a host without switching. |
+| `frozenShot` | `() => number` | Texture handle of the frame the summon froze (256×128 PSM_8888), `-1` when none was captured. Bind it with `registerTexture(key, handle)` and draw it as `<Image src={key}>`. |
+
+Resuming is `launchApp(resume)`, a fresh relaunch — this protocol has no
+suspend.
 
 ## `@pocketjs/framework/hot`
 

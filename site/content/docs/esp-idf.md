@@ -12,7 +12,7 @@ component that creates an owner task.
 | --- | --- |
 | ESP-IDF | `>=6.0,<6.2` |
 | JavaScript engine | `espressif/quickjs-ng` 0.14.0, pulled by `pocketjs_guest` |
-| Prebuilt `.pocket` | No Bun requirement during `idf.py build` |
+| Prebuilt `.pocket` | Python 3 for the embed step; no Bun and no `pocket` CLI during `idf.py build` |
 | Source application | Installed `pocket` CLI and Bun |
 | Native core | Prebuilt in Registry releases; Rust is optional for consumers |
 
@@ -60,7 +60,7 @@ input contract implemented by that product:
 ```
 
 `id` occupies at most 15 UTF-8 bytes because it is stored in the `.pocket`
-variant table. Capabilities describe framework APIs that the firmware actually
+variant table. Capabilities describe framework APIs that the firmware
 delivers. A GPIO, touch controller, or analog device does not belong in this
 file unless the native host converts it into the corresponding PocketJS input
 contract. **A profile that advertises `input.touch` is limited to 512×512
@@ -99,7 +99,12 @@ pocketjs_embed_package(
 
 The generated `pocketjs_package_dashboard.h` exports the borrowed package
 bytes and the host contract extracted from its binary host-input section.
-**This path does not invoke Bun or Rust during `idf.py build`.**
+During `idf.py build` this path runs one tool: `project_include.cmake` resolves
+the IDF `PYTHON` interpreter (or `python3`/`python` from `PATH`) and runs the
+component's `tools/embed_package.py`, which turns the `.pocket` file and the
+host profile into the generated `.h`, `.c`, and `.S`. **Neither Bun nor the
+`pocket` CLI runs**, and the native core and renderer link from the prebuilt
+archives unless `POCKETJS_RUST_FROM_SOURCE=ON`.
 
 ### Compile from the IDF build
 
@@ -212,6 +217,15 @@ closures; they do not use the QuickJS context opaque slot. Other native
 extensions can coexist in the same guest.
 
 ```c
+const pocketjs_ui_qjs_config_t binding_config = {
+    .struct_size = sizeof(binding_config),
+    .target_id = pocketjs_package_dashboard_contract.target_id,
+    .host_abi = pocketjs_package_dashboard_contract.host_abi,
+};
+pocketjs_ui_qjs_t *binding = NULL;
+ESP_ERROR_CHECK(
+    pocketjs_ui_qjs_create(guest, core, &binding_config, &binding));
+
 ESP_ERROR_CHECK(pocketjs_ui_qjs_feed_pak(binding, app.pak.data, app.pak.size));
 ESP_ERROR_CHECK(pocketjs_ui_qjs_mount(binding));
 ESP_ERROR_CHECK(pocketjs_guest_eval(
@@ -344,5 +358,7 @@ The native core and renderer do not promise to translate every OOM into
 
 `hosts/esp-idf/examples/smoke` compiles and links the caller-driven package,
 guest, UI, renderer, and P4 accelerator path. `examples/runner` executes the
-same package on the optional owner task. Both examples use a headless RGB565
-buffer; product panel initialization remains in the BSP.
+same package on the optional owner task. `examples/prebuilt` builds the same
+`smoke` sources against a checked-in `idf-smoke.pocket`, so its build needs no
+`pocket` CLI and no Bun. All three use a headless RGB565 buffer; product panel
+initialization remains in the BSP.
