@@ -1,7 +1,12 @@
 # Core Memory Benchmark Baseline
 
-This receipt was measured at `b7dd46f`, based on `origin/main` revision
-`2d20ddad228db52fa29ad7d7d06f44e8672164af`.
+The benchmark harness was based on the latest `origin/main` revision
+`2d20ddad228db52fa29ad7d7d06f44e8672164af`; the first receipt was measured at
+harness commit `b7dd46f`. The benchmark implementation was introduced
+separately at `0821ddf`. `git_revision` identifies the revision where the
+receipt was measured, while `origin_main_revision` identifies the source
+revision used as the harness base. This receipt was not measured from
+`origin/main` itself.
 
 The byte values below are **allocator-independent requested-byte metrics** from
 the counting allocator. They are not process RSS, committed pages, or PSP arena

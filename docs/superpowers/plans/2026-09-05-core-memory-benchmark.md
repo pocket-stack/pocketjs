@@ -128,11 +128,14 @@ The test must fail if fixture construction or report formatting becomes part of
 the measured allocation window. It must assert that all required fields are
 present and non-negative.
 
-- [ ] **Step 2: Record a baseline from latest `origin/main`**
+- [ ] **Step 2: Record a baseline from a harness based on latest `origin/main`**
 
 Generate a JSON receipt from the benchmark and a short Markdown table that
-labels the values as allocator-independent requested-byte metrics. Include the
-exact command, Rust toolchain, git revision, workload shape, and checksum.
+labels the values as allocator-independent requested-byte metrics. The harness
+may be based on the latest `origin/main`, but the receipt is measured at the
+harness's own `git_revision`, not from `origin/main`; record
+`origin_main_revision` separately. Include the benchmark implementation
+revision, exact command, Rust toolchain, workload shape, and checksum.
 
 - [ ] **Step 3: Run core verification**
 

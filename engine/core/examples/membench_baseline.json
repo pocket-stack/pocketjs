@@ -6,6 +6,7 @@
   },
   "git_revision": "b7dd46f",
   "origin_main_revision": "2d20ddad228db52fa29ad7d7d06f44e8672164af",
+  "benchmark_implementation_revision": "0821ddf",
   "workload": {
     "shape": "99 nodes; 24 steady ticks; 8 rounds of 4-node subtree churn; 16 text ticks; 12 burst ticks",
     "text_mode": "atlas",
