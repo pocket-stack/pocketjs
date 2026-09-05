@@ -29,6 +29,8 @@ PSP_SDK="$PSP_SDK" BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts --apps=stat
 | selected app | `stats` |
 | framework | `solid` |
 | samples | `3` |
+| report path | `null` (unavailable) |
+| checksum | `null` (unavailable) |
 
 ## Metrics
 

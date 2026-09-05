@@ -3,6 +3,8 @@
   "selected_app": "stats",
   "framework": "solid",
   "samples": 3,
+  "report_path": null,
+  "checksum": null,
   "commands": {
     "baseline": "PSP_SDK=\"$PSP_SDK\" BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts --apps=stats --samples=3",
     "memory_scan": "PSP_SDK=\"$PSP_SDK\" BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts --apps=stats --samples=3 --memory-scan"
