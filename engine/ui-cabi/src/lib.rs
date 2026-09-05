@@ -37,8 +37,16 @@ pub mod extension;
 ))]
 mod gl;
 
+/// `malloc` and the supported host allocator ABIs provide `max_align_t`
+/// storage: 16 bytes on their 64-bit targets and 8 on 32-bit ARM. Core texture
+/// storage uses `Vec<u128>`, so rejecting that natural alignment makes every
+/// texture allocation fail on a 64-bit C host.
 #[cfg(any(target_os = "none", feature = "bare-platform", test))]
-const C_MALLOC_ALIGNMENT: usize = 8;
+const C_MALLOC_ALIGNMENT: usize = if cfg!(target_pointer_width = "64") {
+    16
+} else {
+    8
+};
 
 #[cfg(any(target_os = "none", feature = "bare-platform", test))]
 #[inline]
@@ -61,7 +69,9 @@ unsafe extern "C" {
     feature = "host-allocator"
 ))]
 unsafe extern "C" {
+    /// Must return storage aligned to at least `C_MALLOC_ALIGNMENT`.
     fn pocket_host_alloc(size: usize) -> *mut c_void;
+    /// Must preserve alignment of the original allocation.
     fn pocket_host_realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
     fn pocket_host_free(ptr: *mut c_void);
 }
@@ -172,6 +182,24 @@ pub extern "C" fn pocketjs_symbian_extension_v1() -> *const extension::Extension
 #[inline]
 fn ui() -> &'static mut Ui {
     unsafe { UI.get_or_insert_with(Ui::new) }
+}
+
+/// Run `f` against an already initialized C ABI `Ui` singleton.
+///
+/// In-process harness crates enable `harness-access` to inspect DrawList words
+/// or replay mutations against the same core instance as the C guest runtime.
+/// Returns `None` before `ui_init` or after `ui_shutdown`; it never creates an
+/// implicit replacement instance.
+///
+/// # Safety
+///
+/// The caller must ensure there is no concurrent or reentrant UI access, must
+/// not call any `ui_*` C ABI function from `f`, and must prevent `ui_init` and
+/// `ui_shutdown` for the duration of the closure. Violating these requirements
+/// can alias the mutable borrow or drop the borrowed value.
+#[cfg(feature = "harness-access")]
+pub unsafe fn with_initialized_ui_unchecked<R>(f: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+    unsafe { UI.as_mut().map(f) }
 }
 
 #[inline]
@@ -838,8 +866,9 @@ mod tests {
     use pocketjs_core::spec;
 
     #[test]
-    fn c_allocator_rejects_alignments_above_c_malloc_guarantee() {
+    fn c_allocator_supports_core_texture_alignment() {
         assert!(c_allocator_supports_alignment(1));
+        assert!(c_allocator_supports_alignment(core::mem::align_of::<u128>()));
         assert!(c_allocator_supports_alignment(C_MALLOC_ALIGNMENT));
         assert!(!c_allocator_supports_alignment(C_MALLOC_ALIGNMENT * 2));
     }
@@ -850,8 +879,25 @@ mod tests {
         assert_eq!(draw_hash(&words), draw_hash(&words));
         assert_ne!(draw_hash(&words), draw_hash(&[0x0102_0304, 0x0506_0709]));
 
+        #[cfg(feature = "harness-access")]
+        assert!(unsafe { with_initialized_ui_unchecked(|_| ()) }.is_none());
         ui_init(1);
         ui_set_viewport(2.0, 1.0);
+        #[cfg(feature = "harness-access")]
+        assert_eq!(
+            unsafe { with_initialized_ui_unchecked(|ui| ui.viewport()) },
+            Some((2.0, 1.0)),
+        );
+        // This unit test uses Rust's default allocator. The linked C fixture in
+        // tests/ui-cabi-allocator.test.ts covers the bare-platform CAllocator.
+        let pixel = [0xff, 0x00, 0x00, 0xff];
+        assert!(ui_upload_texture(
+            pixel.as_ptr(),
+            pixel.len(),
+            1,
+            1,
+            spec::psm::PSM_8888 as u32,
+        ) >= 0);
         // Packed ABGR: R=0x33, G=0x22, B=0x11, A=0xff.
         ui_set_prop(
             spec::ROOT_ID,
@@ -868,5 +914,7 @@ mod tests {
         let pixels = unsafe { core::slice::from_raw_parts(framebuffer, 8) };
         assert_eq!(pixels, &[0x11, 0x22, 0x33, 0xff, 0x11, 0x22, 0x33, 0xff]);
         ui_shutdown();
+        #[cfg(feature = "harness-access")]
+        assert!(unsafe { with_initialized_ui_unchecked(|_| ()) }.is_none());
     }
 }

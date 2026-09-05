@@ -283,6 +283,72 @@ describe("basic mount", () => {
 });
 
 describe("<For> reorder — DOM move semantics [R]", () => {
+  test("rejects a foreign anchor before mutating either tree", () => {
+    const parent = createElement("view");
+    const other = createElement("view");
+    const node = createElement("view");
+    const anchor = createElement("view");
+    insertNode(root, parent);
+    insertNode(root, other);
+    insertNode(parent, node);
+    insertNode(other, anchor);
+    host.clear();
+
+    expect(() => insertNode(parent, node, anchor)).toThrow(
+      "PocketJS: insert anchor is not a child of parent",
+    );
+    expect(node.parent).toBe(parent);
+    expect(childIds(parent)).toEqual([node.id]);
+    expect(host.of("insertBefore", "removeChild")).toEqual([]);
+  });
+
+  test("pure reverse never anchors a node on itself (DOM pre-insertion)", () => {
+    interface Row {
+      id: number;
+    }
+    const first: Row[] = Array.from({ length: 6 }, (_, i) => ({ id: i + 1 }));
+    const [rows, setRows] = createSignal(first);
+    const byId = new Map<number, NodeMirror>();
+    const dispose = render(
+      () =>
+        comp(For, {
+          get each() {
+            return rows();
+          },
+          children: (row: Row) => {
+            const el = createElement("view");
+            byId.set(row.id, el);
+            return el;
+          },
+        }),
+      root,
+    );
+    runSweep();
+    host.clear();
+
+    setRows([...first].reverse());
+    runSweep();
+    expect(childIds(root)).toEqual(
+      [6, 5, 4, 3, 2, 1].map((id) => byId.get(id)!.id),
+    );
+    for (const call of host.of("insertBefore")) {
+      expect(call[2]).not.toBe(call[3]);
+    }
+    expect(host.of("createNode")).toEqual([]);
+    expect(host.of("destroyNode")).toEqual([]);
+
+    // Exercise the update-then-reverse shape used by the external benchmark.
+    const second = first.map((row, i) => (i === 2 ? { id: 99 } : row));
+    setRows(second);
+    runSweep();
+    setRows([...second].reverse());
+    runSweep();
+    expect(childIds(root)).toEqual(
+      [...second].reverse().map((row) => byId.get(row.id)!.id),
+    );
+    dispose();
+  });
+
   test("reorder moves nodes without duplicates and without destroys", () => {
     const [items, setItems] = createSignal(["a", "b", "c"]);
     const byLabel = new Map<string, NodeMirror>();

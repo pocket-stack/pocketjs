@@ -19,8 +19,8 @@ bun pocket build --target vita -- --release
 
 `check` validates the schema, capabilities, viewport, and reachable TypeScript.
 `compile` also writes `.pocket/<target>/plan.json` plus the target-specific JS
-and pak. `build` dispatches that same plan to the registered PSP or Vita native
-backend.
+and pak. `build` dispatches that same plan to the matching native backend —
+`tools/pocket.ts` registers one for `psp`, `vita`, and `pocketbook`.
 
 The lower-level compiler can still turn one entry into two files directly:
 
@@ -47,9 +47,9 @@ bun tools/build.ts hero-main --framework=octane
 
 The build is **two passes over the same module graph**. Pass 1 transforms every
 reachable source file and, in the same traversal, *collects* the class strings
-and text codepoints the app actually uses — so styles and fonts can be compiled
-for exactly that set. Pass 2 bundles, reusing the cached pass‑1 output. This
-page walks through both.
+and text codepoints the app uses — so styles and fonts compile for that set
+alone. Pass 2 bundles, reusing the cached pass‑1 output. This page walks
+through both.
 
 ## Invoking the low-level compiler
 
@@ -83,6 +83,10 @@ parser in QuickJS. See [ESP-IDF](/docs/esp-idf/#build-an-application-package).
 | `--config=<path>` | Load a different Pocket config file. |
 | `--no-config` | Ignore `pocket.config.ts`; defaults to Solid unless `--framework` is set. |
 | `--extra-chars=<string>` | Force these codepoints into **every** baked atlas, on top of the collected charset and ASCII. |
+| `--density=N` | Raster samples per logical pixel for this build — an integer 1 through 255, default 1. A resolved plan owns the density, so passing both is an error. |
+| `--hz=N` | Bake this virtual tick rate into the bundle — an integer 1 through 240, default 60. The host must drive the surface at the same rate; a bundle whose baked rate differs from the host's `ui.__tickHz` throws before it mounts. |
+| `--font-regular=<path>` | Use this TTF instead of Inter Regular for the regular slots. |
+| `--font-bold=<path>` | Use this TTF instead of Inter Bold for the bold slots. |
 
 ```sh
 bun tools/build.ts settings --extra-chars="←→↑↓✓✕"
@@ -100,8 +104,8 @@ The output name is derived from the entry path, and both artifacts share it:
 | `--framework=vue-vapor` | `<name>.vue-vapor.js`, `<name>.vue-vapor.pak` | Vue Vapor artifacts coexist with Solid artifacts |
 | `--framework=octane` | `<name>.octane.js`, `<name>.octane.pak` | Octane artifacts coexist with the other two |
 
-A demo typically has `app.tsx` (the exported UI) and `main.tsx` (a tiny file
-that imports the app and mounts it). You build `hero-main` when you want a
+A demo has `app.tsx` (the exported UI) and `main.tsx` (a tiny file that
+imports the app and mounts it). You build `hero-main` when you want a
 runnable, self‑mounting bundle; you build `hero` to bundle the component on its
 own. See [Components](/docs/components/) and [App shell](/docs/app-shell/) for
 what those entries contain.
@@ -142,9 +146,13 @@ lowered.
 Package imports are framework-aware during both pass 1 and pass 2. For example,
 `@pocketjs/framework/components` resolves to `framework/src/components.ts` for Solid,
 `framework/src/components-vue-vapor.ts` for Vue Vapor, and
-`framework/src/components-octane.tsx` for Octane. The mapping is centralized in
-`framework/compiler/jsx-plugin.ts`; see [Frameworks](/docs/frameworks/) for the public
-contract.
+`framework/src/components-octane.tsx` for Octane. **One row per public subpath in
+`framework/compiler/subpaths.ts` owns that mapping**, and both the compiler's import
+resolution and the npm `exports` map in `package.json` are derived from it
+(`bun run gen` regenerates the latter). `jsx-plugin.ts` reads the derived table; it
+does not hold its own. A row's per-framework availability also fixes what pass 1
+walks, so widening one changes class collection and therefore `styles.bin` bytes.
+See [Frameworks](/docs/frameworks/) for the public contract.
 
 ### What it collects
 
@@ -163,7 +171,7 @@ lowerer rewrites subtrees), a collector visitor records:
 ### Build‑time lints
 
 Some patterns can't work on the PSP or don't fit the build‑time styling model,
-so the transform **throws with a code frame** rather than silently miscompiling:
+so the transform **throws with a code frame** rather than miscompiling:
 
 | Lint | Why |
 |---|---|
@@ -182,23 +190,24 @@ the cache automatically. Because pass 2 loads through the *same* `transformFile`
 the expensive Babel work runs once per file per build and pass 2 gets it for
 free.
 
-The walker skips `*.generated.ts` files entirely — the generated styles module
-(below) must never feed its own synthetic literals back into the scan.
+The walker skips one path: the one ending in `/styles.generated.ts`. Its
+literals **are** the compiled class names, so collecting them would feed the
+compiler its own output. Every other generated module — a launcher's asset
+registry, say — is ordinary app source whose literals pass 1 must see.
 
 A pass‑1 summary line looks like:
 
 ```
-PocketJS build: hero (/…/apps/hero/app.tsx)
-  pass 1: 7 module(s), 42 candidate literal(s), 96 codepoint(s)
+PocketJS build: hero (/…/apps/hero/app.tsx, framework=solid)
+  pass 1: 33 module(s), 415 candidate literal(s), 88 codepoint(s)
 ```
 
 ## Compile styles
 
 The collected class strings go to `compileClasses()`. Each candidate literal
 compiles to a **style record** if and only if *every* whitespace‑separated token
-parses as a supported utility; otherwise the literal is silently ignored (it was
-ordinary text). See [Styling](/docs/styling/) and the [Tailwind subset](/docs/tailwind/)
-for the utility set.
+parses as a supported utility; otherwise the literal is ignored (it was
+ordinary text). See [Styling](/docs/styling/) for the utility set.
 
 Two literals that produce byte‑identical records share a single styleId, so
 `class="p-2 bg-slate-700"` and `class="bg-slate-700 p-2"` cost one record. The
@@ -235,16 +244,28 @@ both `w-N` and `h-N` (the radius must be build‑time bakeable), and any `hover:
 variant (the PSP has no pointer — use `focus:`/`active:`).
 
 ```
-  tailwind: 18 style record(s), 23 literal(s) -> framework/src/styles.generated.ts
+  tailwind: 48 style record(s), 0 baked timeline(s), 48 literal(s) -> framework/src/styles.generated.ts
 ```
 
 ## Bake fonts
 
-`bakeAtlases()` bakes one **Inter** atlas per font slot referenced by the
-compiled styles (`styles.usedFontSlots`, which always includes the 16px‑regular
-default slot). Slots are pinned pairs of size and weight — sizes
-`12/14/16/18/20/24/36` px, regular and bold — chosen by `text-*` and `font-bold`
-utilities.
+`bakeAtlases()` bakes one atlas per font slot referenced by the compiled styles
+(`styles.usedFontSlots`, which always includes the 16px‑regular default slot).
+A slot is a pinned (size, weight, family) triple chosen by the `text-*`,
+`font-bold`, and `font-mono` utilities. The table lives in
+`framework/compiler/tailwind.ts` and holds up to `MAX_FONT_SLOTS` = 24 entries.
+The assigned slots:
+
+| Slots | Face | Sizes |
+|---|---|---|
+| 0–6 | Inter Regular | 12/14/16/18/20/24/36 px |
+| 7–13 | Inter Bold | the same seven sizes |
+| 14, 15 | Inter Regular / Bold | 54 px |
+| 16–18 | JetBrains Mono Regular | 12/14/16 px |
+
+A bold request under `font-mono` still lands on the mono slot for its size —
+there is no bold mono face. `--font-regular` and `--font-bold` swap the Inter
+faces for one build; the mono face has no flag.
 
 The charset baked into every slot is the union of:
 
@@ -252,8 +273,13 @@ The charset baked into every slot is the union of:
 - the **codepoints collected in pass 1** (printable, excluding DEL);
 - anything passed via **`--extra-chars`**.
 
-Codepoints the font doesn't map are left out; the core resolves a cmap miss to
-glyph 0 (a hollow "tofu" box) at runtime. Each atlas is horizontally
+Codepoints the font does not map are left out of the atlas. **On a target whose
+profile carries only `text.glyphs.baked`, a codepoint missing from the atlas
+resolves to glyph 0 — a drawn hollow "tofu" box, also mapped from U+FFFD so it
+has an advance.** A target that also advertises `text.glyphs.runtime`
+(`macos-widget` today) rasterizes the missing glyph from a system font and
+reloads the atlas through `loadFontAtlas`, so tofu is what an app that accepts
+arbitrary text gets on a baked-only target. Each atlas is horizontally
 supersampled 8‑bit coverage cells plus proportional advances and a cmap, and is
 packed into the pak as `ui:font.<slot>`.
 
@@ -262,8 +288,8 @@ logical pixel; Vita bakes two while preserving the same logical font metrics,
 so layout remains 480×272 and glyph edges use the full 960×544 framebuffer.
 
 ```
-  font: slot 2 (16px) 96 glyphs, cell 10x19, 18240 bytes
-  font: slot 9 (16px bold) 96 glyphs, cell 11x19, 20064 bytes
+  font: slot 2 (16px) 99 glyphs, cell 16x20, coverage 16x20 @1x, 32488 bytes
+  font: slot 9 (16px bold) 99 glyphs, cell 17x20, coverage 17x20 @1x, 34468 bytes
 ```
 
 ## Gather images
@@ -279,9 +305,13 @@ in `assets/images/`, then in `assets/`:
 - if nothing is found, a **32×32 checkerboard placeholder** is baked so the
   build still succeeds (with a warning).
 
-Each image is encoded as an `8888` (RGBA) texture entry and packed as
-`ui:img.<name>`. Texture dimensions must be power-of-two and within the hardware
-limit.
+Each image is packed as `ui:img.<name>`, encoded `PSM_8888` (RGBA) unless the
+app overrides it. An optional `images.json` next to the entry maps an asset name
+to `{ linear, psm }`: **`psm: 2` selects `PSM_4444` and halves that texture's
+memory**, `linear` sets `IMG_FLAG_LINEAR` so the core samples it bilinearly
+(rotated or scaled art). A name listed in the app's `sprites.json` becomes a
+`ui:sprite.<name>` atlas entry instead, with the same `psm` override. Texture
+dimensions must be power-of-two and within the hardware limit.
 
 For density-2 targets the compiler prefers a sibling `@2x` PNG and otherwise
 falls back to the base bitmap. SVGs and rounded masks rasterize directly at the
@@ -289,7 +319,7 @@ resolved density; their logical dimensions do not change. Runtime texture
 producers use `platform.pixelRatio` instead of branching on a target name.
 
 ```
-  image: logo.png <- /…/apps/hero/logo.png (128x64)
+  image: logo.png <- /…/assets/images/logo.png (64x64)
 ```
 
 ## Pack the pak
@@ -315,7 +345,7 @@ and how the PSP feeds them straight into the Rust core from `include_bytes!`
 without touching the JS heap — is covered in the [Native contract](/docs/native-contract/).
 
 ```
-  pak: 4 entries, 20480 bytes -> dist/hero.pak
+  pak: 20 entries, 986400 bytes -> /…/dist/hero.pak
 ```
 
 ## Pass 2 — bundle
@@ -325,14 +355,25 @@ With the style table compiled, `Bun.build` bundles the app:
 ```ts
 Bun.build({
   entrypoints: [entry],
+  root: process.cwd(),
+  outdir: DIST,
   naming: `${outName}.js`,
   format: "iife",
   target: "browser",
   conditions: ["browser"],
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: {
+    "process.env.NODE_ENV": '"production"',
+    __POCKET_TARGET__: JSON.stringify(buildPlan?.target.id ?? ""),
+    __POCKET_HOST_ABI__: String(buildPlan?.target.hostAbi ?? 0),
+    __POCKET_FEATURES__: JSON.stringify(buildPlan?.features ?? {}),
+    __POCKET_PIXEL_RATIO__: String(rasterDensity),
+    __POCKET_TICK_HZ__: String(tickHz),
+    ...(framework === "vue-vapor" ? { document: "globalThis.__pocketDocument" } : {}),
+  },
   minify: false,
+  metafile: true,
   sourcemap: "none",
-  plugins: [jsxPlugin(framework, { entry, generatedStyles })],
+  plugins: [jsxPlugin(framework, { entry, features: buildPlan?.features, generatedStyles })],
 });
 ```
 
@@ -347,8 +388,13 @@ never be shipped that the bundle doesn't use, or vice versa.
 
 With a resolved plan, pass 1 also replaces literal
 `hasFeature("capability.id")` calls with `true` or `false`; normal tree shaking
-can then remove an unavailable enhancement branch. Pass 2 defines the target,
-HostOps ABI, feature map, and pixel ratio consumed by the runtime contract.
+can then remove an unavailable enhancement branch. Pass 2 bakes five constants
+the runtime contract reads: `__POCKET_TARGET__` and `__POCKET_HOST_ABI__` (empty
+and 0 without a plan, which is how a plan-less bundle skips the target/ABI
+check), `__POCKET_FEATURES__`, `__POCKET_PIXEL_RATIO__` (the resolved raster
+density), and `__POCKET_TICK_HZ__` (the `--hz` rate, 60 by default). A Vue Vapor
+build adds a sixth define, rewriting the bare `document` identifier to
+`globalThis.__pocketDocument`.
 
 A few settings are deliberate:
 
@@ -363,7 +409,7 @@ A few settings are deliberate:
   the pak instead.
 
 ```
-  pass 2: dist/hero.js (128000 bytes)
+  pass 2: /…/dist/hero.js (73814 bytes)
 PocketJS build: done
 ```
 
@@ -379,7 +425,7 @@ constants.
 
 ## Related
 
-- [Styling](/docs/styling/) and [Tailwind subset](/docs/tailwind/) — what the class compiler accepts.
+- [Styling](/docs/styling/) — what the class compiler accepts.
 - [Native contract](/docs/native-contract/) — how a host consumes the pak and drives the core.
 - [Architecture](/docs/architecture/) — where the renderer, core, and hosts fit together.
 - [Getting started](/docs/getting-started/) — install, scaffold, and run your first build.

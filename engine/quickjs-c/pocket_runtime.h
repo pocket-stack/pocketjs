@@ -4,6 +4,21 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Stage ids delivered to pocket_bench_stage() when pocket_runtime.c is
+ * compiled with POCKET_RUNTIME_STAGE_HOOKS. Production hosts do not define
+ * that switch, so the calls compile away.
+ */
+#define POCKET_BENCH_STAGE_IDLE 0
+#define POCKET_BENCH_STAGE_EVAL 1
+#define POCKET_BENCH_STAGE_JS 2
+#define POCKET_BENCH_STAGE_JOBS 3
+#define POCKET_BENCH_STAGE_TICK 4
+
+#if defined(POCKET_RUNTIME_STAGE_HOOKS)
+void pocket_bench_stage(int stage);
+#endif
+
 int pocket_runtime_boot(
   const char *java_script,
   size_t java_script_length,
@@ -71,6 +86,16 @@ int pocket_runtime_frame_ticks(
   int touch_hit,
   unsigned int tick_count
 );
+#if defined(POCKET_RUNTIME_HARNESS)
+/*
+ * Bind a global harness dispatcher function in the live guest realm, then call
+ * it with two int32 arguments. The result is converted to int32 when `out` is
+ * non-NULL. Neither operation drains jobs or emits a stage callback; the
+ * embedding owns attribution for synchronous work and queued jobs.
+ */
+int pocket_runtime_harness_bind(const char *global_function);
+int pocket_runtime_harness_call(int32_t opcode, int32_t argument, int32_t *out);
+#endif
 int pocket_runtime_hit_test(float x, float y);
 int pocket_runtime_hit_test_bounds(float x, float y);
 const char *pocket_runtime_action_name(void);
