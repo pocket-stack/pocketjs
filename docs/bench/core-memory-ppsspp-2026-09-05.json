@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "status": "BLOCKED",
   "selected_app": "stats",
   "framework": "solid",
@@ -6,8 +7,23 @@
   "report_path": null,
   "checksum": null,
   "commands": {
-    "baseline": "PSP_SDK=\"$PSP_SDK\" BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts --apps=stats --samples=3",
-    "memory_scan": "PSP_SDK=\"$PSP_SDK\" BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts --apps=stats --samples=3 --memory-scan"
+    "baseline": {
+      "command": "PSP_SDK=\"$PSP_SDK\" BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts --apps=stats --samples=3",
+      "status": "BLOCKED",
+      "exit_status": 1,
+      "blocker": "PPSSPPHeadless not found at /Users/quake/ppsspp-src/build/PPSSPPHeadless"
+    },
+    "memory_scan": {
+      "command": "PSP_SDK=\"$PSP_SDK\" BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts --apps=stats --samples=3 --memory-scan",
+      "status": "BLOCKED",
+      "exit_status": 1,
+      "blocker": "PPSSPPHeadless not found at /Users/quake/ppsspp-src/build/PPSSPPHeadless"
+    }
+  },
+  "execution_context": {
+    "checkout": "git checkout --detach 2e93828",
+    "git_revision_used_for_both_attempts": "2e93828",
+    "later_metadata_commits_benchmarked": false
   },
   "revisions": {
     "git_revision": "2e93828",
@@ -25,8 +41,13 @@
   },
   "blocker": {
     "psp_sdk": "unset",
+    "ppsspp_headless_override": "unset/unknown",
     "ppsspp_headless": "/Users/quake/ppsspp-src/build/PPSSPPHeadless",
     "reason": "Required PSP_SDK and PPSSPPHeadless dependencies are unavailable; both commands failed before the benchmark ran."
+  },
+  "field_definitions": {
+    "report_path": "Expected generated JSON report path under dist/bench/ (ppsspp-bench-<timestamp>.json); null means no report was generated.",
+    "checksum": "Checksum of the benchmark drawlist used by the run; null means no benchmark ran."
   },
   "caveat": "PPSSPP measurements are emulator evidence, not real PSP hardware proof. Arena high-water is a practical allocator capacity requirement, not a precise live-object heap profile."
 }
