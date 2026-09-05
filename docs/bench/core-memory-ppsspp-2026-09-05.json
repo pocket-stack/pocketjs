@@ -1,0 +1,30 @@
+{
+  "status": "BLOCKED",
+  "selected_app": "stats",
+  "framework": "solid",
+  "samples": 3,
+  "commands": {
+    "baseline": "PSP_SDK=\"$PSP_SDK\" BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts --apps=stats --samples=3",
+    "memory_scan": "PSP_SDK=\"$PSP_SDK\" BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts --apps=stats --samples=3 --memory-scan"
+  },
+  "revisions": {
+    "git_revision": "2e93828",
+    "ppsspp_revision": null
+  },
+  "metrics": {
+    "arena_bump_bytes": null,
+    "arena_tail_free_bytes": null,
+    "avg_tick_us": null,
+    "avg_work_us": null,
+    "max_work_us": null,
+    "uncapped_arena_bump_bytes": null,
+    "min_pass_arena_bytes": null,
+    "safe_arena_bytes": null
+  },
+  "blocker": {
+    "psp_sdk": "unset",
+    "ppsspp_headless": "/Users/quake/ppsspp-src/build/PPSSPPHeadless",
+    "reason": "Required PSP_SDK and PPSSPPHeadless dependencies are unavailable; both commands failed before the benchmark ran."
+  },
+  "caveat": "PPSSPP measurements are emulator evidence, not real PSP hardware proof. Arena high-water is a practical allocator capacity requirement, not a precise live-object heap profile."
+}
