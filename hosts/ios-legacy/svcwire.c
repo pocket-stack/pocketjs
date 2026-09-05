@@ -152,6 +152,11 @@ static int set_nonblocking(int fd) {
   return flags >= 0 && fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
+static int disable_sigpipe(int fd) {
+  int enabled = 1;
+  return setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof enabled) == 0;
+}
+
 static void enter_state(SvcState next) {
   state = next;
   state_since_ms = now_ms();
@@ -232,7 +237,7 @@ static int poll_listener(int adopt) {
   if (listen_fd < 0) return 0;
   fd = accept(listen_fd, (struct sockaddr *)&peer, &peer_length);
   if (fd < 0) return 0;
-  if (!adopt || !set_nonblocking(fd)) {
+  if (!adopt || !set_nonblocking(fd) || !disable_sigpipe(fd)) {
     close(fd);
     return 0;
   }
@@ -336,7 +341,7 @@ static void start_connect(void) {
     enter_state(SVC_STATE_BACKOFF);
     return;
   }
-  if (!set_nonblocking(fd)) {
+  if (!set_nonblocking(fd) || !disable_sigpipe(fd)) {
     close(fd);
     enter_state(SVC_STATE_BACKOFF);
     return;
@@ -466,7 +471,8 @@ static void handle_frame(uint8_t type, const uint8_t *payload, uint32_t length) 
 }
 
 static void pump_rx(void) {
-  for (;;) {
+  /* A continuously readable peer must still yield to the next UI frame. */
+  for (unsigned reads = 0; reads < 4; ++reads) {
     int progressed;
     /* An oversized (or unwanted-bulk) payload is drained without buffering. */
     if (skip_remaining > 0) {
