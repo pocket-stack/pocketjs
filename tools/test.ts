@@ -101,6 +101,7 @@ const SUITE: readonly Stage[] = [
     tests: [
       "tests/tailwind.test.ts",
       "tests/renderer.test.ts",
+      "tests/resource.test.ts",
       "tests/virtual-list.test.ts",
       "tests/touch-activation.test.ts",
       "tests/portal-hit.test.ts",

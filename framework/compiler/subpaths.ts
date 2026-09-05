@@ -58,6 +58,8 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
   "offload/provider": { file: "tools/offload-provider.ts" },
   "offload/capabilities": { file: "tools/offload-capabilities.ts" },
   offload: { file: "framework/src/offload.ts", aliases: TWINS },
+  "resource-state": { file: "framework/src/resource-state.ts", aliases: TWINS },
+  resource: { file: { solid: "framework/src/resource.ts" } },
   audio: { file: "framework/src/audio-api.ts", aliases: TWINS },
   clock: { file: "framework/src/clock.ts", aliases: TWINS },
   config: { file: "framework/src/config.ts" },
