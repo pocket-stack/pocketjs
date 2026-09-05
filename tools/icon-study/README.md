@@ -32,8 +32,8 @@ labels its 3DS images as RGB PNG previews and hides the SMDH download.
 The iOS drawing mounts the geometry from `site/assets/favicon.svg`, recolored
 for each proposal. One radial light replaces the old straight-sided gloss
 shape. The outer trim uses one gradient with three stops. The baker emits
-opaque 57, 114, and 512 px images; the 512 px file is a source-art preview.
-The webpage supplies the display mask and outside shadow. A future installed
+pre-masked 57, 114, and 512 px images with transparent corners; the 512 px file is a source-art preview.
+The PNG supplies the display mask; the webpage supplies the outside shadow. A future installed
 selection must retain `UIPrerenderedIcon`, update its versioned resource name,
 and pass a fresh SpringBoard cache/visual check.
 
@@ -61,7 +61,7 @@ SMDH pass is enabled.
 
 ## Validation scope
 
-The bake command checks output opacity and dimensions through fixed-size
+The bake command checks 3DS opacity and output dimensions through fixed-size
 canvas generation, SMDH magic/length, and every decoded candidate pixel. The
 manifest records 20 PNG inputs and five packaged SMDH files when enabled.
 The contact sheet contains native sizes and enlarged baked pixels for visual

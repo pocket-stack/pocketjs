@@ -31,7 +31,7 @@ export function artwork(v: Variant, platform: "ios" | "3ds", size: number): stri
     <radialGradient id="light" cx=".38" cy="0" r=".9"><stop stop-color="#fff" stop-opacity="${v.gloss}"/><stop offset=".8" stop-color="#fff" stop-opacity="0"/></radialGradient>
     <linearGradient id="edge" x2="0" y2="1"><stop stop-color="${v.rim}"/><stop offset=".45" stop-color="${v.bottom}"/><stop offset="1" stop-color="${v.rim}"/></linearGradient>
   </defs>
-  <rect width="${units}" height="${units}" fill="${v.bottom}"/>
+  ${ios ? "" : `<rect width="${units}" height="${units}" fill="${v.bottom}"/>`}
   ${ios ? `<rect x=".75" y=".75" width="112.5" height="112.5" rx="22" fill="url(#edge)"/>
   <rect x="2.25" y="2.25" width="109.5" height="109.5" rx="20.5" fill="url(#base)"/>
   <rect x="2.25" y="2.25" width="109.5" height="109.5" rx="20.5" fill="url(#light)"/>

@@ -1,7 +1,7 @@
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 
 /** Rasterize vector artwork once, then average exact sample areas. */
-export async function rasterizeIconSvg(svg: string, width: number, height = width) {
+export async function rasterizeIconSvg(svg: string, width: number, height = width, requireOpaque = true) {
   const scale = 4;
   const sized = svg.replace(/(<svg\b[^>]*\bwidth=")[^"]+("[^>]*\bheight=")[^"]+"/, `$1${width * scale}$2${height * scale}"`);
   if (sized === svg) throw new Error("Icon SVG must declare width and height");
@@ -14,12 +14,20 @@ export async function rasterizeIconSvg(svg: string, width: number, height = widt
   const ctx = canvas.getContext("2d");
   const result = ctx.createImageData(width, height);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    for (let c = 0; c < 4; c++) {
-      let sum = 0;
-      for (let yy = 0; yy < scale; yy++) for (let xx = 0; xx < scale; xx++) sum += pixels[((y * scale + yy) * big.width + x * scale + xx) * 4 + c];
-      result.data[(y * width + x) * 4 + c] = Math.round(sum / (scale * scale));
+    const sums = [0, 0, 0];
+    let alpha = 0;
+    for (let yy = 0; yy < scale; yy++) for (let xx = 0; xx < scale; xx++) {
+      const i = ((y * scale + yy) * big.width + x * scale + xx) * 4;
+      const a = pixels[i + 3];
+      alpha += a;
+      for (let c = 0; c < 3; c++) sums[c] += pixels[i + c] * a;
     }
-    if (result.data[(y * width + x) * 4 + 3] !== 255) throw new Error("Icon artwork must be opaque");
+    const i = (y * width + x) * 4;
+    // Average premultiplied samples, then return straight RGBA to Canvas.
+    // Averaging transparent black into RGB leaves a dark halo at the mask.
+    for (let c = 0; c < 3; c++) result.data[i + c] = alpha ? Math.round(sums[c] / alpha) : 0;
+    result.data[i + 3] = Math.round(alpha / (scale * scale));
+    if (requireOpaque && result.data[i + 3] !== 255) throw new Error("Icon artwork must be opaque");
   }
   ctx.putImageData(result, 0, 0);
   return canvas;
