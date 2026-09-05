@@ -396,4 +396,30 @@ onMount(() => {
 Two FFI calls buy 20+ seconds of motion with zero further JS. Reserve layout-prop
 animation for deliberate one-shots.
 
+## Text caret
+
+`createCaretBlink` from `@pocketjs/framework/animation` controls visibility
+independently of caret geometry and the UI library. **Focus and input restart
+the visible phase; a held drag keeps it visible.** Each phase defaults to
+500 virtual milliseconds, so input replay controls blinking on every host.
+
+```tsx
+import { createEffect, createSignal, onCleanup } from "solid-js";
+import { createCaretBlink } from "@pocketjs/framework/animation";
+
+const [caretVisible, setCaretVisible] = createSignal(false);
+const blink = createCaretBlink({ onChange: setCaretVisible });
+createEffect(() => blink.setActive(editorFocused()));
+createEffect(() => blink.setHeld(draggingCaret()));
+createEffect(() => { caretOffset(); draftText(); blink.reset(); });
+onCleanup(blink.dispose);
+// Bind caretVisible() to the caret node's opacity.
+```
+
+The controller starts inactive. It owns **one cancellable clock deadline**
+while blinking and none while inactive or held; `onChange` runs only when
+visibility changes. `intervalMs` sets the duration of each phase. Call
+`dispose()` when the editor unmounts to cancel its deadline and hide the caret.
+It performs no file access, network requests or wall-clock reads.
+
 Try any of this live in the [playground](/playground/).
