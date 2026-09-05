@@ -12,15 +12,7 @@ for (const [source, target, size] of [
   ["hosts/3ds/icon-small.svg", "hosts/3ds/icon-small.png", 24],
 ] as const) {
   const svg = readFileSync(resolve(root, source), "utf8");
-  const canvas = await rasterizeIconSvg(svg, size);
-  if (target === "hosts/iphone2g/Icon.png") {
-    // Older SpringBoard versions need the corners in the asset itself.
-    const context = canvas.getContext("2d");
-    context.globalCompositeOperation = "destination-in";
-    context.beginPath();
-    context.roundRect(0, 0, size, size, 11);
-    context.fill();
-  }
+  const canvas = await rasterizeIconSvg(svg, size, size, !target.includes("iphone2g"));
   const png = canvas.toBuffer("image/png");
   const path = resolve(root, target);
   if (check) {

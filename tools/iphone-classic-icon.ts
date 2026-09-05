@@ -6,14 +6,14 @@ import { fileURLToPath } from "node:url";
 
 const REPOSITORY = fileURLToPath(new URL("..", import.meta.url));
 
-/** iPhone OS 1 needs a pre-masked PNG; iOS 6 sizes come from the vector source. */
+/** Precomposed classic iOS icons carry their own transparent corner mask. */
 export const IPHONE_CLASSIC_ICON_SOURCE = resolve(REPOSITORY, "hosts/iphone2g/Icon.png");
 export const IPHONE_CLASSIC_RETINA_SOURCE = resolve(REPOSITORY, "hosts/iphone4s/Icon.svg");
-export const IPHONE_CLASSIC_ICON_FILE = "PocketClassic-v5.png";
-export const IPHONE_CLASSIC_RETINA_ICON_FILE = "PocketClassic-v5@2x.png";
+export const IPHONE_CLASSIC_ICON_FILE = "PocketClassic-v6.png";
+export const IPHONE_CLASSIC_RETINA_ICON_FILE = "PocketClassic-v6@2x.png";
 
 async function rasterizeRetinaArtwork(width: number, height: number): Promise<Canvas> {
-  return rasterizeIconSvg(readFileSync(IPHONE_CLASSIC_RETINA_SOURCE, "utf8"), width, height);
+  return rasterizeIconSvg(readFileSync(IPHONE_CLASSIC_RETINA_SOURCE, "utf8"), width, height, false);
 }
 
 function assertOpaque(canvas: Canvas): void {

@@ -14,7 +14,7 @@ for (const v of variants) for (const [platform, sizes] of [["ios", [57, 114, 512
     const svg = artwork(v, platform, size);
     const name = `${v.id}-${platform}-${size}`;
     writeFileSync(resolve(assets, `${name}.svg`), svg);
-    const canvas = await raster(svg, size);
+    const canvas = await raster(svg, size, size, platform !== "ios");
     const png = canvas.toBuffer("image/png");
     writeFileSync(resolve(assets, `${name}.png`), png);
     receipt.push({ file: `${name}.png`, width: size, height: size, sha256: new Bun.CryptoHasher("sha256").update(png).digest("hex") });

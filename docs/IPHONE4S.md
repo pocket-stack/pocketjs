@@ -81,11 +81,12 @@ It fails instead of silently presenting the software rasterizer through a
 `CAEAGLLayer` when that contract cannot be established.
 
 SpringBoard artwork is rasterized from `hosts/iphone4s/Icon.svg`. **The
-versioned `PocketClassic-v5.png` and `PocketClassic-v5@2x.png` are opaque
-57×57 and 114×114 images.** Both use 4× supersampling with exact area
-averaging. The selected D artwork uses a plum surface, muted yellow/pink/cyan
+versioned `PocketClassic-v6.png` and `PocketClassic-v6@2x.png` are pre-masked
+57×57 and 114×114 images with transparent corners.** Both use 4× supersampling with alpha-weighted area
+averaging to prevent dark fringes. The selected D artwork uses a plum surface, muted yellow/pink/cyan
 mark, and continuous radial light. `UIPrerenderedIcon` prevents an additional
-system gloss layer. The versioned basename invalidates the old icon cache.
+system gloss layer; on the iOS 6 device it does not remove opaque pixels
+outside the baked rounded shape. The versioned basename invalidates the old icon cache.
 The same vector produces the launch-screen mark. `bun tools/device-icons.ts`
 also regenerates the separately masked iPhone 2G icon and the independent
 48×48 / 24×24 3DS icons; `--check` verifies their committed PNG bytes.
