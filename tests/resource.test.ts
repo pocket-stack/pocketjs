@@ -26,15 +26,18 @@ test("resource tickets fence stale, duplicate and disposed completions", () => {
 test("boundary lazily reveals content, updates ready values and disposes only its subtree", () => {
   createRoot(dispose => {
     const [state, setState] = createSignal<ResourceState<number>>(pending());
+    const [label, setLabel] = createSignal("skeleton");
     let mounts = 0, cleanups = 0;
     const output = ResourceBoundary({
       state,
-      fallback: () => "skeleton",
+      fallback: label,
       errorFallback: error => `error:${error}`,
       children: value => { mounts++; onCleanup(() => cleanups++); return (() => `value:${value()}`) as unknown as JSX.Element; },
     });
     const read = () => { let value: unknown = output; while (typeof value === "function") value = value(); return value; };
     expect(read()).toBe("skeleton"); expect(mounts).toBe(0);
+    setLabel("waiting"); expect(read()).toBe("waiting");
+    setLabel("skeleton");
     setState(ready(7)); expect(read()).toBe("value:7");
     setState(ready(8)); expect(read()).toBe("value:8"); expect(mounts).toBe(1);
     setState(pending()); expect(read()).toBe("skeleton"); expect(cleanups).toBe(1);
