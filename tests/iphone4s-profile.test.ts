@@ -20,6 +20,8 @@ import {
   bakeClassicIPhoneArtwork,
   IPHONE_CLASSIC_ICON_FILE,
   IPHONE_CLASSIC_RETINA_ICON_FILE,
+  IPHONE_USER_ICON_FILE,
+  IPHONE_USER_RETINA_ICON_FILE,
 } from "../tools/iphone-classic-icon.ts";
 import {
   buildReceiptsMatch,
@@ -228,7 +230,7 @@ describe("private iPhone 4S profile", () => {
         }
       }
       expect(twoPixels).not.toEqual(expected);
-      // UIPrerenderedIcon on the physical iOS 6 host retains opaque corners;
+      // System applications on the physical iOS 6 host retain opaque corners;
       // the source must supply the mask, with an opaque face and soft edges.
       const alpha = (x: number, y: number) => twoPixels[(y * two.width + x) * 4 + 3];
       for (const [x, y] of [[0, 0], [113, 0], [0, 113], [113, 113]]) expect(alpha(x, y)).toBe(0);
@@ -238,6 +240,29 @@ describe("private iPhone 4S profile", () => {
         const launch = await loadImage(join(output, filename));
         expect(launch.width).toBe(640);
         expect(launch.height).toBe(filename === "Default@2x.png" ? 960 : 1136);
+      }
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+    }
+  });
+
+  test("gives User applications an opaque face for the native SpringBoard mask", async () => {
+    const output = mkdtempSync(join(tmpdir(), "pocket-user-artwork-"));
+    try {
+      await bakeClassicIPhoneArtwork(output, "User");
+      for (const [file, size] of [[IPHONE_USER_ICON_FILE, 57], [IPHONE_USER_RETINA_ICON_FILE, 114]] as const) {
+        const image = await loadImage(join(output, file));
+        expect([image.width, image.height]).toEqual([size, size]);
+        const ctx = createCanvas(size, size).getContext("2d");
+        ctx.drawImage(image, 0, 0);
+        const pixels = ctx.getImageData(0, 0, size, size).data;
+        expect(pixels.every((value, index) => index % 4 !== 3 || value === 255)).toBe(true);
+        // The top face reaches the edge: no transparent inset or bright rim.
+        const pixel = (x: number, y: number) => Array.from(ctx.getImageData(x, y, 1, 1).data);
+        const edge = pixel(Math.floor(size / 2), 0);
+        const inside = pixel(Math.floor(size / 2), 3);
+        expect(edge[0]).toBeGreaterThan(30);
+        for (let channel = 0; channel < 3; channel++) expect(Math.abs(edge[channel] - inside[channel])).toBeLessThan(10);
       }
     } finally {
       rmSync(output, { recursive: true, force: true });

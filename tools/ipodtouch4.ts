@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 import { extractHostBuildInputs } from "../framework/src/manifest/host-build-inputs.ts";
 import {
   bakeClassicIPhoneArtwork,
-  IPHONE_CLASSIC_ICON_FILE,
-  IPHONE_CLASSIC_RETINA_ICON_FILE,
+  IPHONE_USER_ICON_FILE,
+  IPHONE_USER_RETINA_ICON_FILE,
 } from "./iphone-classic-icon.ts";
 import {
   IPODTOUCH4_DEPLOYMENT,
@@ -692,7 +692,7 @@ async function build(): Promise<void> {
   mkdirSync(bundle, { recursive: true });
   writeFileSync(join(bundle, "Info.plist"), renderInfoPlist());
   cpSync(join(REPOSITORY, "hosts/ipodtouch4/PkgInfo"), join(bundle, "PkgInfo"));
-  await bakeClassicIPhoneArtwork(bundle);
+  await bakeClassicIPhoneArtwork(bundle, "User");
 
   const firstParty = [
     ...warnings,
@@ -763,8 +763,8 @@ async function build(): Promise<void> {
     { label: "native/compat.o", path: compatObject },
     ...quickJsObjects.map((path) => ({ label: `native/${path.slice(nativeBuild.length + 1)}`, path })),
     { label: "native/libpocketjs_symbian_core.a", path: rustLibrary },
-    { label: `bundle/${IPHONE_CLASSIC_ICON_FILE}`, path: join(bundle, IPHONE_CLASSIC_ICON_FILE) },
-    { label: `bundle/${IPHONE_CLASSIC_RETINA_ICON_FILE}`, path: join(bundle, IPHONE_CLASSIC_RETINA_ICON_FILE) },
+    { label: `bundle/${IPHONE_USER_ICON_FILE}`, path: join(bundle, IPHONE_USER_ICON_FILE) },
+    { label: `bundle/${IPHONE_USER_RETINA_ICON_FILE}`, path: join(bundle, IPHONE_USER_RETINA_ICON_FILE) },
     { label: "bundle/Default@2x.png", path: join(bundle, "Default@2x.png") },
     { label: "bundle/Default-568h@2x.png", path: join(bundle, "Default-568h@2x.png") },
   ]);
@@ -807,8 +807,8 @@ async function build(): Promise<void> {
     EXECUTABLE,
     "Info.plist",
     "PkgInfo",
-    IPHONE_CLASSIC_ICON_FILE,
-    IPHONE_CLASSIC_RETINA_ICON_FILE,
+    IPHONE_USER_ICON_FILE,
+    IPHONE_USER_RETINA_ICON_FILE,
     "Default@2x.png",
     "Default-568h@2x.png",
   ];

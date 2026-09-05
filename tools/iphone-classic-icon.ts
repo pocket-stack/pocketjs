@@ -11,9 +11,20 @@ export const IPHONE_CLASSIC_ICON_SOURCE = resolve(REPOSITORY, "hosts/iphone2g/Ic
 export const IPHONE_CLASSIC_RETINA_SOURCE = resolve(REPOSITORY, "hosts/iphone4s/Icon.svg");
 export const IPHONE_CLASSIC_ICON_FILE = "PocketClassic-v6.png";
 export const IPHONE_CLASSIC_RETINA_ICON_FILE = "PocketClassic-v6@2x.png";
+export const IPHONE_USER_ICON_FILE = "PocketClassic-User-v7.png";
+export const IPHONE_USER_RETINA_ICON_FILE = "PocketClassic-User-v7@2x.png";
 
-async function rasterizeRetinaArtwork(width: number, height: number): Promise<Canvas> {
-  return rasterizeIconSvg(readFileSync(IPHONE_CLASSIC_RETINA_SOURCE, "utf8"), width, height, false);
+async function rasterizeRetinaArtwork(width: number, height: number, userApp = false): Promise<Canvas> {
+  let svg = readFileSync(IPHONE_CLASSIC_RETINA_SOURCE, "utf8");
+  if (userApp) {
+    // MobileInstallation User icons receive the native mask and shadow. A
+    // pre-masked inset face would expose a second dark rim underneath it.
+    const face = 'id="user-app-face" display="none"';
+    const frame = 'id="system-app-frame"';
+    if (!svg.includes(face) || !svg.includes(frame)) throw new Error("Missing classic icon installation layers");
+    svg = svg.replace(face, 'id="user-app-face"').replace(frame, `${frame} display="none"`);
+  }
+  return rasterizeIconSvg(svg, width, height, userApp);
 }
 
 function assertOpaque(canvas: Canvas): void {
@@ -25,12 +36,13 @@ function assertOpaque(canvas: Canvas): void {
   }
 }
 
-export async function bakeClassicIPhoneArtwork(outputDirectory: string): Promise<string[]> {
+export async function bakeClassicIPhoneArtwork(outputDirectory: string, applicationType: "System" | "User" = "System"): Promise<string[]> {
   mkdirSync(outputDirectory, { recursive: true });
-  const icon = resolve(outputDirectory, IPHONE_CLASSIC_ICON_FILE);
-  const retinaIcon = resolve(outputDirectory, IPHONE_CLASSIC_RETINA_ICON_FILE);
-  writeFileSync(icon, (await rasterizeRetinaArtwork(57, 57)).toBuffer("image/png"));
-  writeFileSync(retinaIcon, (await rasterizeRetinaArtwork(114, 114)).toBuffer("image/png"));
+  const userApp = applicationType === "User";
+  const icon = resolve(outputDirectory, userApp ? IPHONE_USER_ICON_FILE : IPHONE_CLASSIC_ICON_FILE);
+  const retinaIcon = resolve(outputDirectory, userApp ? IPHONE_USER_RETINA_ICON_FILE : IPHONE_CLASSIC_RETINA_ICON_FILE);
+  writeFileSync(icon, (await rasterizeRetinaArtwork(57, 57, userApp)).toBuffer("image/png"));
+  writeFileSync(retinaIcon, (await rasterizeRetinaArtwork(114, 114, userApp)).toBuffer("image/png"));
 
   const launchIcon = await rasterizeRetinaArtwork(228, 228);
   const written = [icon, retinaIcon];

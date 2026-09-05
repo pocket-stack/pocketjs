@@ -16,10 +16,10 @@
   <key>CFBundleName</key>
   <string>PocketJS iPod touch 4</string>
   <key>CFBundleIconFile</key>
-  <string>PocketClassic-v6.png</string>
+  <string>PocketClassic-User-v7.png</string>
   <key>CFBundleIconFiles</key>
   <array>
-    <string>PocketClassic-v6</string>
+    <string>PocketClassic-User-v7</string>
   </array>
   <key>CFBundlePackageType</key>
   <string>APPL</string>

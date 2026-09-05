@@ -125,3 +125,5 @@ action — a receipt that a gesture interaction completed on the hardware.
 
 `capture` asks the running app for a raw RGBA frame and converts it to
 `dist/ipodtouch4/device-frame.png`.
+
+User application icons use **opaque 57×57 and 114×114 artwork**. SpringBoard applies the rounded mask and shadow; `UIPrerenderedIcon` suppresses the stock gloss. The System application path uses a precomposed transparent mask instead. Baking that mask into a User icon adds an inset rim under the native mask. Icon filenames include the artwork revision so an update selects a fresh SpringBoard cache entry.
