@@ -160,7 +160,19 @@ fn font_atlas_blob() -> Vec<u8> {
         push_u16(&mut atlas, gid);
         atlas.extend_from_slice(&[CELL_W, 0]);
     }
-    atlas.resize(atlas.capacity(), 0);
+    for gid in 0..GLYPH_COUNT {
+        for y in 0..CELL_H as usize {
+            for x in 0..CELL_W as usize {
+                // Keep the space transparent while giving every printable
+                // glyph deterministic coverage to exercise atlas sampling.
+                let covered = gid != 0
+                    && (1..=6).contains(&x)
+                    && (2..=13).contains(&y)
+                    && (x + y + gid as usize) % 3 != 0;
+                atlas.push(if covered { 255 } else { 0 });
+            }
+        }
+    }
     atlas
 }
 
@@ -189,6 +201,10 @@ fn hash_draw(words: &[u32], checksum: &mut u64) {
 
 fn draw_and_hash(ui: &mut Ui, checksum: &mut u64) {
     let words = &ui.draw().words;
+    assert!(
+        words.iter().any(|&word| word == spec::draw_op::GLYPH_RUN),
+        "benchmark draw must emit atlas-backed glyphs"
+    );
     hash_draw(words, checksum);
 }
 
@@ -228,6 +244,14 @@ fn main() {
     ui.set_viewport(spec::SCREEN_W as f32, spec::SCREEN_H as f32);
     assert!(ui.load_styles(&styles));
     assert!(ui.load_font_atlas(&font_atlas));
+    assert!(
+        ui.font_atlas(0)
+            .unwrap()
+            .glyph_rows(1)
+            .iter()
+            .any(|&coverage| coverage != 0),
+        "benchmark font atlas must contain non-zero glyph coverage"
+    );
     handles.push(ui.upload_texture(&atlas, 16, 16, spec::psm::PSM_8888));
     let texture = handles[0];
 
@@ -356,6 +380,13 @@ mod tests {
         let mut ui = Ui::new();
         assert!(ui.load_font_atlas(&font_atlas_blob()));
         assert!(ui.font_atlas(0).unwrap().lookup('P' as u32).is_some());
+        assert!(
+            ui.font_atlas(0)
+                .unwrap()
+                .glyph_rows(1)
+                .iter()
+                .any(|&coverage| coverage != 0)
+        );
         assert_eq!(ui.measure_text("P", 0), 8.0);
     }
 }
