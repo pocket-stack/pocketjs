@@ -154,45 +154,11 @@ is the registry, and it declares:
 
 ## Reactivity on PocketJS
 
-There is no PocketJS reactivity layer. Solid apps import signals, effects, and
-lifecycle from `solid-js`; Vue Vapor apps import refs, computeds, watchers, and
-lifecycle from `vue`; Octane apps import hooks from `octane`. Four PocketJS-side
-rules sit on top of whichever one you pick.
-
-**A state write in a handler commits in the frame that handled it.** Solid and
-Vue Vapor mutate the native tree during the write itself. Octane queues its
-re-renders as microtasks, so the frame handler in
-`framework/src/index-octane.ts` runs that frame's hooks and input dispatch
-inside `flushUniversalSync()`, which drains the queue before the sweep that
-ships the frame's mutations to the core.
-
-**The banned-import lint fires on Solid builds only.** The Babel plugin in
-`framework/compiler/jsx-plugin.ts` rejects `createResource`, `useTransition`,
-and `startTransition` when they are imported from `solid-js`, and its import
-visitor returns without checking when the build framework is not Solid. Those
-three are Solid's async and concurrent features, and they want a task queue the
-PSP's QuickJS host does not have. Reach for signals plus an effect for state
-over time, and [`animate()`](/docs/animation/) for motion.
-
-QuickJS has no event loop of its own, but the runtime installs the two globals
-that framework schedulers assume: `framework/src/scheduler-polyfill.ts` — the
-prelude for both the Vue Vapor and the Octane entries — defines
-`queueMicrotask`, `setTimeout`, and `clearTimeout` where the host lacks them.
-`setTimeout` there lowers onto the promise job queue and ignores its delay, so
-it is not a timer. Time a delay with `after()` from
-`@pocketjs/framework/clock`, which fires off the virtual clock the frame
-handler advances.
-
-**No continuous motion out of per-frame state.** A value rewritten from JS
-every frame costs a commit every frame on all three frameworks. `animate()`,
-baked keyframe timelines, `<Sprite>` atlases, and `setTextContent` run the same
-motion from the Rust core at zero per-frame JS. See
-[Animation](/docs/animation/).
-
-**A reactive value inside `<Text>` is not a special construct.** The static
-prefix and the dynamic expression fold into one measured inline run, and a
-change calls the native `replaceText` op on the dynamic segment alone. See
-[Components](/docs/components/) for the text model.
+PocketJS wraps no reactive system: each framework brings its own, and the
+runtime adds four rules on top — when a handler's write commits, which imports
+the Solid lint rejects, the scheduler globals QuickJS lacks, and why continuous
+motion does not come from per-frame state.
+[Reactivity](/docs/reactivity/) puts the three side by side and states all four.
 
 ## Octane notes
 

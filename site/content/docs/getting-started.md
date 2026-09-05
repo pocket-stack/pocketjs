@@ -228,7 +228,7 @@ What's happening:
   When the setter or ref
   write runs, only that `Text` updates — no re-render of the whole native tree.
   (In Octane, a text run that mixes static and dynamic segments is written as
-  one template literal.) More in [Reactivity on PocketJS](/docs/frameworks/#reactivity-on-pocketjs).
+  one template literal.) More in [Reactivity](/docs/reactivity/).
 
 ## The mount entry
 

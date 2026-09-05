@@ -3,7 +3,7 @@
 The primary app-facing exports of `@pocketjs/framework`, grouped by import
 path. Signatures are TypeScript-style; defaults are noted in parentheses.
 Framework-internal and tests/debug helpers are not exhaustive here. For conceptual walkthroughs see [Components](/docs/components/),
-[Frameworks](/docs/frameworks/), [Animation](/docs/animation/), and
+[Reactivity](/docs/reactivity/), [Animation](/docs/animation/), and
 [Input & focus](/docs/input-focus/).
 
 | Import path | Exports |
@@ -429,7 +429,7 @@ curating these exports. Full docs live at
 | `batch` | `batch(fn: () => T) => T` | Coalesce updates. |
 | `untrack` | `untrack(fn: () => T) => T` | Read without tracking. |
 
-See [Reactivity on PocketJS](/docs/frameworks/#reactivity-on-pocketjs).
+See [Reactivity](/docs/reactivity/).
 
 ### Control flow
 
@@ -541,7 +541,7 @@ framework owner (`onCleanup` in Solid, `onScopeDispose` in Vue Vapor, effect
 cleanup in Octane). In Octane builds these exports are the use-prefixed hooks
 `useFrame`, `useButtonPress`, and `useSpriteAnimation` (see
 [`octane`](#octane) above); the signatures below are otherwise identical. See
-[Frameworks](/docs/frameworks/) and [Input & focus](/docs/input-focus/).
+[Reactivity](/docs/reactivity/) and [Input & focus](/docs/input-focus/).
 
 ### `onFrame`
 

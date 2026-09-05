@@ -278,7 +278,6 @@ function writeStaticHeaders(): void {
 const RETIRED_DOC_SLUGS: [from: string, to: string][] = [
   ["/docs/concepts/", "/docs/architecture/"],
   ["/docs/tailwind/", "/docs/styling/"],
-  ["/docs/reactivity/", "/docs/frameworks/"],
   ["/docs/net/", "/docs/api/"],
 ];
 

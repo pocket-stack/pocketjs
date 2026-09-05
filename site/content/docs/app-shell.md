@@ -6,7 +6,7 @@ primitives from `@pocketjs/framework/components` — thin wrappers over the same
 [`View`](/docs/components/), [focus manager](/docs/input-focus/), and frame
 hooks you already use. Nothing here is a framework-within-a-framework: there is
 no router, no navigation stack, no global store. Screen switching is ordinary
-[reactive state](/docs/frameworks/#reactivity-on-pocketjs).
+[reactive state](/docs/reactivity/).
 
 ```tsx
 import {

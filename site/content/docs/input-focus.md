@@ -379,4 +379,4 @@ focus, Enter/Z confirms, `L` / `R` page the shoulder-driven UI, and your
 - [App shell](/docs/app-shell/) — `Focusable`, `FocusScope`, `FocusGrid`, `Modal`, and `ActionBar` components.
 - [Components](/docs/components/) — `View`, `Text`, `Image`, and how Solid control flow maps onto the native tree.
 - [Styling](/docs/styling/) — the `focus:` / `active:` variants and the Tailwind subset.
-- [Frameworks](/docs/frameworks/) — the reactive system each framework brings, and the PocketJS rules on top of it.
+- [Reactivity](/docs/reactivity/) — the three reactive systems side by side, and the PocketJS rules on top.
