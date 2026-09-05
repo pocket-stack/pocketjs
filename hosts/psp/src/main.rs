@@ -392,8 +392,12 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
         BENCH.gpu_sum_us / frames,
         BENCH.max_gpu_us,
         stack_free_bytes,
-        switch::guest_bytes(0).map(|g| g.js.len().saturating_sub(1)).unwrap_or(0),
-        switch::guest_bytes(0).map(|g| g.pak.len()).unwrap_or(0),
+        switch::guest_bytes(switch::current())
+            .map(|g| g.js.len().saturating_sub(1))
+            .unwrap_or(0),
+        switch::guest_bytes(switch::current())
+            .map(|g| g.pak.len())
+            .unwrap_or(0),
         arena_stats.capacity_bytes,
         arena_stats.bump_bytes,
         arena_stats.tail_free_bytes,
