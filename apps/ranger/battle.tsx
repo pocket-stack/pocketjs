@@ -95,7 +95,7 @@ function variantFrames(v: string): VFrame[] {
   return VARIANTS[v].frames;
 }
 
-const DBG = { bg: true, player: true, enemies: false, hud: true, fx: true };
+const DBG = { bg: true, player: true, enemies: true, hud: true, fx: true };
 
 export default function Battle() {
   // Every cooked sheet must resolve to baked metadata; keeps the SHEETS
@@ -484,7 +484,7 @@ export default function Battle() {
       p.facing = mv > 0 ? 1 : -1;
       let nx = p.x + mv * 1.8;
       // don't walk through a living enemy: stop at engage range instead of
-      // overshooting past it (matches the enemy AI's own 46px stand-off).
+      // overshooting past it (matches the enemy AI's own stand-off distance).
       const ENGAGE_PAD = 20;
       for (const e of enemies) {
         if (e.dead) continue;
@@ -534,6 +534,9 @@ export default function Battle() {
         if (!grounded) punch(13);
         else punch(11);
       }
+    } else if (edge & BTN.RTRIGGER) {
+      // ranged "tobi" shot (playmode-1 akf 100): grounded only, own cooldown.
+      if (grounded && p.atkCd <= 0 && p.state !== "attack") punch(100);
     }
   }
 
@@ -587,7 +590,7 @@ export default function Battle() {
       }
       return;
     }
-    if (Math.abs(dx) > 46) {
+    if (Math.abs(dx) > 30) {
       e.x = Math.max(ARENA_L, Math.min(ARENA_R, e.x + Math.sign(dx) * 1.1));
       if (e.state !== "walk") {
         e.state = "walk";
