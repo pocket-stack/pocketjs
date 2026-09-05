@@ -271,6 +271,23 @@ function writeStaticHeaders(): void {
   );
 }
 
+// Docs slugs that were retired by merging their page into the one that already
+// owned the subject. The Worker serves site/dist with not_found_handling set to
+// the 404 page (site/wrangler.jsonc), so without these a bookmark to a retired
+// slug dies instead of landing on its successor.
+const RETIRED_DOC_SLUGS: [from: string, to: string][] = [
+  ["/docs/concepts/", "/docs/architecture/"],
+  ["/docs/tailwind/", "/docs/styling/"],
+  ["/docs/reactivity/", "/docs/frameworks/"],
+  ["/docs/net/", "/docs/api/"],
+];
+
+function writeStaticRedirects(): void {
+  const lines = RETIRED_DOC_SLUGS.map(([from, to]) => `${from} ${to} 301`);
+  write("_redirects", lines.join("\n") + "\n");
+  console.log(`  _redirects  (${lines.length} retired docs slugs)`);
+}
+
 // --- editable demos (mostly single-file; gallery inlines generated tile data)
 type SpriteMeta = Record<string, { cols: number; rows: number; frames: number; step: number; psm?: number }>;
 type DemoVariant = { framework: "solid" | "vue-vapor" | "octane"; source: string; spriteMeta?: SpriteMeta };
@@ -488,6 +505,7 @@ async function main() {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
   writeStaticHeaders();
+  writeStaticRedirects();
 
   // 1. bundles
   await bundleSolid("pg/solid.js");

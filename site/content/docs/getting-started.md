@@ -3,9 +3,11 @@
 This is the fastest path from an empty checkout to JSX running on screen. You'll
 write a component, mount it, build it, and see it in the browser dev host — the
 same source and `pocket.json` can also be compiled into target-specific packages
-for PSP, PS Vita, and the other registered targets. The logical 480×272 UI stays
-portable while each target owns its native renderer, raster density, and HostOps
-ABI.
+for PSP, PS Vita, and the other registered targets. Your app declares one
+logical viewport in `pocket.json` and the target profile decides whether that
+size is admissible: PSP and Vita are fixed at 480×272, while window and widget
+targets carry a default size and resize the core live. Each target owns its
+native renderer, raster density, and HostOps ABI.
 
 If you only want to *try* PocketJS, skip the toolchain entirely and open the
 online [Playground](/playground/): it runs the Rust core as WebAssembly in your
@@ -51,11 +53,11 @@ pocket setup    # runs the checkout's pinned, idempotent bootstrap
 
 The PSP setup is self-contained in PocketJS; it does not inspect DreamCart or
 any sibling source checkout. Its exact revisions and SDK checksum live in
-`tools/cli/psp-toolchain.json`. By default artifacts are shared through
+`tools/cli/psp-toolchain.json`. Artifacts are shared through
 `${XDG_CACHE_HOME:-~/.cache}/pocket-stack`; `POCKET_STACK_CACHE_DIR` overrides
 that root. For a custom SDK, set `PSP_SDK` or `PSPDEV` (in that precedence
 order). The build validates an explicit path and then exports both names to the
-selected SDK, so a typo cannot silently fall through to a different cached
+selected SDK, so a typo fails instead of falling through to a different cached
 toolchain.
 
 It also wraps the day-to-day commands. `pocket create <name>` scaffolds a
@@ -122,8 +124,10 @@ Solid is the default low-level framework. Manifest builds select Solid, Vue
 Vapor, or Octane with `app.framework` in `pocket.json`; see
 [Frameworks](/docs/frameworks/) for the full selection model.
 
-Here's a focusable counter. Put it in the scaffolded
-`apps/my-app/app.tsx`:
+`pocket create` writes an `apps/my-app/app.tsx` that counts CROSS presses
+through `onButtonPress` from `@pocketjs/framework/lifecycle`. Replace it with
+this focusable counter, which routes the same increment through d-pad focus and
+`onPress`:
 
 :::framework-code
 ```tsx solid
@@ -215,8 +219,8 @@ What's happening:
 - **Styling** is class literals only. Each utility (`bg-blue-600`,
   `rounded-xl`, `text-white`, …) is resolved at build time into a style table —
   there is no CSS at runtime. The `focus:` and `active:` variants swap styles
-  based on input state. Details in [Styling](/docs/styling/) and the exact
-  supported utilities in [Tailwind subset](/docs/tailwind/).
+  based on input state. Details and the supported utilities are in
+  [Styling](/docs/styling/).
 - **`focusable`** opts the `View` into d-pad focus, and **`onPress`** fires when
   the focused node is confirmed (the Circle button on a PSP). Focus and input
   are covered in [Input & focus](/docs/input-focus/).
@@ -224,13 +228,14 @@ What's happening:
   When the setter or ref
   write runs, only that `Text` updates — no re-render of the whole native tree.
   (In Octane, a text run that mixes static and dynamic segments is written as
-  one template literal.) More in [Reactivity](/docs/reactivity/).
+  one template literal.) More in [Reactivity on PocketJS](/docs/frameworks/#reactivity-on-pocketjs).
 
 ## The mount entry
 
 `app.tsx` exports a component but doesn't put anything on screen. The **mount
-entry** does that. Keep it tiny — this is just app bootstrap. Put it in the
-scaffolded `apps/my-app/main.tsx`:
+entry** does that. Keep it small — this is app bootstrap. `pocket create`
+writes the Solid spelling to `apps/my-app/main.tsx`; the other two differ in
+the import:
 
 :::framework-code
 ```tsx solid
@@ -309,16 +314,11 @@ bun tools/build.ts hero --framework=octane
 ```
 :::
 
-That density-1 development command produces two files in `dist/`:
-
-| File              | What it is                                                                 |
-| ----------------- | ------------------------------------------------------------------------- |
-| `dist/hero.js`    | Your app bundled to a single IIFE for the selected development contract   |
-| `dist/hero.pak` | The packed asset file: the compiled style table, font atlases, and images |
-
-Vue Vapor builds use the `.vue-vapor` suffix, for example
-`dist/hero.vue-vapor.js` and `dist/hero.vue-vapor.pak`; Octane builds use the
-`.octane` suffix, for example `dist/hero.octane.js` and `dist/hero.octane.pak`.
+That density-1 development command writes the bundle and its packed assets to
+`dist/`; the per-framework file names are in
+[Build pipeline](/docs/build-pipeline/#output-naming). The dev host and the sim
+are development paths rather than stock targets — see
+[Transitional dev targets](/docs/platform-contracts/#transitional-dev-targets).
 
 A few notes on the low-level command:
 
@@ -367,7 +367,7 @@ bun tools/dev.ts hero-main cards
 PORT=9000 bun tools/dev.ts
 ```
 
-Rebuild-on-change is deliberately manual: after editing a component, re-run
+Rebuild-on-change is manual: after editing a component, re-run
 `bun tools/build.ts <app>` (or the whole `dev` script) and reload the page.
 The first run compiles the Rust core to wasm with cargo, so it takes a moment;
 subsequent runs are fast.
@@ -387,39 +387,11 @@ application still uses the profile's 480×272 logical viewport rendered at
 960×544 density 2. See the [Vita host guide](https://github.com/pocket-stack/pocketjs/blob/main/hosts/vita/README.md)
 for toolchain setup, key mappings, real-device installation, and the golden E2E.
 
-### In the Playground
-
-No local build at all: open the [Playground](/playground/), which loads the same
-wasm core in your browser. Pick Solid, Vue Vapor, or Octane in the toolbar,
-edit JSX in the editor, and it renders live — the quickest way to explore the component and
-styling surface before wiring up a local project.
-
-## What the build just did
-
-`bun tools/build.ts` is a **two-pass** build:
-
-1. **Transform & collect.** The selected framework's JSX transform — Solid's
-   universal Babel preset, `vue-jsx-vapor`, or the Octane universal compiler —
-   plus TypeScript runs
-   over every module reachable from your entry, content-hash cached in `.cache/`.
-   As it goes it collects every class literal and every text codepoint from the
-   AST. The Tailwind-subset compiler turns the collected classes into
-   `styles.bin`, the font baker rasterizes an Inter atlas containing *only* the
-   characters your app uses, images are decoded, and it's all packed into
-   `dist/<app>.pak`.
-2. **Bundle.** Bun bundles the app (IIFE, targeting the browser, unminified) from
-   the cached pass-1 transforms into `dist/<app>.js`.
-
-Because styles and fonts are derived from your source, a class literal only
-compiles if *every* token is a supported utility, and the atlas only holds glyphs
-you reference. The full mechanics — caching, the class/codepoint collection, the
-pak format — are in [Build pipeline](/docs/build-pipeline/).
-
 ## Next steps
 
 - [Architecture](/docs/architecture/) — how one Rust core drives every host.
 - [Frameworks](/docs/frameworks/) — switch between Solid, Vue Vapor, and Octane.
 - [Components](/docs/components/) — `View`, `Text`, `Image`, control flow, and the app-shell primitives.
-- [Styling](/docs/styling/) and [Tailwind subset](/docs/tailwind/) — the compile-time class rules.
-- [Reactivity](/docs/reactivity/) and [Animation](/docs/animation/) — signals, effects, and native tweens.
+- [Styling](/docs/styling/) — the compile-time class rules and the utility tables.
+- [Animation](/docs/animation/) — native tweens, baked timelines, and sprite atlases.
 - [Input & focus](/docs/input-focus/) — d-pad traversal, buttons, and focus scopes.
