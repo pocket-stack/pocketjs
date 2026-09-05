@@ -41,6 +41,9 @@ software-only = []
 host-allocator = []
 # Report native boot checkpoints to hosts that expose pocket_host_boot_stage.
 boot-stage = []
+# Allow an in-process harness crate to access an already initialized retained Ui
+# singleton through an explicit unsafe contract. Production hosts leave this disabled.
+harness-access = []
 
 [dependencies]
 pocketjs-core = { path = "../core" }
