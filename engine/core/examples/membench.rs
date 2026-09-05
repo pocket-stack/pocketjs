@@ -139,6 +139,47 @@ fn texture_blob() -> Vec<u8> {
     atlas
 }
 
+fn font_atlas_blob() -> Vec<u8> {
+    const FIRST_GLYPH: u32 = 32;
+    const GLYPH_COUNT: u16 = 95;
+    const CELL_W: u8 = 8;
+    const CELL_H: u8 = 16;
+    const BYTES_PER_GLYPH: usize = CELL_W as usize * CELL_H as usize;
+
+    let mut atlas = Vec::with_capacity(
+        spec::font_atlas::HEADER_SIZE
+            + GLYPH_COUNT as usize * spec::font_atlas::CMAP_ENTRY_SIZE
+            + GLYPH_COUNT as usize * BYTES_PER_GLYPH,
+    );
+    push_u32(&mut atlas, spec::font_atlas::MAGIC);
+    push_u16(&mut atlas, spec::font_atlas::VERSION);
+    push_u16(&mut atlas, GLYPH_COUNT);
+    atlas.extend_from_slice(&[CELL_W, CELL_H, 12, 18, 0, 0, 1, 0]);
+    for gid in 0..GLYPH_COUNT {
+        push_u32(&mut atlas, FIRST_GLYPH + u32::from(gid));
+        push_u16(&mut atlas, gid);
+        atlas.extend_from_slice(&[CELL_W, 0]);
+    }
+    atlas.resize(atlas.capacity(), 0);
+    atlas
+}
+
+fn timing_capacity() -> usize {
+    24 + 8 + 16 + 12
+}
+
+fn structural_tick(tick: usize) -> bool {
+    tick % 4 == 0
+}
+
+fn structural_probe(ui: &mut Ui, parent: i32, height: f64) {
+    let node = ui.create_node(spec::NodeType::View as u8);
+    ui.set_style(node, 0);
+    ui.set_prop(node, spec::prop::HEIGHT, height);
+    ui.insert_before(parent, node, 0);
+    ui.destroy_node(node);
+}
+
 fn hash_draw(words: &[u32], checksum: &mut u64) {
     for word in words {
         *checksum ^= u64::from(*word);
@@ -167,10 +208,12 @@ fn main() {
     const TEXT_TICKS: usize = 16;
     const BURST_TICKS: usize = 12;
 
-    // All fixture bytes, source strings, handles, churn ids, and timing state
-    // are allocated before measurement. The capacities cover every mutation.
+    // Fixture bytes, source strings, handles, churn ids, and timing state are
+    // prepared before measurement. Setup allocations are intentionally outside
+    // the workload receipt.
     let styles = style_blob();
     let atlas = texture_blob();
+    let font_atlas = font_atlas_blob();
     let source_strings = [
         String::from("PocketJS memory benchmark"),
         String::from("deterministic retained core workload"),
@@ -178,12 +221,13 @@ fn main() {
     let mut handles = Vec::with_capacity(1 + 1 + 32 + CHURN_SIZE);
     let mut churn_ids = Vec::with_capacity(CHURN_SIZE);
     let mut text_ids = Vec::with_capacity(32);
-    let mut timings = Vec::with_capacity(STEADY_TICKS + TEXT_TICKS + BURST_TICKS);
+    let mut timings = Vec::with_capacity(timing_capacity());
     timings.clear();
 
     let mut ui = Ui::new();
     ui.set_viewport(spec::SCREEN_W as f32, spec::SCREEN_H as f32);
     assert!(ui.load_styles(&styles));
+    assert!(ui.load_font_atlas(&font_atlas));
     handles.push(ui.upload_texture(&atlas, 16, 16, spec::psm::PSM_8888));
     let texture = handles[0];
 
@@ -227,7 +271,7 @@ fn main() {
     }
 
     // Phase 3: fixed-size subtree creation and destruction.
-    let mut structural_relayouts = 1u64 + (1 + 32 * 3) as u64;
+    let mut structural_relayouts = 1u64;
     for round in 0..CHURN_ROUNDS {
         churn_ids.clear();
         for i in 0..CHURN_SIZE {
@@ -236,13 +280,12 @@ fn main() {
             ui.set_prop(node, spec::prop::HEIGHT, (20 + i + round) as f64);
             ui.insert_before(panel, node, 0);
             churn_ids.push(node);
-            structural_relayouts += 1;
         }
         for node in churn_ids.iter().copied() {
             ui.destroy_node(node);
-            structural_relayouts += 1;
         }
         tick_and_measure(&mut ui, &mut checksum, &mut total_us, &mut max_us);
+        structural_relayouts += 1;
         timings.push(STEADY_TICKS + round);
     }
 
@@ -255,7 +298,10 @@ fn main() {
             "steady text update"
         };
         ui.set_text(text, value);
-        structural_relayouts += 1;
+        if structural_tick(i) {
+            structural_probe(&mut ui, panel, 22.0 + i as f64);
+            structural_relayouts += 1;
+        }
         tick_and_measure(&mut ui, &mut checksum, &mut total_us, &mut max_us);
         timings.push(STEADY_TICKS + CHURN_ROUNDS + i);
     }
@@ -265,7 +311,10 @@ fn main() {
         let text = text_ids[(i * 7) % text_ids.len()];
         ui.set_text(text, if i & 1 == 0 { "burst A" } else { "burst B" });
         ui.set_prop(panel, spec::prop::GAP, (i % 5) as f64);
-        structural_relayouts += 1;
+        if structural_tick(i) {
+            structural_probe(&mut ui, panel, 30.0 + i as f64);
+            structural_relayouts += 1;
+        }
         tick_and_measure(&mut ui, &mut checksum, &mut total_us, &mut max_us);
         timings.push(STEADY_TICKS + CHURN_ROUNDS + TEXT_TICKS + i);
     }
@@ -284,4 +333,29 @@ fn main() {
     println!("text_mode=atlas");
     println!("texture_mode=atlas");
     println!("drawlist_checksum={checksum:016x}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{font_atlas_blob, structural_tick, timing_capacity};
+    use pocketjs_core::Ui;
+
+    #[test]
+    fn reserves_all_measurement_entries() {
+        assert_eq!(timing_capacity(), 60);
+    }
+
+    #[test]
+    fn structural_schedule_is_fixed_and_coalesced() {
+        assert_eq!((0..16).filter(|&tick| structural_tick(tick)).count(), 4);
+        assert_eq!((0..12).filter(|&tick| structural_tick(tick)).count(), 3);
+    }
+
+    #[test]
+    fn fixture_atlas_loads_and_has_workload_glyphs() {
+        let mut ui = Ui::new();
+        assert!(ui.load_font_atlas(&font_atlas_blob()));
+        assert!(ui.font_atlas(0).unwrap().lookup('P' as u32).is_some());
+        assert_eq!(ui.measure_text("P", 0), 8.0);
+    }
 }
