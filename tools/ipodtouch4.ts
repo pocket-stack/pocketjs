@@ -390,10 +390,6 @@ function readReceipt(): BuildReceipt {
   return JSON.parse(readFileSync(receiptPath(), "utf8")) as BuildReceipt;
 }
 
-function shellQuote(word: string): string {
-  return /^[A-Za-z0-9_./:=+-]+$/.test(word) ? word : `'${word.replace(/'/g, "'\\''")}'`;
-}
-
 /** Run a libimobiledevice command where the device is: here, or on VIA. */
 function usbRun(command: string, args: readonly string[]): string {
   if (!VIA) return mustRun(command, args);
