@@ -326,6 +326,43 @@ describe("<For> reorder — DOM move semantics [R]", () => {
     dispose();
   });
 
+  test("an adjacent swap is a move too (insertBefore(node, node) is a no-op)", () => {
+    // Solid's reconcileArrays swaps [a, b] by inserting b before a.nextSibling
+    // — which is b itself. The DOM leaves the node in place; so must we,
+    // instead of unlinking b and then failing to find it as the anchor.
+    const [items, setItems] = createSignal(["a", "b", "c"]);
+    const byLabel = new Map<string, NodeMirror>();
+
+    const dispose = render(
+      () =>
+        comp(For, {
+          get each() {
+            return items();
+          },
+          children: (item: string) => {
+            const el = createElement("view");
+            byLabel.set(item, el);
+            return el;
+          },
+        }),
+      root,
+    );
+
+    const [a, b, c] = [byLabel.get("a")!, byLabel.get("b")!, byLabel.get("c")!];
+    host.clear();
+    setItems(["b", "a", "c"]);
+    expect(childIds(root)).toEqual([b.id, a.id, c.id]);
+    expect(new Set(childIds(root)).size).toBe(3);
+    expect(host.of("createNode")).toEqual([]);
+    expect(host.of("destroyNode")).toEqual([]);
+    setItems(["b", "c", "a"]);
+    expect(childIds(root)).toEqual([b.id, c.id, a.id]);
+    runSweep();
+    expect(host.of("destroyNode")).toEqual([]);
+
+    dispose();
+  });
+
   test("row removal detaches, then the frame-end sweep destroys", () => {
     const [items, setItems] = createSignal(["a", "b"]);
     const byLabel = new Map<string, NodeMirror>();

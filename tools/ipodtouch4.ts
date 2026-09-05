@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractHostBuildInputs } from "../framework/src/manifest/host-build-inputs.ts";
 import {
@@ -52,12 +52,142 @@ const KEY_PATH =
   process.env.POCKETJS_IPODTOUCH4_KEY ?? join(ipodtouch4CacheRoot(), "ssh/id_rsa");
 const KNOWN_HOSTS_PATH =
   process.env.POCKETJS_IPODTOUCH4_KNOWN_HOSTS ?? join(ipodtouch4CacheRoot(), "ssh/known_hosts");
-const BUNDLE_NAME = "PocketJSiPodTouch4.app";
-const BUNDLE_ID = "dev.pocket-stack.clear";
 const DEPLOYMENT_TARGET = IPODTOUCH4_TOOLCHAIN.compiler.minimumVersion;
 /** The app-side acceptance receipt: the Clear guest reports completed gesture
  *  interactions (complete / delete / create / reorder) under this name. */
 const ACTION_NAME = "clear_gesture";
+
+/**
+ * One installable app on the iPod. Two apps coexist on the device only if
+ * every device-side name differs: the bundle, its executable, the URL scheme
+ * SpringBoard launches it by, and the URL scheme. Runtime receipts live inside the app's own container.
+ */
+export interface IPodTouch4App {
+  readonly id: string;
+  /** pocket.json, relative to `root`. */
+  readonly manifest: string;
+  /**
+   * The project the app's sources live in. Absent for an app inside this
+   * repository; set for an EXTERNAL one, whose descriptor is read from a
+   * file (see selectIPodTouch4App) and whose build runs with
+   * `--project-root` pointed here — the same out-of-tree shape the 3DS
+   * pipeline uses.
+   */
+  readonly root?: string;
+  readonly bundleId: string;
+  readonly bundleName: string;
+  readonly executable: string;
+  readonly title: string;
+  /** SpringBoard URL scheme; `<scheme>://launch` opens the app. */
+  readonly scheme: string;
+  /** Artifact/receipt label retained for external app descriptors. */
+  readonly receiptSlug: string;
+  /** The `__reportAppAction` name `status --require-action` waits for. */
+  readonly actionName: string;
+  /** Compile hosts/ios-legacy/svcwire.c and expose spec ops 30..32: the app's
+   *  companion process lives on the LAN (svcwire.h). */
+  readonly svcWire: boolean;
+  /** Disable iOS's idle timer while the app runs (a remote must not auto-lock). */
+  readonly keepAwake: boolean;
+}
+
+/** The fields an external app's descriptor file must carry. */
+const EXTERNAL_FIELDS = [
+  "id",
+  "manifest",
+  "bundleId",
+  "bundleName",
+  "executable",
+  "title",
+  "scheme",
+  "receiptSlug",
+  "actionName",
+] as const;
+
+export const IPODTOUCH4_APPS: Readonly<Record<string, IPodTouch4App>> = {
+  clear: {
+    id: "clear",
+    manifest: "apps/clear/pocket.json",
+    bundleId: "dev.pocket-stack.clear",
+    bundleName: "PocketJSiPodTouch4.app",
+    executable: "PocketJSiPodTouch4",
+    title: "Pocket Clear",
+    scheme: "pocketjs-ipodtouch4",
+    receiptSlug: "pocketjs-ipodtouch4",
+    actionName: ACTION_NAME,
+    svcWire: false,
+    keepAwake: false,
+  },
+};
+
+/**
+ * Read an app that lives in another project: a JSON descriptor beside its
+ * sources carrying the fields above, plus an optional `projectRoot`
+ * (relative to the descriptor, default its own directory) that `manifest`
+ * and the manifest's own entry are resolved against. The guest then builds
+ * with `--project-root` set to it, so a product repository can own its app
+ * and its history while the toolchain, the host and the deployment
+ * transaction stay here.
+ */
+export function readExternalIPodTouch4App(descriptorPath: string): IPodTouch4App {
+  const file = resolvePath(descriptorPath);
+  const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  for (const field of EXTERNAL_FIELDS) {
+    if (typeof parsed[field] !== "string" || (parsed[field] as string).trim() === "") {
+      throw new Error(`pocket ipodtouch4: ${file} is missing a string ${field}`);
+    }
+  }
+  // The project root is where the app's own manifest paths start from — the
+  // product repository, not necessarily the descriptor's directory.
+  const root = resolvePath(dirname(file), typeof parsed.projectRoot === "string" ? parsed.projectRoot : ".");
+  const manifest = parsed.manifest as string;
+  if (!existsSync(join(root, manifest))) {
+    throw new Error(`pocket ipodtouch4: ${file} names a manifest that is not there: ${join(root, manifest)}`);
+  }
+  return {
+    id: parsed.id as string,
+    root,
+    manifest,
+    bundleId: parsed.bundleId as string,
+    bundleName: parsed.bundleName as string,
+    executable: parsed.executable as string,
+    title: parsed.title as string,
+    scheme: parsed.scheme as string,
+    receiptSlug: parsed.receiptSlug as string,
+    actionName: parsed.actionName as string,
+    svcWire: parsed.svcWire === true,
+    keepAwake: parsed.keepAwake === true,
+  };
+}
+
+export function selectIPodTouch4App(name: string | undefined, descriptor?: string): IPodTouch4App {
+  if (descriptor?.trim()) return readExternalIPodTouch4App(descriptor.trim());
+  const key = name?.trim() || "clear";
+  const app = IPODTOUCH4_APPS[key];
+  if (!app) {
+    throw new Error(
+      `pocket ipodtouch4: unknown app ${JSON.stringify(key)}; POCKETJS_IPODTOUCH4_APP must be one of ` +
+        `${Object.keys(IPODTOUCH4_APPS).join(", ")}, or POCKETJS_IPODTOUCH4_APP_FILE must name an external app's descriptor`,
+    );
+  }
+  return app;
+}
+
+const APP = selectIPodTouch4App(process.env.POCKETJS_IPODTOUCH4_APP, process.env.POCKETJS_IPODTOUCH4_APP_FILE);
+/** Where the app's own sources live: this repository, or another project. */
+const APP_ROOT = APP.root ?? REPOSITORY;
+/**
+ * The machine the iPod is plugged into, when it is not this one: an ssh host
+ * (alias) with usbmuxd + libimobiledevice. Device discovery and the iproxy
+ * tunnel then run there, and every ssh/scp to the device jumps through it
+ * (ProxyJump), so keys and the pinned host key stay on this Mac.
+ */
+const VIA = process.env.POCKETJS_IPODTOUCH4_VIA?.trim() || null;
+/** The tunnel's port on the jump host (fixed: nothing else there uses it). */
+const VIA_TUNNEL_PORT = 22224;
+const BUNDLE_NAME = APP.bundleName;
+const BUNDLE_ID = APP.bundleId;
+const EXECUTABLE = APP.executable;
 
 interface CommandResult {
   readonly exitCode: number;
@@ -79,6 +209,20 @@ interface BuildReceipt {
   readonly hostAbi: number;
   readonly deploymentTarget: string;
   readonly files: Readonly<Record<string, string>>;
+  /** The plan's presented surface; absent in receipts written before the
+   *  landscape viewport existed (those are the portrait Clear build). */
+  readonly viewport?: {
+    readonly logical: readonly [number, number];
+    readonly physical: readonly [number, number];
+    readonly rasterDensity: number;
+  };
+}
+
+/** The drawable `status`/`capture` must see, from the receipt when it says. */
+function expectedDrawable(receipt: BuildReceipt): { physical: readonly [number, number]; rasterDensity: number } {
+  return receipt.viewport
+    ? { physical: receipt.viewport.physical, rasterDensity: receipt.viewport.rasterDensity }
+    : { physical: IPODTOUCH4_PHYSICAL_VIEWPORT, rasterDensity: IPODTOUCH4_RASTER_DENSITY };
 }
 
 const BUILD_ID_PLACEHOLDER = "00000000000000000000000000000000";
@@ -204,15 +348,31 @@ function check(label: string, ok: boolean, detail: string): boolean {
 }
 
 function manifestPath(): string {
-  return join(REPOSITORY, "apps/clear/pocket.json");
+  return join(APP_ROOT, APP.manifest);
 }
 
 function planPath(): string {
-  return join(REPOSITORY, ".pocket/ipodtouch4/clear.plan.json");
+  return join(REPOSITORY, `.pocket/ipodtouch4/${APP.id}.plan.json`);
 }
 
 function guestDirectory(): string {
-  return join(REPOSITORY, "dist/ipodtouch4/guest");
+  return join(REPOSITORY, `dist/ipodtouch4/${APP.id}/guest`);
+}
+
+/**
+ * hosts/ipodtouch4/Info.plist is written for Pocket Clear; every other app
+ * takes the same plist with its own identity substituted. For Clear the
+ * substitution is the identity, so its bundle stays byte-identical.
+ */
+function renderInfoPlist(): string {
+  const clear = IPODTOUCH4_APPS.clear;
+  const source = readFileSync(join(REPOSITORY, "hosts/ipodtouch4/Info.plist"), "utf8");
+  return source
+    .replaceAll(`<string>${clear.bundleId}.launch</string>`, `<string>${APP.bundleId}.launch</string>`)
+    .replaceAll(`<string>${clear.bundleId}</string>`, `<string>${APP.bundleId}</string>`)
+    .replaceAll(`<string>${clear.title}</string>`, `<string>${APP.title}</string>`)
+    .replaceAll(`<string>${clear.executable}</string>`, `<string>${APP.executable}</string>`)
+    .replaceAll(`<string>${clear.scheme}</string>`, `<string>${APP.scheme}</string>`);
 }
 
 function bundleDirectory(): string {
@@ -230,10 +390,20 @@ function readReceipt(): BuildReceipt {
   return JSON.parse(readFileSync(receiptPath(), "utf8")) as BuildReceipt;
 }
 
+function shellQuote(word: string): string {
+  return /^[A-Za-z0-9_./:=+-]+$/.test(word) ? word : `'${word.replace(/'/g, "'\\''")}'`;
+}
+
+/** Run a libimobiledevice command where the device is: here, or on VIA. */
+function usbRun(command: string, args: readonly string[]): string {
+  if (!VIA) return mustRun(command, args);
+  return mustRun("ssh", ["-o", "BatchMode=yes", VIA, [command, ...args].map(shellQuote).join(" ")]);
+}
+
 function deviceUdid(): string {
   const requested = process.env.POCKETJS_IPODTOUCH4_UDID?.trim();
   if (requested) return requested;
-  const ids = mustRun("idevice_id", ["-l"])
+  const ids = usbRun("idevice_id", ["-l"])
     .split("\n")
     .map((id) => id.trim())
     .filter(Boolean);
@@ -246,7 +416,7 @@ function deviceUdid(): string {
 }
 
 function deviceValue(udid: string, key: string): string {
-  return mustRun("ideviceinfo", ["-u", udid, "-k", key]);
+  return usbRun("ideviceinfo", ["-u", udid, "-k", key]);
 }
 
 function verifyDeviceIdentity(): string {
@@ -274,8 +444,14 @@ function verifyDeviceIdentity(): string {
   return udid;
 }
 
+/** ssh/scp options that route through the jump host when the device is there. */
+function viaArgs(): string[] {
+  return VIA ? ["-o", `ProxyJump=${VIA}`] : [];
+}
+
 function sshArgs(port: number, command: string): string[] {
   return [
+    ...viaArgs(),
     "-i",
     KEY_PATH,
     "-p",
@@ -340,10 +516,15 @@ async function withTunnel<T>(
   // LOCAL_PORT may point at another device, so it is only the known-host alias
   // for SSH verification and for the explicit long-running `tunnel` command.
   const udid = verifyDeviceIdentity();
-  const port = await availableLocalPort();
+  const port = VIA ? VIA_TUNNEL_PORT : await availableLocalPort();
+  // On a jump host the forwarder runs there; -tt gives it a pty so it dies
+  // with this ssh instead of lingering when the tunnel is torn down.
   const tunnel = Bun.spawn({
-    cmd: ["iproxy", "-u", udid, `${port}:${DEVICE_PORT}`],
+    cmd: VIA
+      ? ["ssh", "-tt", "-o", "BatchMode=yes", VIA, `exec iproxy -u ${udid} ${port}:${DEVICE_PORT}`]
+      : ["iproxy", "-u", udid, `${port}:${DEVICE_PORT}`],
     cwd: REPOSITORY,
+    stdin: "ignore",
     stdout: "ignore",
     stderr: "pipe",
   });
@@ -356,7 +537,7 @@ async function withTunnel<T>(
     if (tunnel.exitCode === null) tunnel.kill();
     await tunnel.exited;
     const stderr = await new Response(tunnel.stderr as ReadableStream).text();
-    throw new Error(`pocket ipodtouch4: USB SSH tunnel did not become ready${stderr ? `:\n${stderr}` : ""}`);
+    throw new Error(`pocket ipodtouch4: USB SSH tunnel${VIA ? ` via ${VIA}` : ""} did not become ready${stderr ? `:\n${stderr}` : ""}`);
   } finally {
     if (tunnel.exitCode === null) {
       tunnel.kill();
@@ -367,10 +548,19 @@ async function withTunnel<T>(
 
 async function doctor(): Promise<void> {
   let ok = true;
-  const required = ["bun", "rustup", "xcrun", "ldid", "idevice_id", "ideviceinfo", "iproxy", "ssh", "scp", "zip", "unzip", "hdiutil"];
+  const usbTools = ["idevice_id", "ideviceinfo", "iproxy"];
+  const required = ["bun", "rustup", "xcrun", "ldid", ...(VIA ? [] : usbTools), "ssh", "scp", "zip", "unzip", "hdiutil"];
   for (const name of required) {
     const path = commandPath(name);
     ok = check(name, path !== undefined, path ?? "not found") && ok;
+  }
+  if (VIA) {
+    for (const name of usbTools) {
+      const found = run("ssh", ["-o", "BatchMode=yes", VIA, `command -v ${name}`]);
+      ok = check(`${name} on ${VIA}`, found.exitCode === 0, found.exitCode === 0 ? found.stdout.trim() : `not found on ${VIA} (pacman -S usbmuxd libimobiledevice)`) && ok;
+    }
+    const muxd = run("ssh", ["-o", "BatchMode=yes", VIA, "test -S /var/run/usbmuxd && echo socket"]);
+    ok = check(`usbmuxd on ${VIA}`, muxd.exitCode === 0, muxd.exitCode === 0 ? "/var/run/usbmuxd" : `no /var/run/usbmuxd on ${VIA} (the usbmuxd package starts it on plug-in)`) && ok;
   }
   const toolchain = inspectIPodTouch4Toolchain();
   ok = check(
@@ -399,9 +589,9 @@ async function doctor(): Promise<void> {
     );
     console.log(`[ok] jailbreak transport: ${remoteInfo}`);
     const appSync = remote(port, "dpkg-query -W -f='${Status}' ai.akemi.appsyncunified");
-    const signingReady = appSync.exitCode === 0 && appSync.stdout.trim() === "install ok installed";
-    ok = check("self-signed User app installation (AppSync Unified)", signingReady,
-      signingReady ? "package installed" : "install AppSync Unified from its upstream release, then reboot once") && ok;
+    ok = check("self-signed User app installation (AppSync Unified)",
+      appSync.exitCode === 0 && appSync.stdout.trim() === "install ok installed",
+      "install AppSync Unified from its upstream release, then reboot once") && ok;
     if (!ok) process.exitCode = 1;
   });
 }
@@ -434,7 +624,7 @@ async function build(): Promise<void> {
   mustRun("bun", [
     "tools/build.ts",
     `--plan=${planPath()}`,
-    `--project-root=${REPOSITORY}`,
+    `--project-root=${APP_ROOT}`,
     `--outdir=${guestDirectory()}`,
   ]);
   const guestJavaScript = join(guestDirectory(), `${inputs.appOutput}.js`);
@@ -449,7 +639,7 @@ async function build(): Promise<void> {
   const sysroot = ipodtouch4SysrootPath();
   const csu = ipodtouch4CsuPath();
   const quickjs = join(ipodtouch4QuickJsPath(), "libquickjs-sys/embed/quickjs");
-  const nativeBuild = join(REPOSITORY, ".pocket-build/ipodtouch4/runtime");
+  const nativeBuild = join(REPOSITORY, `.pocket-build/ipodtouch4/${APP.id}/runtime`);
   const rustTarget = join(ipodtouch4CacheRoot(), "build/rust-target");
   const cargoHome = join(ipodtouch4CacheRoot(), "build/cargo-home");
   rmSync(nativeBuild, { recursive: true, force: true });
@@ -500,7 +690,7 @@ async function build(): Promise<void> {
   const bundle = bundleDirectory();
   rmSync(bundle, { recursive: true, force: true });
   mkdirSync(bundle, { recursive: true });
-  cpSync(join(REPOSITORY, "hosts/ipodtouch4/Info.plist"), join(bundle, "Info.plist"));
+  writeFileSync(join(bundle, "Info.plist"), renderInfoPlist());
   cpSync(join(REPOSITORY, "hosts/ipodtouch4/PkgInfo"), join(bundle, "PkgInfo"));
   await bakeClassicIPhoneArtwork(bundle);
 
@@ -509,10 +699,16 @@ async function build(): Promise<void> {
     `-DPOCKET_LOGICAL_WIDTH=${inputs.viewport.logical[0]}`,
     `-DPOCKET_LOGICAL_HEIGHT=${inputs.viewport.logical[1]}`,
     `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`,
+    ...(APP.keepAwake ? ["-DPOCKET_KEEP_AWAKE"] : []),
+    // The wrapper reports the transport's state in the acceptance record,
+    // so it needs the same switch as the guest runtime.
+    ...(APP.svcWire ? ["-DPOCKET_SVC_WIRE"] : []),
   ];
+  const svcWireDefines = APP.svcWire ? ["-DPOCKET_SVC_WIRE", "-I", join(REPOSITORY, "hosts/ios-legacy")] : [];
   const crtGlobalsObject = join(nativeBuild, "crt_globals.o");
   const runtimeIdentityObject = join(nativeBuild, "runtime.build-id-input.o");
   const pocketRuntimeObject = join(nativeBuild, "pocket_runtime.o");
+  const svcWireObject = join(nativeBuild, "svcwire.o");
   const compatObject = join(nativeBuild, "compat.o");
   compile(join(REPOSITORY, "hosts/ios-legacy/crt_globals.c"), crtGlobalsObject, warnings);
   compile(join(REPOSITORY, "hosts/ipodtouch4/runtime.c"), runtimeIdentityObject, [
@@ -523,6 +719,7 @@ async function build(): Promise<void> {
   ]);
   compile(join(REPOSITORY, "engine/quickjs-c/pocket_runtime.c"), pocketRuntimeObject, [
     ...warnings,
+    ...svcWireDefines,
     `-DPOCKETJS_TARGET_ID=\"${inputs.target}\"`,
     `-DPOCKETJS_HOST_ABI=${inputs.hostAbi}`,
     `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`,
@@ -531,17 +728,21 @@ async function build(): Promise<void> {
     "-isystem",
     quickjs,
   ]);
+  if (APP.svcWire) {
+    compile(join(REPOSITORY, "hosts/ios-legacy/svcwire.c"), svcWireObject, [...warnings, ...svcWireDefines]);
+  }
   compile(join(REPOSITORY, "hosts/ios-legacy/compat.c"), compatObject, warnings);
 
   const buildId = hashInputs([
     planPath(),
     guestJavaScript,
     guestPak,
-    join(REPOSITORY, "hosts/ipodtouch4/Info.plist"),
+    { label: "bundle/Info.plist", path: join(bundle, "Info.plist") },
     join(REPOSITORY, "hosts/ipodtouch4/PkgInfo"),
     join(REPOSITORY, "hosts/iphone2g/Icon.png"),
     join(REPOSITORY, "hosts/iphone4s/Icon.svg"),
     join(REPOSITORY, "tools/iphone-classic-icon.ts"),
+    join(REPOSITORY, "tools/icon-raster.ts"),
     join(REPOSITORY, "tools/ipodtouch4.ts"),
     join(REPOSITORY, "tools/ipodtouch4-toolchain.ts"),
     join(REPOSITORY, "tools/cli/iphone4s-toolchain.json"),
@@ -558,6 +759,7 @@ async function build(): Promise<void> {
     { label: "native/crt_globals.o", path: crtGlobalsObject },
     { label: "native/runtime.build-id-input.o", path: runtimeIdentityObject },
     { label: "native/pocket_runtime.o", path: pocketRuntimeObject },
+    ...(APP.svcWire ? [{ label: "native/svcwire.o", path: svcWireObject }] : []),
     { label: "native/compat.o", path: compatObject },
     ...quickJsObjects.map((path) => ({ label: `native/${path.slice(nativeBuild.length + 1)}`, path })),
     { label: "native/libpocketjs_symbian_core.a", path: rustLibrary },
@@ -577,14 +779,14 @@ async function build(): Promise<void> {
 
   const embeddedJavaScript = join(nativeBuild, "app.js.bin");
   writeFileSync(embeddedJavaScript, Buffer.concat([readFileSync(guestJavaScript), Buffer.from([0])]));
-  const executable = join(bundle, "PocketJSiPodTouch4");
+  const executable = join(bundle, EXECUTABLE);
   mustRun(linker, ["-arch", "armv7", "-syslibroot", sysroot, "-L/usr/lib",
     "-F/System/Library/Frameworks", "-iphoneos_version_min", DEPLOYMENT_TARGET,
     "-no_pie", "-no_uuid", "-no_function_starts", "-no_data_in_code_info",
     "-no_source_version", "-no_compact_unwind", "-no_adhoc_codesign", "-no_encryption",
     "-e", "start", "-o", executable, join(nativeBuild, "csu-start.o"),
     join(nativeBuild, "csu-dyld-glue.o"), crtGlobalsObject,
-    runtimeObject, pocketRuntimeObject, compatObject,
+    runtimeObject, pocketRuntimeObject, ...(APP.svcWire ? [svcWireObject] : []), compatObject,
     "-force_load", rustLibrary, ...quickJsObjects,
     "-sectcreate", "__DATA", "__pocket_js", embeddedJavaScript,
     "-sectcreate", "__DATA", "__pocket_pak", guestPak,
@@ -602,7 +804,7 @@ async function build(): Promise<void> {
   }
 
   const fileNames = [
-    "PocketJSiPodTouch4",
+    EXECUTABLE,
     "Info.plist",
     "PkgInfo",
     IPHONE_CLASSIC_ICON_FILE,
@@ -619,6 +821,11 @@ async function build(): Promise<void> {
     hostAbi: inputs.hostAbi,
     deploymentTarget: DEPLOYMENT_TARGET,
     files,
+    viewport: {
+      logical: [inputs.viewport.logical[0], inputs.viewport.logical[1]],
+      physical: [inputs.viewport.physical[0], inputs.viewport.physical[1]],
+      rasterDensity: inputs.viewport.rasterDensity,
+    },
   };
   writeFileSync(receiptPath(), JSON.stringify(receipt, null, 2) + "\n");
 
@@ -654,7 +861,7 @@ function ipaPath(): string {
 }
 
 function copyToDevice(port: number, source: string, destination: string): void {
-  mustRun("scp", ["-O", "-i", KEY_PATH, "-P", String(port), "-o", "BatchMode=yes",
+  mustRun("scp", [...viaArgs(), "-O", "-i", KEY_PATH, "-P", String(port), "-o", "BatchMode=yes",
     "-o", `HostKeyAlias=[127.0.0.1]:${LOCAL_PORT}`, "-o", "StrictHostKeyChecking=yes",
     "-o", `UserKnownHostsFile=${KNOWN_HOSTS_PATH}`, "-o", "HostKeyAlgorithms=+ssh-rsa",
     "-o", "PubkeyAcceptedAlgorithms=+ssh-rsa", source, `root@127.0.0.1:${destination}`]);
@@ -668,7 +875,7 @@ async function deploy(): Promise<void> {
   const archive = `${remoteRoot}/app.ipa`;
   const script = join(REPOSITORY, `.pocket-build/ipodtouch4/deploy-${transactionId}.sh`);
   writeFileSync(script, userDeploymentScript({
-    bundleId: BUNDLE_ID, bundleName: BUNDLE_NAME, archive, archiveHash: sha256(ipaPath()),
+    bundleId: BUNDLE_ID, bundleName: BUNDLE_NAME, executable: EXECUTABLE, archive, archiveHash: sha256(ipaPath()),
     files: { ...receipt.files, "build-receipt.json": sha256(receiptPath()) },
   }));
   try {
@@ -729,8 +936,8 @@ async function launch(): Promise<void> {
     const paths = verifyInstalledReceipt(port, receipt);
     mustRemote(
       port,
-      `killall PocketJSiPodTouch4 2>/dev/null || true; rm -f ${paths.status} ${paths.frame}; ` +
-        "/bin/su mobile -c '/usr/bin/uiopen pocketjs-ipodtouch4://launch'; echo launch-requested",
+      `killall ${EXECUTABLE} 2>/dev/null || true; rm -f ${paths.status} ${paths.frame}; ` +
+        `/bin/su mobile -c '/usr/bin/uiopen ${APP.scheme}://launch'; echo launch-requested`,
     );
     await Bun.sleep(2500);
   });
@@ -788,14 +995,15 @@ async function status(requireAction: boolean): Promise<void> {
     if (current.state !== "running" || current.error !== "") {
       throw new Error(`pocket ipodtouch4: guest state=${current.state} error=${current.error || "none"}`);
     }
+    const drawable = expectedDrawable(receipt);
     if (
       current.renderer !== "gles1" ||
-      current.raster_density !== IPODTOUCH4_RASTER_DENSITY ||
-      current.drawable_width !== IPODTOUCH4_PHYSICAL_VIEWPORT[0] ||
-      current.drawable_height !== IPODTOUCH4_PHYSICAL_VIEWPORT[1]
+      current.raster_density !== drawable.rasterDensity ||
+      current.drawable_width !== drawable.physical[0] ||
+      current.drawable_height !== drawable.physical[1]
     ) {
       throw new Error(
-        `pocket ipodtouch4: expected GLES1 Retina ${IPODTOUCH4_PHYSICAL_VIEWPORT.join("x")}, got ` +
+        `pocket ipodtouch4: expected GLES1 Retina ${drawable.physical.join("x")}, got ` +
           `${current.renderer} ${current.drawable_width}x${current.drawable_height} @${current.raster_density}x`,
       );
     }
@@ -807,11 +1015,11 @@ async function status(requireAction: boolean): Promise<void> {
     if (
       requireAction &&
       (current.completed_touch_sequences < 1 ||
-        current.action_name !== ACTION_NAME ||
+        current.action_name !== APP.actionName ||
         current.action_value < 1 ||
         current.action_sequence < 1)
     ) {
-      throw new Error("pocket ipodtouch4: no completed Clear gesture receipt yet");
+      throw new Error(`pocket ipodtouch4: no completed ${APP.title} action receipt yet`);
     }
     console.log(JSON.stringify(current, null, 2));
   });
@@ -825,6 +1033,7 @@ async function capture(): Promise<void> {
   let renderer = "";
   let width = 0;
   let height = 0;
+  const drawable = expectedDrawable(readReceipt());
   await withTunnel(async (port) => {
     const paths = verifyInstalledReceipt(port, readReceipt());
     try {
@@ -834,9 +1043,9 @@ async function capture(): Promise<void> {
       height = status.drawable_height;
       if (
         renderer !== "gles1" ||
-        width !== IPODTOUCH4_PHYSICAL_VIEWPORT[0] ||
-        height !== IPODTOUCH4_PHYSICAL_VIEWPORT[1] ||
-        status.raster_density !== IPODTOUCH4_RASTER_DENSITY
+        width !== drawable.physical[0] ||
+        height !== drawable.physical[1] ||
+        status.raster_density !== drawable.rasterDensity
       ) {
         throw new Error(`pocket ipodtouch4: refusing non-Retina capture ${renderer} ${width}x${height}`);
       }
@@ -894,7 +1103,7 @@ function tunnel(): never {
 }
 
 function usage(): void {
-  console.log(`PocketJS iPod touch 4 tool
+  console.log(`PocketJS iPod touch 4 tool  (app: ${APP.id}${APP.root ? ` from ${APP.root}` : ""}; POCKETJS_IPODTOUCH4_APP=${Object.keys(IPODTOUCH4_APPS).join("|")} or POCKETJS_IPODTOUCH4_APP_FILE=<external app's ipodtouch4.json>; POCKETJS_IPODTOUCH4_VIA=<ssh host the iPod is plugged into>${VIA ? ` = ${VIA}` : ""})
 
   bun ipodtouch4 doctor
   bun ipodtouch4 setup-sources

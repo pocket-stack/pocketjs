@@ -6,6 +6,7 @@
   <array>
     <string>Install</string>
     <string>Uninstall</string>
+    <string>Lookup</string>
   </array>
 </dict>
 </plist>

@@ -62,6 +62,14 @@ journal=${shellQuote(`/var/root/Library/PocketJS/${bundleId}.migration`)}
 refresh() {
   /bin/su mobile -c /usr/bin/uicache
   killall -KILL installd 2>/dev/null || true
+  # The old IPC endpoint can still exist while SIGKILL is being delivered.
+  sleep 1
+  attempt=0
+  until "$installer" ready service; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 10 ]; then echo 'installation service did not become ready' >&2; return 1; fi
+    sleep 1
+  done
 }
 # Reconcile an interrupted migration before starting another installation.
 restore_legacy() {

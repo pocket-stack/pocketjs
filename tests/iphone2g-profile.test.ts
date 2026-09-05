@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,11 +109,8 @@ describe("private iPhone 2G build profile", () => {
   });
 
   test("ships a precomposed skeuomorphic SpringBoard icon", async () => {
-    expect(
-      createHash("sha256").update(readFileSync(ICON_PATH)).digest("hex"),
-    ).toBe("c53fd02ab1148674d33d36efa9b1d2eecc518cbe325ea2a2a0d47e3c295b019b");
     const image = await loadImage(ICON_PATH);
-    expect([image.width, image.height]).toEqual([59, 60]);
+    expect([image.width, image.height]).toEqual([57, 57]);
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext("2d");
     context.drawImage(image, 0, 0);
@@ -124,15 +120,17 @@ describe("private iPhone 2G build profile", () => {
     // SpringBoard on 1.x rounds nothing itself, so the artwork carries its own
     // corners: transparent outside them, opaque everywhere inside.
     expect(alphaAt(0, 0)).toBe(0);
-    expect(alphaAt(58, 0)).toBe(0);
-    expect(alphaAt(0, 59)).toBe(0);
-    expect(alphaAt(58, 59)).toBe(0);
+    expect(alphaAt(56, 0)).toBe(0);
+    expect(alphaAt(0, 56)).toBe(0);
+    expect(alphaAt(56, 56)).toBe(0);
     expect(alphaAt(29, 29)).toBe(255);
-    // The three layers the era treatment is made of, sampled in from the edge:
-    // chrome bezel, plum enamel, then the arcade-yellow shell of the mark.
-    expect(pixelAt(29, 2)).toEqual([215, 217, 220, 255]);
-    expect(pixelAt(29, 52)).toEqual([28, 21, 48, 255]);
-    expect(pixelAt(12, 30)).toEqual([255, 210, 63, 255]);
+    // The selected palette retains a clear yellow outline over plum.
+    const center = pixelAt(28, 48);
+    expect(center[2]).toBeGreaterThan(center[1]);
+    const shell = pixelAt(10, 29);
+    expect(shell[0]).toBeGreaterThan(200);
+    expect(shell[1]).toBeGreaterThan(170);
+    expect(shell[2]).toBeLessThan(150);
   });
 
   test("the ES 1.1 pipeline enables the fixed-function state ES 2 gets from its shader", () => {

@@ -68,6 +68,12 @@ export interface BakeOptions {
   regularTtf?: string;
   boldTtf?: string;
   monoTtf?: string;
+  /** Faces tried, in order, for a codepoint the slot's own face does not
+   *  map — an icon font whose glyphs have to sit in the same atlas as the
+   *  text they label. A fallback glyph keeps its own advance, scaled to the
+   *  slot's px through its own unitsPerEm, so a double-width symbol stays
+   *  centred in its box. */
+  fallbackTtfs?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +284,7 @@ export function bakeSlot(
   bold: boolean,
   chars: number[],
   rasterDensity = 1,
+  fallbacks: readonly Font[] = [],
 ): BakedAtlas {
   rasterDensity = checkedRasterDensity(rasterDensity);
   const upm = font.unitsPerEm;
@@ -306,10 +313,23 @@ export function bakeSlot(
   for (const cp of chars) {
     if (cp === TOFU_CODEPOINT) continue; // reserved for gid 0
     const ch = String.fromCodePoint(cp);
-    const gi = font.charToGlyphIndex(ch);
+    // The slot's own face first; a codepoint it does not map comes from the
+    // first fallback that does. Metrics scale through the SOURCE face's
+    // unitsPerEm (opentype.js stamps it on the glyph path), so the fallback
+    // glyph lands on this slot's baseline at this slot's px.
+    let source = font;
+    let gi = font.charToGlyphIndex(ch);
+    for (let f = 0; gi <= 0 && f < fallbacks.length; f++) {
+      const candidate = fallbacks[f]!.charToGlyphIndex(ch);
+      if (candidate > 0) {
+        source = fallbacks[f]!;
+        gi = candidate;
+      }
+    }
     if (gi <= 0) continue;
-    const glyph = font.glyphs.get(gi);
-    const advance = Math.max(0, Math.min(255, Math.round((glyph.advanceWidth ?? 0) * scale)));
+    const glyph = source.glyphs.get(gi);
+    const sourceScale = source === font ? scale : px / source.unitsPerEm;
+    const advance = Math.max(0, Math.min(255, Math.round((glyph.advanceWidth ?? 0) * sourceScale)));
     const path = glyph.getPath(0, baseline, px);
     // Keep every metric byte-for-byte equivalent to the density-1 bake. The
     // higher-density contour gets more curve subdivisions, then is scaled into
@@ -428,6 +448,11 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
     bold: null,
     mono: null,
   };
+  const fallbacks: Font[] = [];
+  for (const path of opts.fallbackTtfs ?? []) {
+    opts.onRead?.(path);
+    fallbacks.push(await loadFont(path));
+  }
   const results: BakedAtlas[] = [];
   for (const slot of [...opts.slots].sort((a, b) => a - b)) {
     if (slot < 0 || slot >= MAX_FONT_SLOTS) {
@@ -442,7 +467,7 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
           : (opts.regularTtf ?? DEFAULT_REGULAR);
     opts.onRead?.(path);
     fonts[key] ??= await loadFont(path);
-    results.push(bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity));
+    results.push(bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity, fallbacks));
   }
   return results;
 }

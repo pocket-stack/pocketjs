@@ -321,6 +321,25 @@ console.log(
     `${Object.keys(styles.ids).length} literal(s) -> framework/src/styles.generated.ts`,
 );
 
+// Optional per-app font sidecar: <appDir>/fonts.json names fallback faces
+// tried, in order, for codepoints the slot's own face does not map — an icon
+// font (Nerd Font symbols, say) whose glyphs must share the atlas with text.
+// Paths are relative to the app directory, so the face travels with the app.
+interface FontsManifest {
+  fallback?: string[];
+}
+const fontsManifestPath = join(dirname(entry), "fonts.json");
+let fallbackTtfs: string[] = [];
+if (existsSync(fontsManifestPath)) {
+  buildInputs.add(fontsManifestPath);
+  const fontsManifest = JSON.parse(await Bun.file(fontsManifestPath).text()) as FontsManifest;
+  fallbackTtfs = (fontsManifest.fallback ?? []).map((p) => resolvePath(dirname(entry), p));
+  for (const p of fallbackTtfs) {
+    if (!existsSync(p)) throw new Error(`PocketJS build: fonts.json fallback face not found: ${p}`);
+  }
+  if (fallbackTtfs.length) console.log(`  fonts: ${fallbackTtfs.length} fallback face(s) from fonts.json`);
+}
+
 const atlases = await bakeAtlases({
   codepoints,
   slots: styles.usedFontSlots,
@@ -329,6 +348,7 @@ const atlases = await bakeAtlases({
   regularTtf: regularFontPath,
   boldTtf: boldFontPath,
   onRead: path => buildInputs.add(path),
+  fallbackTtfs,
 });
 for (const a of atlases) {
   console.log(

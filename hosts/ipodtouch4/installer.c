@@ -94,7 +94,11 @@ int main(int argc, char **argv) {
   }
   id pool = send0(send0(objc_getClass("NSAutoreleasePool"), "alloc"), "init");
   int result = 1;
-  if (!strcmp(argv[1], "bundle-id")) {
+  if (!strcmp(argv[1], "ready")) {
+    void *library = dlopen("/System/Library/PrivateFrameworks/MobileInstallation.framework/MobileInstallation", RTLD_NOW);
+    id (*lookup_apps)(id) = library ? dlsym(library, "MobileInstallationLookup") : NULL;
+    result = !lookup_apps || !lookup_apps(NULL);
+  } else if (!strcmp(argv[1], "bundle-id")) {
     char path[4096];
     if (snprintf(path, sizeof(path), "%s/Info.plist", argv[2]) >= (int)sizeof(path)) return 2;
     id info = send1(objc_getClass("NSDictionary"), "dictionaryWithContentsOfFile:", string(path));

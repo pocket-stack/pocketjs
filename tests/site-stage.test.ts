@@ -534,12 +534,18 @@ test("public PocketJS icon surfaces keep the arcade mark on the plum backing", (
     "site/templates.ts",
     "site/assets/og-image.svg",
     "hosts/ipodtouch6/Icon.svg",
-    "hosts/iphone4s/Icon.svg",
   ]) {
     const source = readFileSync(ROOT + file, "utf8");
     expect(source).toContain(shell);
     expect(source).toContain('<circle cx="10" cy="16" r="3.1" fill="#ff5f9e"/>');
   }
+
+  // Classic hardware uses the selected muted palette, with unchanged iOS
+  // mark geometry; the web and modern iOS surfaces retain the primary hues.
+  const classic = readFileSync(ROOT + "hosts/iphone4s/Icon.svg", "utf8");
+  expect(classic).toContain('rx="6" fill="none" stroke="#efce77" stroke-width="2.6"');
+  expect(classic).toContain('<circle cx="10" cy="16" r="3.1" fill="#dc91ad"/>');
+  expect(classic).toContain('width="10" height="2.2" rx="1.1" fill="#83c6d0"/>');
 
   const readme = readFileSync(ROOT + "README.md", "utf8");
   expect(readme).toContain('src="./site/assets/favicon.svg"');

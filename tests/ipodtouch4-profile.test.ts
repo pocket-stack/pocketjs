@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { POCKET_TARGETS } from "../contracts/spec/platforms.ts";
 import { verifyPlanHash } from "../framework/src/manifest/plan.ts";
 import {
   IPODTOUCH4_DEV_CONTRACTS,
   IPODTOUCH4_DEV_HOST_ABI,
   IPODTOUCH4_DEV_TARGET_ID,
+  IPODTOUCH4_LANDSCAPE_VIEWPORT,
   IPODTOUCH4_LOGICAL_VIEWPORT,
   IPODTOUCH4_PHYSICAL_VIEWPORT,
   IPODTOUCH4_RASTER_DENSITY,
@@ -21,6 +23,8 @@ import {
 import { IPHONE4S_TOOLCHAIN } from "../tools/iphone4s-toolchain.ts";
 import {
   buildReceiptsMatch,
+  IPODTOUCH4_APPS,
+  selectIPodTouch4App,
 } from "../tools/ipodtouch4.ts";
 
 const repository = join(import.meta.dir, "..");
@@ -34,7 +38,7 @@ describe("private iPod touch 4 profile", () => {
       form: "takeover",
       display: {
         physicalViewport: IPODTOUCH4_PHYSICAL_VIEWPORT,
-        logicalViewports: [IPODTOUCH4_LOGICAL_VIEWPORT],
+        logicalViewports: [IPODTOUCH4_LOGICAL_VIEWPORT, IPODTOUCH4_LANDSCAPE_VIEWPORT],
         presentations: ["native"],
         rasterDensity: IPODTOUCH4_RASTER_DENSITY,
       },
@@ -60,6 +64,58 @@ describe("private iPod touch 4 profile", () => {
     expect(plan.app.output).toBe("clear-main");
     expect(plan.app.framework).toBe("vue-vapor");
     expect(verifyPlanHash(plan)).toBe(true);
+  });
+
+  test("resolves an external landscape app with independent device identity", () => {
+    const manifest = JSON.parse(readFileSync(join(repository, "apps/clear/pocket.json"), "utf8"));
+    manifest.app.entry = "ipod/main.tsx";
+    manifest.app.output = "external-shell";
+    manifest.app.framework = "solid";
+    manifest.app.viewport.fixed.logical = [480, 320];
+    const plan = resolveIPodTouch4BuildPlan(manifest);
+    expect(plan.viewport).toEqual({
+      logical: IPODTOUCH4_LANDSCAPE_VIEWPORT,
+      physical: [IPODTOUCH4_PHYSICAL_VIEWPORT[1], IPODTOUCH4_PHYSICAL_VIEWPORT[0]],
+      presentation: "native",
+      rasterDensity: IPODTOUCH4_RASTER_DENSITY,
+      policy: "fixed",
+    });
+    expect(plan.app.output).toBe("external-shell");
+    expect(plan.app.framework).toBe("solid");
+    // A second app on the device needs its own bundle, executable, scheme and
+    // receipt paths; the network app compiles the svc wire in.
+    const root = mkdtempSync(join(tmpdir(), "pocket-external-ipod-"));
+    let remote;
+    try {
+      mkdirSync(join(root, "ipod"));
+      writeFileSync(join(root, "ipod/pocket.json"), JSON.stringify(manifest));
+      const descriptor = join(root, "ipod/ipodtouch4.json");
+      writeFileSync(descriptor, JSON.stringify({
+        id: "shell", projectRoot: "..", manifest: "ipod/pocket.json",
+        bundleId: "dev.pocket-stack.shell", bundleName: "PocketShell.app",
+        executable: "PocketShell", title: "Pocket Shell", scheme: "pocketjs-shell",
+        receiptSlug: "pocketjs-shell", actionName: "shell_action", svcWire: true,
+      }));
+      remote = selectIPodTouch4App(undefined, descriptor);
+      expect(remote.root).toBe(root);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+    const clear = selectIPodTouch4App(undefined);
+    expect(clear).toBe(IPODTOUCH4_APPS.clear);
+    expect(remote.svcWire).toBe(true);
+    expect(clear.svcWire).toBe(false);
+    for (const key of ["bundleId", "bundleName", "executable", "scheme", "receiptSlug"] as const) {
+      expect(remote[key]).not.toBe(clear[key]);
+    }
+    expect(() => selectIPodTouch4App("nope")).toThrow("unknown app");
+    const wrapper = readFileSync(join(repository, "hosts/ipodtouch4/runtime.c"), "utf8");
+    expect(wrapper).toContain("NSTemporaryDirectory()");
+    const runtime = readFileSync(join(repository, "hosts/ios-legacy/runtime.c"), "utf8");
+    expect(runtime).toContain("landscape = POCKET_LOGICAL_WIDTH > POCKET_LOGICAL_HEIGHT");
+    expect(runtime).toContain('sel_registerName("setTransform:")');
+    const guest = readFileSync(join(repository, "engine/quickjs-c/pocket_runtime.c"), "utf8");
+    expect(guest).toContain("#ifdef POCKET_SVC_WIRE");
+    expect(guest).toContain('add_host_operation(context, ui, "svcOpen", 1, HostSvcOpen)');
+    expect(guest).toContain("svcwire_pump();");
   });
 
   test("pins the device tuple and shares the validated 4S toolchain", () => {
@@ -89,7 +145,7 @@ describe("private iPod touch 4 profile", () => {
     expect(tool).toContain('delegateToIPhone4S("prepare-sysroot")');
   });
 
-  test("shares the multi-contact touch host", () => {
+  test("shares the multi-contact touch host and keeps transactional rollback", () => {
     const wrapper = readFileSync(join(repository, "hosts/ipodtouch4/runtime.c"), "utf8");
     const runtime = readFileSync(join(repository, "hosts/ios-legacy/runtime.c"), "utf8");
     const guest = readFileSync(join(repository, "engine/quickjs-c/pocket_runtime.c"), "utf8");
