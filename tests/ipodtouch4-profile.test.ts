@@ -21,10 +21,6 @@ import {
 import { IPHONE4S_TOOLCHAIN } from "../tools/iphone4s-toolchain.ts";
 import {
   buildReceiptsMatch,
-  deploymentAcquireLockCommand,
-  deploymentInstallCommand,
-  deploymentRenewLockCommand,
-  ipodtouch4DeploymentPaths,
 } from "../tools/ipodtouch4.ts";
 
 const repository = join(import.meta.dir, "..");
@@ -83,7 +79,7 @@ describe("private iPod touch 4 profile", () => {
     expect(tool).toContain("passwordauthentication no");
     expect(tool).toContain("byte-exact readback");
     expect(tool).toContain('"build-receipt.json": sha256(receiptPath())');
-    expect(tool).toContain("/bin/su mobile -c 'touch ${CAPTURE_REQUEST_PATH}'");
+    expect(tool).toContain("/bin/su mobile -c 'touch ${paths.capture}'");
     expect(tool).toContain('label: "native/runtime.build-id-input.o"');
     expect(tool).toContain('label: "native/pocket_runtime.o"');
     expect(tool).toContain("...quickJsObjects.map");
@@ -93,7 +89,7 @@ describe("private iPod touch 4 profile", () => {
     expect(tool).toContain('delegateToIPhone4S("prepare-sysroot")');
   });
 
-  test("shares the multi-contact touch host and keeps transactional rollback", () => {
+  test("shares the multi-contact touch host", () => {
     const wrapper = readFileSync(join(repository, "hosts/ipodtouch4/runtime.c"), "utf8");
     const runtime = readFileSync(join(repository, "hosts/ios-legacy/runtime.c"), "utf8");
     const guest = readFileSync(join(repository, "engine/quickjs-c/pocket_runtime.c"), "utf8");
@@ -110,31 +106,7 @@ describe("private iPod touch 4 profile", () => {
     expect(guest).toContain("(id << 18) | (y << 9) | x");
     expect(guest).toContain("0x80000000U | (id << 20) | (y << 10) | x");
 
-    const first = ipodtouch4DeploymentPaths("a".repeat(24));
-    const second = ipodtouch4DeploymentPaths("b".repeat(24));
-    expect(first.stage).not.toBe(second.stage);
-    expect(first.backup).not.toBe(second.backup);
-    expect(first.lock).toBe(second.lock);
-    const install = deploymentInstallCommand("a".repeat(24), first);
-    expect(install).toContain("trap rollback EXIT HUP INT TERM");
-    expect(install).toContain("prepared > \"$lock/phase\"");
-    expect(install).toContain("previous > \"$lock/origin\"");
-    expect(install).toContain("committed > \"$lock/phase\"");
-    expect(install.lastIndexOf("uicache")).toBeLessThan(install.lastIndexOf("trap - EXIT HUP INT TERM"));
-    expect(install.lastIndexOf("trap - EXIT HUP INT TERM")).toBeLessThan(install.lastIndexOf('rm -rf "$backup"'));
 
-    const acquire = deploymentAcquireLockCommand("a".repeat(24), first, 1_000, 1_600);
-    expect(acquire).toContain('lease=$(cat "$lock/expires"');
-    expect(acquire).toContain('[ "$lease" -gt "$now" ]');
-    expect(acquire).toContain('reclaim=$lock/reclaim');
-    expect(acquire).toContain('case "$owner" in *[!0-9a-f]*)');
-    expect(acquire).toContain('[ "$phase" = committed ]');
-    expect(acquire).toContain('mv "$backup" "$dest"');
-    expect(acquire).toContain('[ "$origin" = empty ]');
-    expect(() => deploymentAcquireLockCommand("a".repeat(24), first, 1_000, 1_000)).toThrow();
-    const renew = deploymentRenewLockCommand("a".repeat(24), first, 2_000);
-    expect(renew).toContain('test "$(cat "$lock/owner")" = "$tx"');
-    expect(renew).toContain('> "$lock/expires"');
   });
 
   test("compares the complete installed receipt rather than only its build ID", () => {

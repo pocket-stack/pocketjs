@@ -16,5 +16,10 @@ for the legacy Apple hosts.
 SpringBoard artwork reuses the classic PocketJS icon pipeline
 (`tools/iphone-classic-icon.ts`).
 
-Use `bun ipodtouch4 doctor`, then the build, deploy, launch, status, and
-capture commands documented in `docs/IPODTOUCH4.md`.
+Deployment produces an IPA and uses iOS 6 MobileInstallation to register a
+**sandboxed User application with native SpringBoard deletion**. AppSync
+Unified is required for these local self-signed builds. Updates retain app
+data; uninstall removes the container and its runtime receipt files.
+
+Use `bun ipodtouch4 doctor`, then the build, deploy, launch, status, capture,
+and uninstall commands documented in `docs/IPODTOUCH4.md`.

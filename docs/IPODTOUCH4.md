@@ -35,7 +35,13 @@ iOS 6.1.6 is untethered). The completed bootstrap provides:
 - OpenSSH on device port 22;
 - a dedicated RSA client key and pinned device host key;
 - `PasswordAuthentication no` after public-key login succeeds;
-- `ldid`, `uicache`, and `uiopen` for application deployment.
+- `ldid`, `uicache`, and `uiopen` for application deployment;
+- **AppSync Unified and its Cydia Substrate dependencies** for local self-signed
+  User applications. Install the `iphoneos-arm` package from the
+  [upstream release](https://github.com/akemin-dayo/AppSync/releases), then
+  reboot once to activate it. `doctor` checks the installed package. The
+  deployment command reports an installation failure if the signing support
+  is inactive; it does not fall back to a System application.
 
 The default local files are:
 
@@ -72,6 +78,7 @@ bun ipodtouch4 deploy
 bun ipodtouch4 launch
 bun ipodtouch4 status [--require-action]
 bun ipodtouch4 capture
+bun ipodtouch4 uninstall         # removes the app and its data
 ```
 
 `build` resolves `apps/clear/pocket.json` against the `ipodtouch4-dev`
@@ -81,12 +88,36 @@ embedded as `__pocket_js` / `__pocket_pak` sections. The build id hashes the
 plan, the guest artifacts, every native object, the sysroot stubs, and the
 baked artwork.
 
-`deploy` copies the bundle over the USB SSH tunnel, verifies every file's
-SHA-256 on the device against the local receipt, and installs under a leased
-transactional lock with rollback — the same protocol as the iPhone 4S, with
-device paths under `pocketjs-ipodtouch4`.
+**`build` also produces `dist/ipodtouch4/PocketJSiPodTouch4.ipa`.** `deploy`
+transfers that IPA over the pinned USB SSH tunnel and calls iOS 6
+`MobileInstallationInstall` with `ApplicationType=User`. **iOS creates the
+UUID container under `/var/mobile/Applications`, owns updates, and preserves
+`Documents` and `Library` on update.** Every installed bundle file, including
+the build receipt, must match its local SHA-256. A kernel file lock serializes
+installation and CLI removal; process exit releases the lock.
 
-`status` reads `/private/var/tmp/pocketjs-ipodtouch4.status` twice and
+The first deployment migrates the former `/Applications/PocketJSiPodTouch4.app`
+installation. It checks the bundle identifier, retains the old bundle in a
+root-owned migration journal, and refreshes its System registration before
+installing the User app. The migration restarts `installd` to reload its
+in-memory System map; SpringBoard is not restarted. A failed installation restores the old bundle; the
+next deployment reconciles an interrupted migration. The journal is removed
+after User registration and installed byte verification pass. The app's old
+bundle-specific preferences are copied into its new container when present;
+other files in the shared mobile home are not treated as app-owned data.
+
+**Long-pressing the User app on SpringBoard exposes the native delete badge.**
+Deleting there, or running `bun ipodtouch4 uninstall`, uses iOS's uninstall
+service and removes the application container, including its data. A later
+`deploy` installs a fresh container. The CLI verifies that the registration
+and container are gone. The privileged installer bridge stays under
+`/var/root/Library/PocketJS`; its install/uninstall entitlement is never added
+to the application binary.
+
+`launch`, `status`, and `capture` look up the current container from the iOS
+installation record. The runtime resolves `NSTemporaryDirectory()` and keeps
+its receipts and captures inside that container. **`status` reads
+`<container>/tmp/pocketjs.status` twice** and
 requires the running build id, an advancing frame counter and heartbeat, and
 the GLES1 640×960 density-2 drawable. With `--require-action` it additionally
 requires at least one completed touch sequence and a reported `clear_gesture`

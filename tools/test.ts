@@ -60,6 +60,7 @@ const SUITE: readonly Stage[] = [
       "tests/iphone4s-profile.test.ts",
       "tests/ipodtouch-profile.test.ts",
       "tests/ipodtouch4-profile.test.ts",
+      "tests/ipodtouch4-installation.test.ts",
       "tests/meizu-m8-profile.test.ts",
       "tests/blackberry-classic.test.ts",
       "tests/pocket-input.test.ts",
