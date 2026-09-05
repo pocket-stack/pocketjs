@@ -141,6 +141,7 @@
   "exports": {
     ".": "./framework/src/index.ts",
     "./animation": "./framework/src/animation.ts",
+    "./classic": "./framework/src/classic.ts",
     "./offload/provider": "./tools/offload-provider.ts",
     "./offload/capabilities": "./tools/offload-capabilities.ts",
     "./offload": "./framework/src/offload.ts",

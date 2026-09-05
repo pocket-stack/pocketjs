@@ -86,6 +86,10 @@ import {
   View,
 } from "../framework/src/components.ts";
 import { getAuxiliarySurfaceRoots } from "../framework/src/display.ts";
+import { ClassicButton } from "../framework/src/classic.ts";
+import { __runGestures, resetGestures, pushTouchBlock } from "../framework/src/gesture.ts";
+import { __packTouch, __setTouches, __resetTouches } from "../framework/src/touch.ts";
+import { __advanceClock, resetClock } from "../framework/src/clock.ts";
 import {
   DeepZoom,
   type DeepZoomGesture,
@@ -194,6 +198,30 @@ function childIds(node: NodeMirror): number[] {
 
 let host: MockHost;
 let root: NodeMirror;
+
+test("classic buttons provide press, slide-out, disabled and cancelled feedback", () => {
+  resetGestures(); __resetTouches(); resetClock();
+  registerStyles({ "text-xs font-bold": 1 });
+  let clicked = 0, hit = 0;
+  host.ops.hitTestBounds = () => hit;
+  const [disabled, setDisabled] = createSignal(false);
+  const dispose = render(() => ClassicButton({ label: "Save", style: { width: 80, height: 24 },
+    get disabled() { return disabled(); }, onPress() { clicked++; },
+  }) as unknown as NodeMirror, root);
+  setInputRoot(root);
+  const button = root.children[0]; hit = button.id;
+  const pump = (down: boolean) => { __advanceClock(); __setTouches(down ? [__packTouch(0, 10, 10)] : []); __runGestures(); };
+  const changes = () => host.of("setProp").filter(call => call[1] === button.id && call[2] === PROP.gradFrom);
+  host.clear(); pump(true); expect(changes()).toHaveLength(1); expect(clicked).toBe(0);
+  pump(false); expect(changes()).toHaveLength(2); expect(clicked).toBe(1);
+  pump(true); hit = 0;
+  __advanceClock(); __setTouches([__packTouch(0, 100, 10)]); __runGestures();
+  pump(false); expect(clicked).toBe(1); // release outside cancels
+  hit = button.id; pump(true); setDisabled(true); pump(false); expect(clicked).toBe(1);
+  setDisabled(false); pump(true); const unblock = pushTouchBlock(); pump(false); unblock(); expect(clicked).toBe(1);
+  pump(true); pump(false); expect(clicked).toBe(2);
+  dispose(); resetGestures(); __resetTouches();
+});
 
 test("resource images retain their layout through fallback, retry and borrowed texture replacement", () => {
   const [state, setState] = createSignal<ResourceState<TextureResource>>(pending());
