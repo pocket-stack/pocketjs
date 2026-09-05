@@ -1,4 +1,6 @@
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::UnsafeCell;
+use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Instant;
 
@@ -12,17 +14,150 @@ static PEAK: AtomicUsize = AtomicUsize::new(0);
 static TOTAL: AtomicUsize = AtomicUsize::new(0);
 static COUNT: AtomicUsize = AtomicUsize::new(0);
 
+const LEDGER_CAPACITY: usize = 4096;
+
+#[derive(Clone, Copy)]
+struct LedgerEntry {
+    ptr: usize,
+    size: usize,
+    measured: bool,
+}
+
+struct AllocationLedger {
+    entries: [LedgerEntry; LEDGER_CAPACITY],
+}
+
+impl AllocationLedger {
+    const EMPTY: LedgerEntry = LedgerEntry {
+        ptr: 0,
+        size: 0,
+        measured: false,
+    };
+
+    const fn new() -> Self {
+        Self {
+            entries: [Self::EMPTY; LEDGER_CAPACITY],
+        }
+    }
+
+    fn alloc(&mut self, ptr: usize, size: usize, measured: bool) {
+        let slot = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.ptr == 0)
+            .expect("allocation ledger capacity exceeded");
+        *slot = LedgerEntry {
+            ptr,
+            size,
+            measured,
+        };
+    }
+
+    fn realloc(
+        &mut self,
+        old_ptr: usize,
+        new_ptr: usize,
+        new_size: usize,
+    ) -> Option<(usize, bool)> {
+        let entry = self.entries.iter_mut().find(|entry| entry.ptr == old_ptr);
+        let Some(entry) = entry else {
+            self.alloc(new_ptr, new_size, false);
+            return None;
+        };
+        let old = (entry.size, entry.measured);
+        entry.ptr = new_ptr;
+        entry.size = new_size;
+        Some(old)
+    }
+
+    fn dealloc(&mut self, ptr: usize) -> Option<(usize, bool)> {
+        let entry = self.entries.iter_mut().find(|entry| entry.ptr == ptr)?;
+        let result = (entry.size, entry.measured);
+        *entry = Self::EMPTY;
+        Some(result)
+    }
+
+    fn begin_measurement(&mut self) {
+        for entry in &mut self.entries {
+            if entry.ptr != 0 {
+                entry.measured = false;
+            }
+        }
+    }
+}
+
+struct LedgerLock {
+    locked: AtomicBool,
+    ledger: UnsafeCell<AllocationLedger>,
+}
+
+unsafe impl Sync for LedgerLock {}
+
+struct LedgerGuard<'a> {
+    lock: &'a LedgerLock,
+}
+
+impl LedgerLock {
+    const fn new() -> Self {
+        Self {
+            locked: AtomicBool::new(false),
+            ledger: UnsafeCell::new(AllocationLedger::new()),
+        }
+    }
+
+    fn lock(&self) -> LedgerGuard<'_> {
+        while self
+            .locked
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            std::hint::spin_loop();
+        }
+        LedgerGuard { lock: self }
+    }
+}
+
+impl Deref for LedgerGuard<'_> {
+    type Target = AllocationLedger;
+
+    fn deref(&self) -> &Self::Target {
+        // The guard owns the lock for the lifetime of this reference.
+        unsafe { &*self.lock.ledger.get() }
+    }
+}
+
+impl DerefMut for LedgerGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // The guard owns the lock, so no other mutable reference exists.
+        unsafe { &mut *self.lock.ledger.get() }
+    }
+}
+
+impl Drop for LedgerGuard<'_> {
+    fn drop(&mut self) {
+        self.lock.locked.store(false, Ordering::Release);
+    }
+}
+
+static ALLOCATION_LEDGER: LedgerLock = LedgerLock::new();
+
 #[global_allocator]
 static ALLOCATOR: CountingAlloc = CountingAlloc;
 
 impl CountingAlloc {
-    fn record_alloc(size: usize) {
-        if !COUNTING.load(Ordering::Relaxed) {
+    fn record_alloc(ptr: *mut u8, size: usize) {
+        let measured = COUNTING.load(Ordering::Relaxed);
+        ALLOCATION_LEDGER.lock().alloc(ptr as usize, size, measured);
+        if !measured {
             return;
         }
         LIVE.fetch_add(size, Ordering::Relaxed);
         TOTAL.fetch_add(size, Ordering::Relaxed);
         COUNT.fetch_add(1, Ordering::Relaxed);
+        Self::record_peak();
+    }
+
+    fn record_peak() {
         let live = LIVE.load(Ordering::Relaxed);
         let mut peak = PEAK.load(Ordering::Relaxed);
         while live > peak {
@@ -33,9 +168,11 @@ impl CountingAlloc {
         }
     }
 
-    fn record_dealloc(size: usize) {
-        if COUNTING.load(Ordering::Relaxed) {
-            LIVE.fetch_sub(size, Ordering::Relaxed);
+    fn record_dealloc(ptr: *mut u8) {
+        if let Some((size, measured)) = ALLOCATION_LEDGER.lock().dealloc(ptr as usize) {
+            if measured {
+                LIVE.fetch_sub(size, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -44,7 +181,7 @@ unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = System.alloc(layout);
         if !ptr.is_null() {
-            Self::record_alloc(layout.size());
+            Self::record_alloc(ptr, layout.size());
         }
         ptr
     }
@@ -52,27 +189,39 @@ unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let ptr = System.alloc_zeroed(layout);
         if !ptr.is_null() {
-            Self::record_alloc(layout.size());
+            Self::record_alloc(ptr, layout.size());
         }
         ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         System.dealloc(ptr, layout);
-        Self::record_dealloc(layout.size());
+        Self::record_dealloc(ptr);
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let new_ptr = System.realloc(ptr, layout, new_size);
-        if !new_ptr.is_null() && COUNTING.load(Ordering::Relaxed) {
-            LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
-            Self::record_alloc(new_size);
+        if !new_ptr.is_null() {
+            if let Some((old_size, measured)) =
+                ALLOCATION_LEDGER
+                    .lock()
+                    .realloc(ptr as usize, new_ptr as usize, new_size)
+            {
+                if measured {
+                    LIVE.fetch_sub(old_size, Ordering::Relaxed);
+                    LIVE.fetch_add(new_size, Ordering::Relaxed);
+                    TOTAL.fetch_add(new_size, Ordering::Relaxed);
+                    COUNT.fetch_add(1, Ordering::Relaxed);
+                    Self::record_peak();
+                }
+            }
         }
         new_ptr
     }
 }
 
 fn begin_measurement() {
+    ALLOCATION_LEDGER.lock().begin_measurement();
     LIVE.store(0, Ordering::Relaxed);
     PEAK.store(0, Ordering::Relaxed);
     TOTAL.store(0, Ordering::Relaxed);
@@ -244,13 +393,15 @@ fn main() {
     ui.set_viewport(spec::SCREEN_W as f32, spec::SCREEN_H as f32);
     assert!(ui.load_styles(&styles));
     assert!(ui.load_font_atlas(&font_atlas));
+    let font = ui.font_atlas(0).unwrap();
+    let (workload_gid, _) = font
+        .lookup('P' as u32)
+        .expect("workload glyph must be mapped");
     assert!(
-        ui.font_atlas(0)
-            .unwrap()
-            .glyph_rows(1)
+        font.glyph_rows(workload_gid)
             .iter()
             .any(|&coverage| coverage != 0),
-        "benchmark font atlas must contain non-zero glyph coverage"
+        "benchmark font atlas must contain non-zero coverage for P"
     );
     handles.push(ui.upload_texture(&atlas, 16, 16, spec::psm::PSM_8888));
     let texture = handles[0];
@@ -345,6 +496,7 @@ fn main() {
 
     let nodes = 1 + 1 + 1 + 32 * 3;
     end_measurement();
+    // Ui::tick includes animation bookkeeping, so this is a tick/layout proxy.
     let avg_layout_us = total_us / timings.len() as u128;
     println!("peak_requested_bytes={}", PEAK.load(Ordering::Relaxed));
     println!("final_requested_bytes={}", LIVE.load(Ordering::Relaxed));
@@ -357,11 +509,15 @@ fn main() {
     println!("text_mode=atlas");
     println!("texture_mode=atlas");
     println!("drawlist_checksum={checksum:016x}");
+    assert_eq!(
+        checksum, 0xcc6a0b00efdba151,
+        "deterministic benchmark drawlist changed"
+    );
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{font_atlas_blob, structural_tick, timing_capacity};
+    use super::{font_atlas_blob, structural_tick, timing_capacity, AllocationLedger};
     use pocketjs_core::Ui;
 
     #[test]
@@ -379,14 +535,28 @@ mod tests {
     fn fixture_atlas_loads_and_has_workload_glyphs() {
         let mut ui = Ui::new();
         assert!(ui.load_font_atlas(&font_atlas_blob()));
-        assert!(ui.font_atlas(0).unwrap().lookup('P' as u32).is_some());
-        assert!(
-            ui.font_atlas(0)
-                .unwrap()
-                .glyph_rows(1)
-                .iter()
-                .any(|&coverage| coverage != 0)
-        );
+        let font = ui.font_atlas(0).unwrap();
+        let (workload_gid, _) = font.lookup('P' as u32).unwrap();
+        assert!(font
+            .glyph_rows(workload_gid)
+            .iter()
+            .any(|&coverage| coverage != 0));
         assert_eq!(ui.measure_text("P", 0), 8.0);
+    }
+
+    #[test]
+    fn ledger_preserves_pre_measurement_realloc_state() {
+        let mut ledger = AllocationLedger::new();
+        ledger.alloc(0x1000, 16, false);
+        ledger.begin_measurement();
+
+        let event = ledger.realloc(0x1000, 0x2000, 32);
+        assert_eq!(event, Some((16, false)));
+        assert_eq!(ledger.dealloc(0x2000), Some((32, false)));
+
+        ledger.alloc(0x3000, 8, true);
+        let event = ledger.realloc(0x3000, 0x4000, 12);
+        assert_eq!(event, Some((8, true)));
+        assert_eq!(ledger.dealloc(0x4000), Some((12, true)));
     }
 }
