@@ -767,12 +767,14 @@ int main(void) {
      * runs stay deterministic. */
     int32_t buttons = scripted_buttons(frame);
     int32_t analog = ANALOG_CENTER;
+    int32_t right_analog = ANALOG_CENTER;
     uint32_t touch = 0;
     size_t touch_count = scripted_touch(frame, &touch);
 #elif defined(POCKETJS_OFFLOAD)
     if (input_offload_exit_requested()) break;
     int32_t buttons = input_buttons();
     int32_t analog = input_analog();
+    int32_t right_analog = input_right_analog();
     uint32_t touch = 0;
     size_t touch_count = input_touch(&touch);
 #else
@@ -845,6 +847,7 @@ int main(void) {
     }
     int32_t buttons = devmenu_blocks_guest ? 0 : input_buttons();
     int32_t analog = devmenu_blocks_guest ? ANALOG_CENTER : input_analog();
+    int32_t right_analog = devmenu_blocks_guest ? ANALOG_CENTER : input_right_analog();
     uint32_t touch = 0;
     size_t touch_count = devmenu_blocks_guest ? 0 : input_touch(&touch);
 #endif
@@ -858,7 +861,7 @@ int main(void) {
       1
     );
     if (hit_count != touch_count) fail("auxiliary touch hit resolution failed");
-    if (!qjs_frame(buttons, analog, &touch, &touch_hit, touch_count, devmenu_blocks_guest ? ANALOG_CENTER : input_right_analog())) {
+    if (!qjs_frame(buttons, analog, &touch, &touch_hit, touch_count, right_analog)) {
 #if defined(POCKETJS_CAPTURE) || defined(POCKETJS_OFFLOAD)
       fail(qjs_last_error());
 #else
