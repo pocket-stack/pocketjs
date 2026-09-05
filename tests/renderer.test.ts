@@ -218,6 +218,9 @@ test("resource images retain their layout through fallback, retry and borrowed t
   setState(ready({ handle: 7, width: 256, height: 16 }));
   expect(frame.children[0]).toBe(image);
   expect(host.of("setImage")).toEqual([["setImage", image.id, 7]]);
+  host.clear();
+  setState(ready({ handle: 7, width: 256, height: 16 }));
+  expect(host.of("setImage")).toHaveLength(0);
   setState(failed("offline")); runSweep();
   expect(host.of("setText").some(call => call[2] === "Retry")).toBe(true);
   setState(pending()); runSweep();

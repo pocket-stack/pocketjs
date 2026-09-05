@@ -56,11 +56,12 @@ export function ResourceImage(props: ResourceImageProps): JSX.Element {
         errorFallback: props.errorFallback,
         children: value => {
           let node: NodeMirror | undefined;
+          const handle = createMemo(() => value().handle);
           const result = Image({
             ref: n => { node = n; },
             get style() { return { posType: 1, insetL: 0, insetT: 0, width: value().width, height: value().height }; },
           });
-          createRenderEffect(() => { if (node) getOps().setImage(node.id, value().handle); });
+          createRenderEffect(() => { if (node) getOps().setImage(node.id, handle()); });
           return result;
         },
       });
