@@ -538,6 +538,7 @@ async function build(): Promise<void> {
     join(REPOSITORY, "hosts/iphone2g/Icon.png"),
     join(REPOSITORY, "hosts/iphone4s/Icon.svg"),
     join(REPOSITORY, "tools/iphone-classic-icon.ts"),
+    join(REPOSITORY, "tools/icon-raster.ts"),
     join(REPOSITORY, "tools/ipodtouch4.ts"),
     join(REPOSITORY, "tools/ipodtouch4-toolchain.ts"),
     join(REPOSITORY, "tools/cli/iphone4s-toolchain.json"),

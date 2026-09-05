@@ -49,6 +49,9 @@ OUT := $(POCKETJS_OUT_3DSX)
 # 3dsxtool reads the recovery guest out of a RomFS directory.
 ROMFS := $(BUILD)/romfs
 ICON ?= $(CURDIR)/icon.png
+# Custom large icons keep smdhtool's automatic reduction unless their caller
+# also supplies SMALL_ICON. The host default has a separate optical drawing.
+SMALL_ICON ?= $(if $(filter $(CURDIR)/icon.png,$(ICON)),$(CURDIR)/icon-small.png,)
 CIA := $(POCKETJS_OUT_CIA)
 RSF := $(CURDIR)/app.rsf
 
@@ -177,9 +180,9 @@ $(SMDH_STAMP).probe: | $(BUILD)
 	@rm -f $(SMDH_STAMP).new
 $(SMDH_STAMP): $(SMDH_STAMP).probe ;
 
-$(SMDH): $(ICON) $(SMDH_STAMP) | $(BUILD)
+$(SMDH): $(ICON) $(SMALL_ICON) $(SMDH_STAMP) | $(BUILD)
 	$(SMDHTOOL) --create "$$POCKETJS_SMDH_TITLE" "$$POCKETJS_SMDH_DESC" \
-	  "$$POCKETJS_SMDH_AUTHOR" $(ICON) $@
+	  "$$POCKETJS_SMDH_AUTHOR" $(ICON) $@ $(SMALL_ICON)
 
 $(OUT): $(ELF) $(SMDH) $(ROMFS)/app.pocket $(ROMFS_LAYOUT_STAMP)
 	mkdir -p $(dir $(OUT))

@@ -1,3 +1,4 @@
+import { rasterizeIconSvg as raster } from "../icon-raster.ts";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -7,27 +8,6 @@ export const output = resolve(import.meta.dir, "../../dist/icon-study");
 mkdirSync(resolve(output, "assets"), { recursive: true });
 const assets = resolve(output, "assets");
 const receipt: Record<string, unknown>[] = [];
-
-async function raster(svg: string, size: number) {
-  const scale = 4;
-  const image = await loadImage(Buffer.from(svg.replace(`width="${size}" height="${size}"`, `width="${size * scale}" height="${size * scale}"`)));
-  const big = createCanvas(size * scale, size * scale);
-  big.getContext("2d").drawImage(image, 0, 0);
-  const pixels = big.getContext("2d").getImageData(0, 0, big.width, big.height).data;
-  const canvas = createCanvas(size, size);
-  const ctx = canvas.getContext("2d");
-  const result = ctx.createImageData(size, size);
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    for (let c = 0; c < 4; c++) {
-      let sum = 0;
-      for (let yy = 0; yy < scale; yy++) for (let xx = 0; xx < scale; xx++) sum += pixels[((y * scale + yy) * big.width + x * scale + xx) * 4 + c];
-      result.data[(y * size + x) * 4 + c] = Math.round(sum / (scale * scale));
-    }
-    if (result.data[(y * size + x) * 4 + 3] !== 255) throw new Error("Icon must be opaque");
-  }
-  ctx.putImageData(result, 0, 0);
-  return canvas;
-}
 
 for (const v of variants) for (const [platform, sizes] of [["ios", [57, 114, 512]], ["3ds", [24, 48]]] as const) {
   for (const size of sizes) {

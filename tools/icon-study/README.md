@@ -1,8 +1,9 @@
 # Classic Pocket icon study
 
 Four locally baked proposals for the iOS 6 SpringBoard and Nintendo 3DS
-Homebrew Launcher. This study does not change the shipped host assets or
-install anything on a device.
+Homebrew Launcher. Proposal D is selected for the host assets. The study
+commands only regenerate the comparison page; `bun tools/device-icons.ts`
+regenerates the committed host PNGs from their host-owned SVGs.
 
 ```sh
 bun tools/icon-study/bake.ts --smdh

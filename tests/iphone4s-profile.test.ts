@@ -18,7 +18,6 @@ import { IPHONE4S_TOOLCHAIN } from "../tools/iphone4s-toolchain.ts";
 import {
   bakeClassicIPhoneArtwork,
   IPHONE_CLASSIC_ICON_FILE,
-  IPHONE_CLASSIC_ICON_SOURCE,
   IPHONE_CLASSIC_RETINA_ICON_FILE,
 } from "../tools/iphone-classic-icon.ts";
 import {
@@ -196,16 +195,15 @@ describe("private iPhone 4S profile", () => {
     }
   });
 
-  test("keeps the iPhone 2G icon byte-exact and independently rasterizes its Retina reconstruction", async () => {
+  test("bakes opaque square iOS icons at native sizes without pixel duplication", async () => {
     const output = mkdtempSync(join(tmpdir(), "pocket-iphone4s-artwork-"));
     try {
       await bakeClassicIPhoneArtwork(output);
-      expect(readFileSync(join(output, IPHONE_CLASSIC_ICON_FILE))).toEqual(readFileSync(IPHONE_CLASSIC_ICON_SOURCE));
 
       const one = await loadImage(join(output, IPHONE_CLASSIC_ICON_FILE));
       const two = await loadImage(join(output, IPHONE_CLASSIC_RETINA_ICON_FILE));
-      expect([one.width, one.height]).toEqual([59, 60]);
-      expect([two.width, two.height]).toEqual([118, 120]);
+      expect([one.width, one.height]).toEqual([57, 57]);
+      expect([two.width, two.height]).toEqual([114, 114]);
       const oneCanvas = createCanvas(one.width, one.height);
       const twoCanvas = createCanvas(two.width, two.height);
       oneCanvas.getContext("2d").drawImage(one, 0, 0);
@@ -221,11 +219,14 @@ describe("private iPhone 4S profile", () => {
         }
       }
       expect(twoPixels).not.toEqual(expected);
-      let antialiasedAlphaPixels = 0;
       for (let index = 3; index < twoPixels.length; index += 4) {
-        if (twoPixels[index] > 0 && twoPixels[index] < 255) antialiasedAlphaPixels += 1;
+        expect(twoPixels[index]).toBe(255);
       }
-      expect(antialiasedAlphaPixels).toBeGreaterThan(100);
+      for (const filename of ["Default@2x.png", "Default-568h@2x.png"]) {
+        const launch = await loadImage(join(output, filename));
+        expect(launch.width).toBe(640);
+        expect(launch.height).toBe(filename === "Default@2x.png" ? 960 : 1136);
+      }
     } finally {
       rmSync(output, { recursive: true, force: true });
     }
