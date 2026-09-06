@@ -76,7 +76,7 @@ bun tools/psp.ts hero-vue-vapor --framework=vue-vapor --release
 ## Framework app imports
 
 Apps import state and component lifecycle from the selected framework directly.
-PocketJS does not wrap `createSignal`, `ref`, `useState`, `onMount`,
+PocketJS does not wrap `createSignal`, `ref`, `useState`, `onSettled`,
 `onMounted`, or `useEffect`.
 
 A Solid app:
@@ -84,13 +84,13 @@ A Solid app:
 ```tsx
 import { mount, frameworkName } from "@pocketjs/framework/solid";
 import { View, Text, type NodeMirror } from "@pocketjs/framework/solid/components";
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, onSettled, Show } from "solid-js";
 
 export default function App() {
   const [count, setCount] = createSignal(0);
   let marker: NodeMirror | undefined;
 
-  onMount(() => {
+  onSettled(() => {
     console.log(frameworkName(), marker?.id);
   });
 
@@ -118,7 +118,7 @@ imported from:
 |---|---|---|---|
 | State | `const [c, setC] = createSignal(0)` | `const c = ref(0)` | `const [c, setC] = useState(0)` |
 | Read in JSX | `{c()}` | `{c.value}` | `` {`${c}`} `` — mixed static + dynamic text is one template literal |
-| Mount hook | `onMount` | `onMounted` | `useLayoutEffect(fn, [])` |
+| Mount hook | `onSettled` | `onMounted` | `useLayoutEffect(fn, [])` |
 | State import | `solid-js` | `vue` | `octane` |
 | Runtime import | `@pocketjs/framework/solid` | `@pocketjs/framework/vue-vapor` | `@pocketjs/framework/octane` |
 | Entry call | `mount(() => <App />)` | `mount(App)` | `mount(App)` |

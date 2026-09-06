@@ -10,7 +10,7 @@ Framework-internal and tests/debug helpers are not exhaustive here. For conceptu
 | --- | --- |
 | `@pocketjs/framework` | `mount`, `render`, host/runtime helpers, types |
 | `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `CompositorSurface`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `AuxiliarySurface`, `AuxiliaryPortal`, `Modal`, `ActionBar`, `Named`, `Grid`, `Lazy`, `Gallery`, `DeepZoom` (Solid) |
-| `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
+| `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onSettled`, `onCleanup`, `flush`, `latest`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
 | `vue` | `defineComponent`, `ref`, `computed`, `watchEffect`, `onMounted`, `onScopeDispose` |
 | `octane` | `useState`, `useEffect`, `useMemo`, `useRef`, `useLayoutEffect`, `useEffectEvent` |
 | `@pocketjs/framework/animation` | `animate`, `spring`, `jump`, `cancelAnim` |
@@ -415,18 +415,19 @@ wire format and texture-streaming HostOps remain framework-neutral.
 Import Solid's reactive primitives and control-flow components directly from
 `solid-js`. PocketJS relies on the real Solid runtime rather than wrapping or
 curating these exports. Full docs live at
-[solidjs.com](https://www.solidjs.com/docs/latest/api); summary below.
+[solidjs.com](https://v2.solidjs.com/reference); summary below.
 
 ### Reactivity
 
 | Export | Signature | Purpose |
 | --- | --- | --- |
 | `createSignal` | `createSignal<T>(value?, opts?) => [get: () => T, set: (v) => T]` | Reactive atom. |
-| `createEffect` | `createEffect(fn: (prev) => T, value?) => void` | Run on dependency change. |
-| `createMemo` | `createMemo(fn: (prev) => T, value?) => () => T` | Cached derived value. |
-| `onMount` | `onMount(fn: () => void) => void` | Run once after first render. |
+| `createEffect` | `createEffect(compute, apply) => void` | Track reads in compute; apply side effects and return cleanup. |
+| `createMemo` | `createMemo(fn: (prev) => T, options?) => () => T` | Cached derived value. |
+| `onSettled` | `onSettled(fn: () => void) => void` | Run once after the initial reactive graph settles. |
 | `onCleanup` | `onCleanup(fn: () => void) => void` | Run on owner disposal. |
-| `batch` | `batch(fn: () => T) => T` | Coalesce updates. |
+| `flush` | `flush(fn?) => T` | Commit pending reactive writes. PocketJS calls it at frame boundaries. |
+| `latest` | `latest(fn: () => T) => T` | Read staged writes during controller work. |
 | `untrack` | `untrack(fn: () => T) => T` | Read without tracking. |
 
 See [Reactivity](/docs/reactivity/).

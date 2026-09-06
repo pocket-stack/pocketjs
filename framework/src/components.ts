@@ -69,7 +69,7 @@ export function Screen(props: ScreenProps): SolidElement {
   // mergeProps keeps caller prop GETTERS live — an object spread would
   // read them once and freeze every dynamic class/style at mount.
   return View(
-    merge({ class: "relative flex-col w-full h-full bg-slate-50 overflow-hidden" }, props),
+    merge(props, { get class() { return props.class ?? "relative flex-col w-full h-full bg-slate-50 overflow-hidden"; } }),
   );
 }
 

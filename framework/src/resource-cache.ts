@@ -78,7 +78,7 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
     function clear() { for (const entry of entries.values()) drop(entry); }
     function cancel() { for (const entry of entries.values()) if (entry.busy) { stop(entry); notify(entry); } }
     function start(entry: Entry) {
-      entry.busy = true; active++; const generation = ++entry.generation;
+      entry.busy = true; entry.stale = true; active++; const generation = ++entry.generation;
       try {
         const task = config.load(entry.input, result => {
           // Raw bounded data only. No decoding, texture allocation or UI publication here.
@@ -107,7 +107,7 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
       speculative() {
         let worst: Entry | undefined;
         for (const entry of entries.values()) if (entry.busy && !entry.pin && !entry.result && (!worst || entry.priority > worst.priority)) worst = entry;
-        return worst && { priority: worst.priority, cancel: () => stop(worst!) };
+        return worst && { priority: worst.priority, cancel: () => { stop(worst!); notify(worst!); } };
       },
       complete() {
         for (const entry of entries.values()) {
@@ -139,23 +139,24 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
         if (dead) return;
         if (demands.length > config.maxEntries) throw new Error("Resource demand exceeds entry budget");
         // Validate before altering the previous working set.
-        const wanted = new Map<string, ResourceDemand<I>>();
+        const wanted = new Map<string, ResourceDemand<I> & { reserved: number }>();
         for (const demand of demands) {
           const key = config.key(demand.input);
           if (typeof key !== "string" || key.length > 1024 || !key.length || !Number.isFinite(demand.priority)) throw new Error("Invalid resource identity or priority");
+          const reserved = entries.get(key)?.cost ?? positive(config.cost(demand.input), "cost");
           const old = wanted.get(key);
-          if (!old || demand.priority < old.priority) wanted.set(key, { ...demand, pin: !!(old?.pin || demand.pin) });
+          if (!old || demand.priority < old.priority) wanted.set(key, { ...demand, reserved, pin: !!(old?.pin || demand.pin) });
           else if (demand.pin) old.pin = true;
         }
         for (const entry of entries.values()) {
           const demand = wanted.get(entry.key); entry.desired = !!demand; entry.pin = !!demand?.pin;
           if (demand) { entry.priority = demand.priority; entry.touched = frame; }
-          else if (entry.busy) stop(entry);
+          else if (entry.busy) { stop(entry); notify(entry); }
         }
         let admitted = 0;
         for (const [key, demand] of wanted) {
           if (entries.has(key)) { admitted++; continue; }
-          const reserved = positive(config.cost(demand.input), "cost");
+          const reserved = demand.reserved;
           if (reserved > config.maxCost) continue;
           while (entries.size >= config.maxEntries || cost + reserved > config.maxCost) {
             let victim: Entry | undefined;

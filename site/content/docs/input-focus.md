@@ -187,12 +187,12 @@ Grab a node with `ref` (refs hand you the `NodeMirror`) and move focus imperativ
 
 ```tsx
 import { focusNode, getFocused } from "@pocketjs/framework/input";
-import { onMount } from "solid-js";
+import { onSettled } from "solid-js";
 import { Focusable, type NodeMirror } from "@pocketjs/framework/components";
 
 function Menu() {
   let first: NodeMirror | undefined;
-  onMount(() => focusNode(first ?? null)); // focus the first item on mount
+  onSettled(() => focusNode(first ?? null)); // focus the first item on mount
   return <Focusable ref={(n) => (first = n)}>New game</Focusable>;
 }
 ```

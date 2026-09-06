@@ -1,5 +1,5 @@
 // Renderer contract tests — drive framework/src/renderer.ts against a MOCK HostOps that
-// records every op call, using the real solid-js/universal reconciler under
+// records every op call, using the real @solidjs/universal reconciler under
 // Bun. No JSX here (babel isn't in the loop for tests): we call the renderer
 // exports exactly the way babel-preset-solid {generate:'universal'} compiled
 // code does.
@@ -12,7 +12,7 @@
 // (Same rule applies to Bun.build in tools/build.ts: conditions:["browser"].)
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { createSignal, flush, For, Show } from "solid-js";
+import { createSignal, createMemo, Loading, flush, For, Show } from "solid-js";
 
 // Fail fast with a real message if the SSR build got resolved.
 if (Bun.resolveSync("solid-js", import.meta.dir).endsWith("server.js")) {
@@ -1851,4 +1851,24 @@ describe("public render() (index.ts)", () => {
 
     dispose();
   });
+});
+
+
+test("Solid 2 async memo reveals native content while the frame shell keeps running", async () => {
+  let complete!: (value: string) => void;
+  let frames = 0;
+  const dispose = publicRender(() => {
+    const value = createMemo(() => new Promise<string>(resolve => { complete = resolve; }));
+    onFrame(() => frames++);
+    return Loading({
+      get fallback() { return Text({ children: "waiting" }); },
+      get children() { return Text({ get children() { return value(); } }); },
+    });
+  }, { ops: host.ops, styles: {} });
+  expect(host.of("setText").some(call => call[2] === "waiting")).toBe(true);
+  const frame = (globalThis as any).frame;
+  frame(0); frame(0); expect(frames).toBe(2);
+  complete("materialized"); await Promise.resolve(); await Promise.resolve(); flush();
+  expect(host.of("setText", "replaceText").some(call => call[2] === "materialized")).toBe(true);
+  dispose();
 });

@@ -58,11 +58,11 @@ throws at the call site.
 `animate` needs the node's `NodeMirror`, which `ref` (Solid) or `nodeRef` (all
 three frameworks) hands you — see
 [Components → ref and nodeRef](/docs/components/#ref-and-noderef) for the three
-forms. Start the tween in `onMount`/`onMounted`/`useLayoutEffect`, once the node
+forms. Start the tween in `onSettled`/`onMounted`/`useLayoutEffect`, once the node
 exists:
 
 ```tsx
-onMount(() => {
+onSettled(() => {
   if (el) animate(el, "width", 210, { dur: 700, easing: "out", delay: 150 });
 });
 ```
@@ -114,7 +114,7 @@ object, then springs into place on mount. Because the panel is a keyed `<Show>`
 child it remounts per card, so the spring replays on every open:
 
 ```tsx
-onMount(() => {
+onSettled(() => {
   if (el) spring(el, "translateY", 0); // springs up from +22px
 });
 
@@ -358,9 +358,9 @@ import { createCaretBlink } from "@pocketjs/framework/animation";
 
 const [caretVisible, setCaretVisible] = createSignal(false);
 const blink = createCaretBlink({ onChange: setCaretVisible });
-createEffect(() => blink.setActive(editorFocused()));
-createEffect(() => blink.setHeld(draggingCaret()));
-createEffect(() => { caretOffset(); draftText(); blink.reset(); });
+createEffect(editorFocused, active => blink.setActive(active));
+createEffect(draggingCaret, held => blink.setHeld(held));
+createEffect(() => [caretOffset(), draftText()], () => blink.reset());
 onCleanup(blink.dispose);
 // Bind caretVisible() to the caret node's opacity.
 ```

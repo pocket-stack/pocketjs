@@ -266,11 +266,11 @@ assigns, or a callback. Vue Vapor and Octane declare `nodeRef` alone:
 :::framework-code
 ```tsx solid
 import { animate } from "@pocketjs/framework/animation";
-import { onMount } from "solid-js";
+import { onSettled } from "solid-js";
 import type { NodeMirror } from "@pocketjs/framework/components";
 
 let underline: NodeMirror | undefined;
-onMount(() => {
+onSettled(() => {
   if (underline) animate(underline, "width", 210, { dur: 700, easing: "out" });
 });
 

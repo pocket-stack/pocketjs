@@ -77,7 +77,8 @@ export {
   spread,
   setProp,
   mergeProps,
-  use,
+  ref,
+  applyRef,
 } from "../../framework/src/renderer.ts";
 
 // ---- reset between live-recompiles -----------------------------------------

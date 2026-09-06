@@ -151,9 +151,9 @@ async function bundleSolid(outfile: string) {
   const packageJsonPath = Bun.resolveSync("solid-js/package.json", ROOT);
   const packageDir = dirname(packageJsonPath);
   const packageJson = await Bun.file(packageJsonPath).json() as {
-    exports?: { "."?: { browser?: { import?: string }; import?: string } };
+    exports?: { "."?: { browser?: { import?: { default?: string } }; import?: { default?: string } } };
   };
-  const browserEntry = packageJson.exports?.["."]?.browser?.import ?? packageJson.exports?.["."]?.import;
+  const browserEntry = packageJson.exports?.["."]?.browser?.import?.default ?? packageJson.exports?.["."]?.import?.default;
   if (!browserEntry) throw new Error("solid-js browser entry not found");
   const entry = join(packageDir, browserEntry);
   const res = await Bun.build({
@@ -175,7 +175,7 @@ async function bundleSolid(outfile: string) {
 }
 
 async function bundleSolidUniversal(outfile: string) {
-  const entry = Bun.resolveSync("solid-js/universal", ROOT);
+  const entry = Bun.resolveSync("@solidjs/universal", ROOT);
   const res = await Bun.build({
     entrypoints: [entry],
     target: "browser",
@@ -188,7 +188,7 @@ async function bundleSolidUniversal(outfile: string) {
   });
   if (!res.success) {
     for (const l of res.logs) console.error(String(l));
-    throw new Error("bundle failed: solid-js/universal");
+    throw new Error("bundle failed: @solidjs/universal");
   }
   const code = await res.outputs[0].text();
   write(outfile, code);
@@ -511,7 +511,7 @@ async function main() {
   await bundleSolidUniversal("pg/solid-universal.js");
   await bundleVueVapor("pg/vue-vapor.js");
   writeVueVaporHelpers();
-  await bundle("playground/runtime-entry.ts", "pg/runtime.js", { external: ["solid-js", "solid-js/universal"] });
+  await bundle("playground/runtime-entry.ts", "pg/runtime.js", { external: ["solid-js", "@solidjs/universal"] });
   await bundle("playground/runtime-vue-vapor-entry.ts", "pg/runtime-vue-vapor.js", { external: ["vue"] });
   await bundle("playground/compiler-entry.ts", "pg/compiler.js", {
     shims: true,
@@ -868,7 +868,7 @@ async function compileCss() {
 // audit below; JSON.stringify is the one source of truth for the page.
 const PLAYGROUND_IMPORTS: Record<string, string> = {
   "solid-js": "/pg/solid.js",
-  "solid-js/universal": "/pg/solid-universal.js",
+  "@solidjs/universal": "/pg/solid-universal.js",
   vue: "/pg/vue-vapor.js",
   "/vue-jsx-vapor/props": "/pg/vue-jsx-vapor/props.js",
   "/vue-jsx-vapor/vdom": "/pg/vue-jsx-vapor/vdom.js",

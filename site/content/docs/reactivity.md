@@ -18,7 +18,7 @@ adds. Which framework a build uses is set once in `pocket.json` — see
 | One reactive value | `createSignal` | `ref` / `shallowRef` | `useState` |
 | Derived, cached | `createMemo` | `computed` | `useMemo` |
 | Side effect on change | `createEffect` | `watchEffect` | `useEffect` |
-| After first render | `onMount` | `onMounted` | `useEffect` with no deps |
+| After first render | `onSettled` | `onMounted` | `useEffect` with no deps |
 | On teardown | `onCleanup` | `onScopeDispose` | `useEffect` cleanup return |
 | Escape tracking | `untrack` | — | dependency arrays |
 
@@ -133,8 +133,8 @@ value instead.
 ```ts solid
 import { createEffect } from "solid-js";
 
-createEffect(() => {
-  console.log("selection is", selected());
+createEffect(selected, value => {
+  console.log("selection is", value);
 });
 ```
 
@@ -163,9 +163,9 @@ order.
 
 :::framework-code
 ```ts solid
-import { onMount, onCleanup } from "solid-js";
+import { onSettled, onCleanup } from "solid-js";
 
-onMount(() => list.scrollToIndex(0));
+onSettled(() => list.scrollToIndex(0));
 onCleanup(() => handle.dispose());
 ```
 

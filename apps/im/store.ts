@@ -9,7 +9,7 @@
 // this file. Swapping the mock for a real data layer means re-implementing
 // createTalkStore() against the same interface — the UI does not change.
 //
-// Every delivery applies its writes inside batch(): the UI (row layout,
+// Every delivery applies its writes inside flush(): the UI (row layout,
 // scroll rebase, stick-to-bottom) must see one consistent world per
 // delivery, not one per signal — a history page and its hasMore flip, or a
 // burst of poll events, land as a single update.
