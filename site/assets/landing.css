@@ -443,7 +443,8 @@
 /* motion: the handheld floats on the page, no frame and no plate behind it */
 .motion-stage{margin:0;border:0;background:transparent;padding:0}
 .motion-stage .pg-stage__viewport{background:transparent;border:0}
-.motion-stage .pg-stage__status{justify-content:center}
+.motion-stage .pg-stage__status{top:50%;bottom:auto;transform:translate(-50%,-50%);justify-content:center;font-family:var(--mono);color:var(--ink-2)}
+.motion-stage.is-ready .pg-stage__status{transform:translate(-50%,-50%)}
 /* The status pill fades out once the runtime is live, so the control hint is its
    own line under the model. It appears with the model and never in the 2D
    fallback, where there are no buttons to press. */

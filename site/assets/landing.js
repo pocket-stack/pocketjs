@@ -1,4 +1,6 @@
-// Homepage glue: the framework code tabs. Everything else is CSS.
+import "./showcase.js";
+
+// Homepage interactions: framework code tabs and the lazy motion demo.
 for (const group of document.querySelectorAll("[data-subtabs]")) {
   const tabs = group.querySelectorAll(".subtab");
   tabs.forEach(t => t.addEventListener("click", () => {

@@ -46,6 +46,8 @@ import {
   type DocDemo,
 } from "./doc-demos.ts";
 import { emitSingleLodStagePackage } from "./stage-package.ts";
+import { renderHomeShowcase } from "./home-showcase.ts";
+import { SHOWCASE_APPS } from "./showcase.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname; // repo root
 const SITE = ROOT + "site/";
@@ -653,10 +655,13 @@ async function main() {
   write("index.html", renderHome());
   // The homepage ships one stylesheet: the same tokens and chrome the Tailwind
   // build imports, plus the landing sections, concatenated in layer order.
-  write("assets/landing.css", ["tokens.css", "base.css", "chrome.css", "landing.css"]
+  write("assets/landing.css", ["tokens.css", "base.css", "chrome.css", "landing.css", "showcase.css"]
     .map((f) => readFileSync(SITE + "assets/" + f, "utf8"))
     .join("\n"));
   await bundle("assets/landing.js", "assets/landing.js");
+  for (const image of new Set(SHOWCASE_APPS.map((app) => app.image))) {
+    if (image.startsWith("/assets/showcase/")) copy(SITE + image.slice(1), image.slice(1));
+  }
   // home.css stays for the /for/ pages, which keep the .lp-* chrome.
   copy(SITE + "assets/home.css", "assets/home.css");
 
@@ -723,7 +728,7 @@ function renderHome(): string {
   const raw = readFileSync(SITE + "home.html", "utf8");
   const slots = raw.split(SPONSOR_SLOT).length - 1;
   if (slots !== 1) throw new Error(`Expected ${SPONSOR_SLOT} exactly once in the homepage; found ${slots}`);
-  const body = raw.replace(SPONSOR_SLOT, () => renderSponsorGallery());
+  const body = renderHomeShowcase(raw.replace(SPONSOR_SLOT, () => renderSponsorGallery()));
   const jsonLd = JSON.stringify({
     "@context": "https://schema.org",
     "@type": "SoftwareSourceCode",

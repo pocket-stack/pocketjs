@@ -1,7 +1,5 @@
-// Local site + opt-in homepage studies. Production builds never emit /_preview/.
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// Serve the production build locally.
 import { resolve, sep } from "node:path";
-import { LANDING_STUDIES, renderLandingStudy, renderLandingStudyIndex } from "./landing-previews.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const OUT = resolve(ROOT, "site/dist");
@@ -12,18 +10,6 @@ if (!process.argv.includes("--no-build")) {
   if (await build.exited !== 0) process.exit(1);
 }
 if (!await Bun.file(resolve(OUT, "index.html")).exists()) throw new Error("Missing site build; run bun run site:preview without --no-build");
-const write = (path: string, html: string) => {
-  const target = resolve(OUT, path, "index.html");
-  mkdirSync(resolve(target, ".."), { recursive: true });
-  writeFileSync(target, html);
-};
-write("_preview/landing", renderLandingStudyIndex());
-const homeHtml = readFileSync(resolve(OUT, "index.html"), "utf8");
-for (const study of LANDING_STUDIES) write(`_preview/landing/${study.id}`, renderLandingStudy(study.id, homeHtml));
-mkdirSync(resolve(OUT, "_preview/assets"), { recursive: true });
-for (const file of ["showcase.css", "showcase.js"]) cpSync(resolve(ROOT, "site/assets", file), resolve(OUT, "_preview/assets", file));
-cpSync(resolve(ROOT, "site/assets/showcase"), resolve(OUT, "assets/showcase"), { recursive: true });
-
 const server = Bun.serve({ hostname: "127.0.0.1", port, async fetch(request) {
   if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
   let path: string;
@@ -39,5 +25,5 @@ const server = Bun.serve({ hostname: "127.0.0.1", port, async fetch(request) {
   if (!await file.exists()) return new Response("Not found", { status: 404 });
   return new Response(request.method === "HEAD" ? null : file, { headers: { "Content-Type": file.type, "Cache-Control": "no-store" } });
 } });
-console.log(`Landing alternatives: http://127.0.0.1:${server.port}/_preview/landing/`);
+console.log(`Homepage:             http://127.0.0.1:${server.port}/`);
 console.log(`Mobile docs:          http://127.0.0.1:${server.port}/docs/overview/`);

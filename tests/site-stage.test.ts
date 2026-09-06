@@ -256,7 +256,7 @@ test("Pocket Lab and Pocket Museum are not linked from the README or website", (
 
 test("the motion stage tells the reader which buttons change the study", () => {
   const home = readFileSync(ROOT + "site/home.html", "utf8");
-  const hint = home.match(/<p class="stage-hint">([^<]+)<\/p>/);
+  const hint = home.match(/<figcaption class="stage-hint">([^<]+)<\/figcaption>/);
   expect(hint).not.toBeNull();
   const line = hint![1];
   // What the hint claims has to be what the guest app binds: left and right on

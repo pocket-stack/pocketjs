@@ -14,7 +14,7 @@ their inclusion does not imply that PSPMAN or its artwork is open source.
 
 The remaining screenshots already live in `site/assets/blog/`. Their capture
 provenance is recorded in the corresponding project README and PocketJS blog
-post; the preview's app details link to those sources.
+post; the homepage's app details link to those sources.
 
 App setup information was checked on 2026-09-05 against the public READMEs
 for [OpenStrike](https://github.com/pocket-stack/open-strike),
