@@ -1,4 +1,4 @@
-import { createMemo, createRenderEffect, untrack, type Accessor, type JSX } from "solid-js";
+import { createMemo, createRenderEffect, untrack, type Accessor, type Element as SolidElement } from "solid-js";
 import { Image, View, type ViewProps } from "./primitives.ts";
 import { insert, type NodeMirror } from "./renderer.ts";
 import { getOps } from "./host.ts";
@@ -7,14 +7,14 @@ export { createResourceSlot, pending, ready, failed, type ResourceState } from "
 
 export interface ResourceBoundaryProps<T> {
   state: Accessor<ResourceState<T>>;
-  fallback: () => JSX.Element;
-  errorFallback?: (error: unknown) => JSX.Element;
-  children: (value: Accessor<T>) => JSX.Element;
+  fallback: () => SolidElement;
+  errorFallback?: (error: unknown) => SolidElement;
+  children: (value: Accessor<T>) => SolidElement;
 }
 
 /** Reveals only this subtree. Rendering never starts IO or waits for a Promise.
  * Factories are lazy, and superseded content is disposed by Solid's owner. */
-export function ResourceBoundary<T>(props: ResourceBoundaryProps<T>): JSX.Element {
+export function ResourceBoundary<T>(props: ResourceBoundaryProps<T>): SolidElement {
   const state = createMemo(props.state);
   const status = createMemo(() => state().status);
   const error = createMemo(() => { const value = state(); return value.status === "error" ? value.error : undefined; });
@@ -30,20 +30,20 @@ export function ResourceBoundary<T>(props: ResourceBoundaryProps<T>): JSX.Elemen
         return current.value;
       });
     });
-  }) as unknown as JSX.Element;
+  }) as unknown as SolidElement;
 }
 
 /** A decoded/uploaded image, including its texture envelope dimensions. */
 export interface TextureResource { handle: number; width: number; height: number }
 export interface ResourceImageProps extends Pick<ViewProps, "class" | "style" | "debugName"> {
   state: Accessor<ResourceState<TextureResource>>;
-  fallback: () => JSX.Element;
-  errorFallback?: (error: unknown) => JSX.Element;
+  fallback: () => SolidElement;
+  errorFallback?: (error: unknown) => SolidElement;
 }
 
 /** The outer View reserves layout and clipping while content is pending.
  * It borrows the texture: eviction and freeTexture belong to the resource owner. */
-export function ResourceImage(props: ResourceImageProps): JSX.Element {
+export function ResourceImage(props: ResourceImageProps): SolidElement {
   const frame = View({
     get class() { return props.class; },
     get style() { return props.style; },
@@ -63,7 +63,7 @@ export function ResourceImage(props: ResourceImageProps): JSX.Element {
         ref: n => { node = n; },
         get style() { return { posType: 1, insetL: 0, insetT: 0, width: value().width, height: value().height }; },
       });
-      createRenderEffect(() => { if (node) getOps().setImage(node.id, handle()); });
+      createRenderEffect(handle, value => { if (node) getOps().setImage(node.id, value); });
       return result;
     },
   });

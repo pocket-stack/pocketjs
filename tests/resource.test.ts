@@ -1,5 +1,6 @@
+import { flush } from "solid-js";
 import { expect, test } from "bun:test";
-import { createRoot, createSignal, onCleanup, type JSX } from "solid-js";
+import { createRoot, createSignal, onCleanup, type Element as SolidElement } from "solid-js";
 import { createResourceSlot, pending, ready, failed, type ResourceState } from "../framework/src/resource-state.ts";
 import { ResourceBoundary } from "../framework/src/resource.ts";
 
@@ -32,17 +33,17 @@ test("boundary lazily reveals content, updates ready values and disposes only it
       state,
       fallback: label,
       errorFallback: error => `error:${error}`,
-      children: value => { mounts++; onCleanup(() => cleanups++); return (() => `value:${value()}`) as unknown as JSX.Element; },
+      children: value => { mounts++; onCleanup(() => cleanups++); return (() => `value:${value()}`) as unknown as SolidElement; },
     });
     const read = () => { let value: unknown = output; while (typeof value === "function") value = value(); return value; };
     expect(read()).toBe("skeleton"); expect(mounts).toBe(0);
-    setLabel("waiting"); expect(read()).toBe("waiting");
-    setLabel("skeleton");
-    setState(ready(7)); expect(read()).toBe("value:7");
-    setState(ready(8)); expect(read()).toBe("value:8"); expect(mounts).toBe(1);
-    setState(pending()); expect(read()).toBe("skeleton"); expect(cleanups).toBe(1);
-    setState(failed("offline")); expect(read()).toBe("error:offline");
-    setState(ready(9)); expect(read()).toBe("value:9");
+    setLabel("waiting"); flush(); expect(read()).toBe("waiting");
+    setLabel("skeleton"); flush();
+    setState(ready(7)); flush(); expect(read()).toBe("value:7");
+    setState(ready(8)); flush(); expect(read()).toBe("value:8"); expect(mounts).toBe(1);
+    setState(pending()); flush(); expect(read()).toBe("skeleton"); expect(cleanups).toBe(1);
+    setState(failed("offline")); flush(); expect(read()).toBe("error:offline");
+    setState(ready(9)); flush(); expect(read()).toBe("value:9");
     dispose(); expect(cleanups).toBe(2);
   });
 });

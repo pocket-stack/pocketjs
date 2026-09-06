@@ -35,7 +35,7 @@
 //   - cursor: keys are plain Focusables in a scope — hover-focus and click
 //     already work, nothing to adapt.
 
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Accessor, type JSX as SolidJSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Accessor, type Element as SolidElement } from "solid-js";
 import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { animate } from "./anim.ts";
 import { simulationHz, virtualFrame } from "./clock.ts";
@@ -118,7 +118,7 @@ export interface OskProps {
 
 /** The docked keyboard panel. Render it at the bottom of the screen column;
  *  it takes OSK_H of height while osk.isOpen() and nothing otherwise. */
-export function Osk(props: OskProps): SolidJSX.Element {
+export function Osk(props: OskProps): SolidElement {
   return (
     <Show when={props.osk.isOpen()}>
       <OskPanel osk={props.osk} theme={props.theme ?? "dark"} />
@@ -128,7 +128,7 @@ export function Osk(props: OskProps): SolidJSX.Element {
 
 const INNER_W = SCREEN_W - 2 * OSK_PAD;
 
-function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.Element {
+function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidElement {
   const [layer, setLayer] = createSignal<OskLayerName>("lower");
   const rows = createMemo(() => layoutRows(OSK_LAYERS[layer()], INNER_W));
 
@@ -162,10 +162,7 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
 
   // Initial focus + refocus after every layer switch (the switch rebuilds
   // the key subtree, which would otherwise dump focus via removal repair).
-  createEffect(() => {
-    rows();
-    focusPos(lastPos);
-  });
+  createEffect(rows, () => focusPos(lastPos));
 
   // -- activation -------------------------------------------------------------
   const activate = (key: OskKeyDef): void => {
@@ -201,7 +198,7 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
   };
 
   // -- d-pad: spatial navigation with the render-side pixel math ------------
-  createEffect(() => {
+  createEffect(() => true, () => {
     if (!rootNode) return;
     animate(rootNode, "translateY", 0, { dur: 150, easing: "out" }); // slide in
     const dispose = pushFocusController(rootNode, (direction: FocusDirection) => {
@@ -210,7 +207,7 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
       focusPos(navigate(rows(), { row: from.row, col: from.col }, direction));
       return true; // clamped edges are handled too — never fall through
     });
-    onCleanup(dispose);
+    return dispose;
   });
 
   // -- chords (PSP tradition; latched — the panel mounts under a held key) --
@@ -383,7 +380,7 @@ export interface TextFieldProps {
   ref?: (osk: OskController) => void;
 }
 
-export function TextField(props: TextFieldProps): SolidJSX.Element {
+export function TextField(props: TextFieldProps): SolidElement {
   const osk = createOsk({
     value: props.value,
     setValue: (next) => props.onInput(next),
@@ -425,5 +422,5 @@ export function TextField(props: TextFieldProps): SolidJSX.Element {
           },
         }),
     }),
-  ] as unknown as SolidJSX.Element;
+  ] as unknown as SolidElement;
 }

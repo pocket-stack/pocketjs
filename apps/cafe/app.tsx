@@ -12,7 +12,7 @@
 // order. While the order is in flight the app keeps accepting nothing —
 // phase guards, no input blocking needed for this demo's script.
 
-import { createMemo, createSignal, For, Show, onMount } from "solid-js";
+import { createMemo, createSignal, For, Show, onSettled } from "solid-js";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { onButtonPress } from "@pocketjs/framework/lifecycle";
 import { BTN, pushFocusScope } from "@pocketjs/framework/input";
@@ -146,7 +146,7 @@ function MenuList(props: {
 }) {
   // Focus: light the first drink as soon as the menu lands.
   let list!: NodeMirror;
-  onMount(() => {
+  onSettled(() => {
     pushFocusScope(list, { autoFocus: true });
   });
   return (

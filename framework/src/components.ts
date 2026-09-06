@@ -1,16 +1,16 @@
 // Component-facing public API.
 
-import type { JSX as SolidJSX } from "solid-js";
+import type { Element as SolidElement } from "solid-js";
 import {
   children as resolveChildren,
   createEffect,
   createRenderEffect,
   createSignal,
-  mergeProps,
+  merge,
   onCleanup,
-  onMount,
+  onSettled,
   Show as SolidShow,
-  splitProps,
+  omit,
 } from "solid-js";
 import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { animate, type EasingName } from "./anim.ts";
@@ -65,11 +65,11 @@ function resolveActive(active: boolean | (() => boolean) | undefined): boolean {
 
 export interface ScreenProps extends ViewProps {}
 
-export function Screen(props: ScreenProps): SolidJSX.Element {
+export function Screen(props: ScreenProps): SolidElement {
   // mergeProps keeps caller prop GETTERS live — an object spread would
   // read them once and freeze every dynamic class/style at mount.
   return View(
-    mergeProps({ class: "relative flex-col w-full h-full bg-slate-50 overflow-hidden" }, props),
+    merge({ class: "relative flex-col w-full h-full bg-slate-50 overflow-hidden" }, props),
   );
 }
 
@@ -77,17 +77,17 @@ export interface FocusableProps extends ViewProps {
   onPress?: () => void;
 }
 
-export function Focusable(props: FocusableProps): SolidJSX.Element {
+export function Focusable(props: FocusableProps): SolidElement {
   // mergeProps, not object spread: spreading reads the compiled prop
   // getters once and freezes dynamic class/style (the reactive-leak class
   // of bug this file must never reintroduce).
-  return View(mergeProps(props, { focusable: true }) as ViewProps);
+  return View(merge(props, { focusable: true }) as ViewProps);
 }
 
 export interface NamedProps {
   /** Semantic name shown in the DevTools component tree (docs/DEVTOOLS.md). */
   name: string;
-  children?: SolidJSX.Element;
+  children?: SolidElement;
 }
 
 /**
@@ -96,35 +96,28 @@ export interface NamedProps {
  * (`<Named name="MessageCard"><Card …/></Named>`). A node's own `debugName`
  * prop wins over the wrapper. Renders nothing itself — zero native nodes.
  */
-export function Named(props: NamedProps): SolidJSX.Element {
+export function Named(props: NamedProps): SolidElement {
   const resolved = resolveChildren(() => props.children);
-  createRenderEffect(() => {
-    const items = resolved.toArray();
+  createRenderEffect(() => ({ items: resolved.toArray(), name: props.name }), ({ items, name }) => {
     for (const item of items) {
       if (item && typeof item === "object" && "id" in item && "children" in item) {
         const node = item as unknown as NodeMirror;
-        if (!node.debugName) setDebugName(node, props.name);
+        if (!node.debugName) setDebugName(node, name);
       }
     }
   });
-  return resolved as unknown as SolidJSX.Element;
+  return resolved as unknown as SolidElement;
 }
 
 export interface FocusScopeProps extends ViewProps, FocusScopeOptions {
   active?: boolean | (() => boolean);
 }
 
-export function FocusScope(props: FocusScopeProps): SolidJSX.Element {
+export function FocusScope(props: FocusScopeProps): SolidElement {
   let root: NodeMirror | undefined;
-  const [scopeProps, viewProps] = splitProps(props, ["active", "autoFocus", "restoreFocus"]);
-  createEffect(() => {
-    if (!root || !resolveActive(scopeProps.active)) return;
-    const dispose = pushFocusScope(root, {
-      autoFocus: scopeProps.autoFocus,
-      restoreFocus: scopeProps.restoreFocus,
-    });
-    onCleanup(dispose);
-  });
+  const scopeProps = props, viewProps = omit(props, "active", "autoFocus", "restoreFocus");
+  createEffect(() => ({ active: resolveActive(scopeProps.active), autoFocus: scopeProps.autoFocus, restoreFocus: scopeProps.restoreFocus }),
+    state => { if (root && state.active) return pushFocusScope(root, state); });
   return View({
     ...viewProps,
     ref: (node) => {
@@ -138,17 +131,11 @@ export interface FocusGridProps extends ViewProps, FocusGridOptions {
   active?: boolean | (() => boolean);
 }
 
-export function FocusGrid(props: FocusGridProps): SolidJSX.Element {
+export function FocusGrid(props: FocusGridProps): SolidElement {
   let root: NodeMirror | undefined;
-  const [gridProps, viewProps] = splitProps(props, ["active", "columns", "wrap"]);
-  createEffect(() => {
-    if (!root || !resolveActive(gridProps.active)) return;
-    const dispose = pushFocusGrid(root, {
-      columns: gridProps.columns,
-      wrap: gridProps.wrap,
-    });
-    onCleanup(dispose);
-  });
+  const gridProps = props, viewProps = omit(props, "active", "columns", "wrap");
+  createEffect(() => ({ active: resolveActive(gridProps.active), columns: gridProps.columns, wrap: gridProps.wrap }),
+    state => { if (root && state.active) return pushFocusGrid(root, state); });
   return View({
     ...viewProps,
     ref: (node) => {
@@ -161,10 +148,10 @@ export function FocusGrid(props: FocusGridProps): SolidJSX.Element {
 export interface ActionHandlerProps extends ButtonPressOptions {
   button: number;
   onPress: (pressed: number, buttons: number) => void;
-  children?: SolidJSX.Element;
+  children?: SolidElement;
 }
 
-export function ActionHandler(props: ActionHandlerProps): SolidJSX.Element {
+export function ActionHandler(props: ActionHandlerProps): SolidElement {
   onButtonPress(props.button, props.onPress, {
     allowWhenBlocked: props.allowWhenBlocked,
     active: props.active,
@@ -174,7 +161,7 @@ export function ActionHandler(props: ActionHandlerProps): SolidJSX.Element {
 }
 
 export interface PortalProps {
-  children?: SolidJSX.Element | (() => SolidJSX.Element);
+  children?: SolidElement | (() => SolidElement);
 }
 
 function renderPortalChild(child: PortalProps["children"]): unknown {
@@ -182,11 +169,11 @@ function renderPortalChild(child: PortalProps["children"]): unknown {
   return child;
 }
 
-export function Portal(props: PortalProps): SolidJSX.Element {
+export function Portal(props: PortalProps): SolidElement {
   let host: NodeMirror | undefined;
   let dispose: (() => void) | undefined;
 
-  onMount(() => {
+  onSettled(() => {
     host = createElement("view");
     // Size to the live logical viewport — desktop widget hosts resize it
     // (resizeViewport keeps ui.__viewport fresh); console hosts read the
@@ -225,14 +212,14 @@ export function Portal(props: PortalProps): SolidJSX.Element {
 }
 
 export interface AuxiliarySurfaceProps {
-  children?: SolidJSX.Element | (() => SolidJSX.Element);
+  children?: SolidElement | (() => SolidElement);
 }
 
 /** Mount children into the current AppInstance's auxiliary output. */
-export function AuxiliarySurface(props: AuxiliarySurfaceProps): SolidJSX.Element {
+export function AuxiliarySurface(props: AuxiliarySurfaceProps): SolidElement {
   let host: NodeMirror | undefined;
   let dispose: (() => void) | undefined;
-  onMount(() => {
+  onSettled(() => {
     const surface = getAuxiliarySurfaceRoots();
     host = createElement("view");
     setProp(
@@ -256,10 +243,10 @@ export function AuxiliarySurface(props: AuxiliarySurfaceProps): SolidJSX.Element
 }
 
 /** Render overlay content above the auxiliary application layer. */
-export function AuxiliaryPortal(props: AuxiliarySurfaceProps): SolidJSX.Element {
+export function AuxiliaryPortal(props: AuxiliarySurfaceProps): SolidElement {
   let host: NodeMirror | undefined;
   let dispose: (() => void) | undefined;
-  onMount(() => {
+  onSettled(() => {
     const surface = getAuxiliarySurfaceRoots();
     host = createElement("view");
     setProp(
@@ -291,18 +278,17 @@ export interface ModalProps {
   class?: string;
   panelClass?: string;
   open?: boolean | (() => boolean);
-  children?: SolidJSX.Element;
+  children?: SolidElement;
 }
 
-function ModalFrame(props: ModalProps): SolidJSX.Element {
+function ModalFrame(props: ModalProps): SolidElement {
   let backdrop: NodeMirror | undefined;
   let panel: NodeMirror | undefined;
   let unblockButtons: (() => void) | undefined;
 
   const open = () => resolveActive(props.open);
 
-  createEffect(() => {
-    const visible = open();
+  createEffect(open, visible => {
     if (visible && !unblockButtons) {
       unblockButtons = pushButtonHandlerBlock();
     } else if (!visible && unblockButtons) {
@@ -351,17 +337,17 @@ function ModalFrame(props: ModalProps): SolidJSX.Element {
   });
 }
 
-export function Modal(props: ModalProps): SolidJSX.Element {
+export function Modal(props: ModalProps): SolidElement {
   return Portal({ children: () => ModalFrame(props) });
 }
 
 export interface ActionBarProps extends ViewProps {}
 
-export function ActionBar(props: ActionBarProps): SolidJSX.Element {
+export function ActionBar(props: ActionBarProps): SolidElement {
   return Portal({
     children: () =>
       View(
-        mergeProps(
+        merge(
           {
             class:
               "absolute left-3 right-3 bottom-3 flex-row items-center justify-between px-2 py-1 rounded-lg shadow-md bg-white border-slate-200",
@@ -394,8 +380,8 @@ export interface GridProps extends ViewProps, Partial<FocusGridOptions> {
  * the fixed tile width vs. the container width. Pass `gap` as a number so the
  * caller's `class` can stay a single compiled literal.
  */
-export function Grid(props: GridProps): SolidJSX.Element {
-  const [g, rest] = splitProps(props, ["gap", "columns", "wrap", "active", "class", "style"]);
+export function Grid(props: GridProps): SolidElement {
+  const g = props, rest = omit(props, "gap", "columns", "wrap", "active", "class", "style");
   const style = g.gap != null ? { ...(g.style ?? {}), gap: g.gap } : g.style;
   const cls = g.class ?? "flex-row flex-wrap";
   if (g.columns != null) {
@@ -426,9 +412,9 @@ export interface LazyProps {
    */
   reveal?: number;
   /** Shown during the reveal delay (a spinner/skeleton). */
-  fallback?: SolidJSX.Element | (() => SolidJSX.Element);
+  fallback?: SolidElement | (() => SolidElement);
   /** Deferred content — only built once `when` is truthy AND the reveal elapsed. */
-  children: () => SolidJSX.Element;
+  children: () => SolidElement;
 }
 
 /**
@@ -441,7 +427,7 @@ export interface LazyProps {
  * immediately (no replayed spinner). There is no per-frame work when `reveal`
  * is 0.
  */
-export function Lazy(props: LazyProps): SolidJSX.Element {
+export function Lazy(props: LazyProps): SolidElement {
   const active = () => resolveActive(props.when);
   const reveal = Math.max(0, Math.floor(props.reveal ?? 0));
   const [ready, setReady] = createSignal(reveal === 0);
@@ -454,15 +440,15 @@ export function Lazy(props: LazyProps): SolidJSX.Element {
     });
   }
 
-  const fallback = (): SolidJSX.Element =>
+  const fallback = (): SolidElement =>
     typeof props.fallback === "function"
-      ? (props.fallback as () => SolidJSX.Element)()
+      ? (props.fallback as () => SolidElement)()
       : (props.fallback ?? null);
 
   // Two nested <Show>s, with reactive getters for when/fallback and a lazy
   // `get children()` (deferred exactly like the Solid JSX compiler's output),
   // invoked directly as Modal calls FocusScope here. Owner = the demo's <Lazy>.
-  const content = (): SolidJSX.Element =>
+  const content = (): SolidElement =>
     SolidShow({
       get when() {
         return ready();
@@ -497,7 +483,7 @@ export interface GalleryProps {
   /** Called with the next page when L/R paging is requested. */
   onPageChange?: (next: number) => void;
   /** Page factory — only invoked for pages inside the mount window (lazy). */
-  renderPage: (index: number) => SolidJSX.Element;
+  renderPage: (index: number) => SolidElement;
   /** Pages kept mounted on each side of the current one (default 1). */
   window?: number;
   /** Slide duration in ms (default 300). */
@@ -530,7 +516,7 @@ export interface GalleryProps {
  * Off-window pages are not built (see [`Lazy`]/`<Show>`), so a many-page gallery
  * stays within the PSP draw budget.
  */
-export function Gallery(props: GalleryProps): SolidJSX.Element {
+export function Gallery(props: GalleryProps): SolidElement {
   let strip: NodeMirror | undefined;
   const win = Math.max(0, Math.floor(props.window ?? 1));
   const dur = props.duration ?? 300;
@@ -555,14 +541,13 @@ export function Gallery(props: GalleryProps): SolidJSX.Element {
 
   // Slide on every page change; skip the mount run so the strip starts in place.
   let prevPage = initialPage;
-  createEffect(() => {
-    const p = props.page();
+  createEffect(() => props.page(), p => {
     if (!strip || p === prevPage) return;
     prevPage = p;
     animate(strip, "translateX", -p * SCREEN_W, { dur, easing });
   });
 
-  const cells: SolidJSX.Element[] = [];
+  const cells: SolidElement[] = [];
   for (let i = 0; i < props.count; i++) {
     const index = i;
     cells.push(

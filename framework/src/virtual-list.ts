@@ -27,8 +27,8 @@
 // bun test), and all geometry is style-object based so nothing here depends
 // on the pass-1 class harvest.
 
-import { For, createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js";
-import type { JSX as SolidJSX } from "solid-js";
+import { For, createEffect, createMemo, createSignal, onCleanup, onSettled, untrack } from "solid-js";
+import type { Element as SolidElement } from "solid-js";
 import { ENUMS } from "../../contracts/spec/spec.ts";
 import { createGesture, type GestureContact } from "./gesture.ts";
 import {
@@ -68,7 +68,7 @@ export interface VirtualListProps {
   rowHeight: number;
   /** Viewport height in logical px. */
   height: number;
-  renderRow: (index: number) => SolidJSX.Element;
+  renderRow: (index: number) => SolidElement;
   /** Extra px mounted beyond each viewport edge. Default 60 (im OVERSCAN). */
   overscan?: number;
   /** Inject a scroller (snap points, shared state). Its `max` should match
@@ -105,7 +105,7 @@ function isWithin(node: NodeMirror, ancestor: NodeMirror): boolean {
   return false;
 }
 
-export function VirtualList(props: VirtualListProps): SolidJSX.Element {
+export function VirtualList(props: VirtualListProps): SolidElement {
   const overscan = () => props.overscan ?? DEFAULT_OVERSCAN;
   const focusRows = props.focusRows !== false;
   const active = () => (props.inputActive ? props.inputActive() : true);
@@ -138,7 +138,6 @@ export function VirtualList(props: VirtualListProps): SolidJSX.Element {
       if (prev && prev[0] === first && prev[1] === last) return prev;
       return [first, last] as const;
     },
-    [0, -1] as const,
   );
 
   const visible = createMemo<number[]>(() => {
@@ -215,23 +214,14 @@ export function VirtualList(props: VirtualListProps): SolidJSX.Element {
     return true;
   };
 
-  onMount(() => {
-    if (focusRows) {
-      if (viewportNode) onCleanup(pushFocusController(viewportNode, moveFocus));
-      // Re-assert a focus move whose row was not mounted yet.
-      createEffect(() => {
-        visible();
-        if (pendingFocus === null) return;
-        const node = rowNodes.get(pendingFocus);
-        if (node) {
-          pendingFocus = null;
-          focusNode(node);
-        }
-      });
-    } else {
-      bindDpadScroll(scroller, { active });
-    }
-  });
+  if (focusRows) {
+    onSettled(() => viewportNode ? pushFocusController(viewportNode, moveFocus) : undefined);
+    createEffect(visible, () => {
+      if (pendingFocus === null) return;
+      const node = rowNodes.get(pendingFocus);
+      if (node) { pendingFocus = null; focusNode(node); }
+    });
+  } else bindDpadScroll(scroller, { active });
 
   // ---- touch --------------------------------------------------------------
 
@@ -321,8 +311,7 @@ export function VirtualList(props: VirtualListProps): SolidJSX.Element {
   // end (the im rule — at-bottom is judged before the append grew the range,
   // and on the target rather than the eased position).
   let prevCount = props.count;
-  createEffect(() => {
-    const count = props.count;
+  createEffect(() => props.count, count => {
     untrack(() => {
       if (props.stickToBottom && count > prevCount) {
         const prevMax = Math.max(0, prevCount * props.rowHeight - props.height);
@@ -354,7 +343,7 @@ export function VirtualList(props: VirtualListProps): SolidJSX.Element {
 
   // ---- the two-node contract ----------------------------------------------
 
-  const row = (index: number): SolidJSX.Element =>
+  const row = (index: number): SolidElement =>
     View({
       focusable: focusRows,
       onPress: props.onRowPress ? () => props.onRowPress!(index) : undefined,

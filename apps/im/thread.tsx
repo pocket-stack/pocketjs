@@ -18,7 +18,7 @@
 //     the added height in the same frame — backfill NEVER moves what you
 //     are looking at.
 
-import { createEffect, createMemo, createSignal, For, onMount, Show, untrack } from "solid-js";
+import { createTrackedEffect, createMemo, createSignal, For, onSettled, Show, untrack } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 import { analogY, onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
@@ -101,7 +101,7 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
     return next;
   });
 
-  onMount(() => {
+  onSettled(() => {
     const m = maxScroll();
     setScroll(m);
     setTarget(m);
@@ -113,7 +113,7 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
   let prevLast: string | undefined;
   let prevLen = 0;
   let prevTotal = 0;
-  createEffect(() => {
+  createTrackedEffect(() => {
     const msgs = props.convo.msgs();
     const total = layout().total;
     const first = msgs[0]?.id;
@@ -146,7 +146,7 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
   // Keyboard open/close changes the viewport height: keep the bottom pinned
   // if the user was there, otherwise just clamp.
   let prevViewH = viewH();
-  createEffect(() => {
+  createTrackedEffect(() => {
     const v = viewH();
     untrack(() => {
       if (v === prevViewH) return;

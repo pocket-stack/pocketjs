@@ -33,7 +33,7 @@ import {
   type NodeMirror,
 } from "@pocketjs/framework/components";
 import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
-import { createSignal, onMount } from "solid-js";
+import { createSignal, onSettled } from "solid-js";
 import { focusNode } from "@pocketjs/framework/input";
 import { GALLERY_PAGES, TILES_PER_PAGE, TILE_SRCS } from "./tiles.ts";
 
@@ -105,7 +105,7 @@ function TileGrid(props: {
   const start = props.page * TILES_PER_PAGE;
   const srcs = TILE_SRCS.slice(start, start + TILES_PER_PAGE);
   const refs: (NodeMirror | undefined)[] = [];
-  onMount(() => {
+  onSettled(() => {
     if (props.current() === props.page) focusNode(refs[0] ?? null);
   });
   return (

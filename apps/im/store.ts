@@ -14,7 +14,7 @@
 // delivery, not one per signal — a history page and its hasMore flip, or a
 // burst of poll events, land as a single update.
 
-import { batch, createSignal, type Accessor } from "solid-js";
+import { flush, createSignal, type Accessor } from "solid-js";
 import { runEffect } from "@pocketjs/framework/effects";
 import { virtualNow } from "@pocketjs/framework/clock";
 import type {
@@ -108,7 +108,7 @@ export function createTalkStore(): TalkStore {
   // a single UI update.
   const poll = (): void => {
     runEffect<PollPayload>("im/poll", null, (res) => {
-      batch(() => {
+      flush(() => {
         for (const ev of res.events) applyPush(ev);
       });
       poll();
@@ -175,7 +175,7 @@ export function createTalkStore(): TalkStore {
       // the beginning-of-conversation chip) must land in the SAME update, or
       // the thread's scroll rebase misses the chip's height and the content
       // the user is reading jumps.
-      batch(() => {
+      flush(() => {
         c.pagesLoaded++;
         c.setHasMore(res.hasMore);
         c.setMsgs([...res.messages.map(toUi), ...c.msgs()]);

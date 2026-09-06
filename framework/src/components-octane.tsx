@@ -6,7 +6,7 @@
 // is compiled by the Octane compiler, so their hooks get call-site slots.
 
 import { useLayoutEffect, useMemo, useRef, useState } from "octane";
-import type { JSX as SolidJSX } from "solid-js";
+import type { Element as SolidElement } from "solid-js";
 import { ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { animate, type EasingName } from "./animation.ts";
 import {
@@ -34,14 +34,14 @@ export type { NodeMirror } from "./renderer-octane.ts";
 type StyleObject = Record<string, number | string>;
 type NodeRef = ((node: NodeMirror | null) => void) | { current: NodeMirror | null } | undefined;
 
-export type VNodeChild = SolidJSX.Element | (() => SolidJSX.Element);
+export type VNodeChild = SolidElement | (() => SolidElement);
 
 const RENDERER_MODULE = "@pocketjs/framework/octane/renderer";
 
 const createPortal = universalCreatePortal as unknown as (
   children: unknown,
   target: unknown,
-) => SolidJSX.Element;
+) => SolidElement;
 
 function valueOf<T>(value: T | (() => T)): T {
   return typeof value === "function" ? (value as () => T)() : value;
@@ -153,7 +153,7 @@ export interface CompositorSurfaceProps {
   key?: string | number;
 }
 
-type Component<P> = (props: P) => SolidJSX.Element;
+type Component<P> = (props: P) => SolidElement;
 
 function primitive<P extends object>(tag: "view" | "text" | "image" | "surface"): Component<P> {
   const plan = universalPlan(OCTANE_RENDERER_ID, {
@@ -441,7 +441,7 @@ export function Gallery(props: GalleryProps) {
     });
   }, [page]);
 
-  const pages: SolidJSX.Element[] = [];
+  const pages: SolidElement[] = [];
   for (let i = 0; i < count; i++) {
     pages.push(
       <View

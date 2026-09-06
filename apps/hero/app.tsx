@@ -2,7 +2,7 @@
 // Uses all three public primitives, class literals, a dynamic style object,
 // focus + onPress, and a signal in text — the exact surface phase v1 supports.
 
-import { createEffect, createSignal, onMount, Show } from "solid-js";
+import { createEffect, createSignal, onSettled, Show } from "solid-js";
 import {
   Image,
   Text,
@@ -50,15 +50,14 @@ export interface HeroProps {
 
 export default function Hero(props: HeroProps = {}) {
   const [count, setCount] = createSignal(0);
-  createEffect(() => {
-    const completedCount = count();
+  createEffect(count, completedCount => {
     if (completedCount > 0) props.onAction?.(completedCount);
   });
   const spinnerSrc = createSpriteAnimation(SPINNER_FRAMES, {
     frameStep: props.spinnerFrameStep ?? SPINNER_FRAME_STEP,
   });
   let underline: NodeMirror | undefined;
-  onMount(() => {
+  onSettled(() => {
     // Underline sweeps in once on mount — native tween, zero steady-state JS.
     if (underline)
       animate(underline, "width", props.largeLayout ? 315 : 210, {

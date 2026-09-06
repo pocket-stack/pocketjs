@@ -7,7 +7,7 @@
 // Frame driving stays component-scoped through PocketJS lifecycle callbacks: button presses
 // switch tabs, while a capped frame hook advances deterministic counters.
 
-import { createMemo, createSignal, onMount, Show } from "solid-js";
+import { createMemo, createSignal, onSettled, Show } from "solid-js";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
@@ -96,7 +96,7 @@ function barFillOffset(scale: number): number {
 function Overview() {
   const fills: Array<NodeMirror | undefined> = [];
 
-  onMount(() => {
+  onSettled(() => {
     BARS.forEach((bar, i) => {
       const fill = fills[i];
       if (!fill) return;

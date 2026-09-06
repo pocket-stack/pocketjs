@@ -15,7 +15,7 @@
 // Left/Right on the d-pad switch pages.
 
 import { Show, createSignal } from "solid-js";
-import type { JSX } from "solid-js";
+import type { Element as SolidElement } from "solid-js";
 import { Image, Text, View } from "@pocketjs/framework/components";
 import { onButtonPress } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
@@ -627,7 +627,7 @@ function Room64() {
 interface PageDef {
   title: string;
   source: string;
-  tiles: Array<() => JSX.Element>;
+  tiles: Array<() => SolidElement>;
 }
 
 const PAGES: PageDef[] = [

@@ -11,7 +11,7 @@
 // 480x272 (docs/DESIGN.md punts kinetic scroll, so the list can't overflow the
 // screen); every class a FULL literal.
 
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, For, onSettled, Show } from "solid-js";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 import { onFrame } from "@pocketjs/framework/lifecycle";
@@ -135,7 +135,7 @@ export default function Notifications() {
         <For each={items()}>
           {(item, i) => {
             let el: NodeMirror | undefined;
-            onMount(() => {
+            onSettled(() => {
               if (el) {
                 animate(el, "opacity", 1, { dur: 250, delay: i() * 70, easing: "out" });
                 animate(el, "translateX", 0, { dur: 250, delay: i() * 70, easing: "out" });

@@ -146,6 +146,8 @@
     "./offload/capabilities": "./tools/offload-capabilities.ts",
     "./offload": "./framework/src/offload.ts",
     "./resource-state": "./framework/src/resource-state.ts",
+    "./resource-cache": "./framework/src/resource-cache.ts",
+    "./resource-offload": "./framework/src/resource-offload.ts",
     "./resource": "./framework/src/resource.ts",
     "./audio": "./framework/src/audio-api.ts",
     "./clock": "./framework/src/clock.ts",
@@ -181,6 +183,8 @@
     "./vue-vapor/animation": "./framework/src/animation.ts",
     "./vue-vapor/offload": "./framework/src/offload.ts",
     "./vue-vapor/resource-state": "./framework/src/resource-state.ts",
+    "./vue-vapor/resource-cache": "./framework/src/resource-cache.ts",
+    "./vue-vapor/resource-offload": "./framework/src/resource-offload.ts",
     "./vue-vapor/audio": "./framework/src/audio-api.ts",
     "./vue-vapor/clock": "./framework/src/clock.ts",
     "./vue-vapor/db": "./framework/src/db-api.ts",
@@ -198,6 +202,8 @@
     "./octane/animation": "./framework/src/animation.ts",
     "./octane/offload": "./framework/src/offload.ts",
     "./octane/resource-state": "./framework/src/resource-state.ts",
+    "./octane/resource-cache": "./framework/src/resource-cache.ts",
+    "./octane/resource-offload": "./framework/src/resource-offload.ts",
     "./octane/audio": "./framework/src/audio-api.ts",
     "./octane/clock": "./framework/src/clock.ts",
     "./octane/db": "./framework/src/db-api.ts",
@@ -208,13 +214,7 @@
     "./octane/lifecycle": "./framework/src/lifecycle-octane.ts",
     "./octane/input": "./framework/src/input-api.ts",
     "./octane/net": "./framework/src/net-api.ts",
-    "./octane/renderer": "./framework/src/renderer-octane.ts",
-    "./resource-cache": "./framework/src/resource-cache.ts",
-    "./resource-offload": "./framework/src/resource-offload.ts",
-    "./vue-vapor/resource-cache": "./framework/src/resource-cache.ts",
-    "./vue-vapor/resource-offload": "./framework/src/resource-offload.ts",
-    "./octane/resource-cache": "./framework/src/resource-cache.ts",
-    "./octane/resource-offload": "./framework/src/resource-offload.ts"
+    "./octane/renderer": "./framework/src/renderer-octane.ts"
   },
   "description": "A portable application runtime that turns modern component code into native pixels across radically different hardware: Solid, Vue Vapor and Octane over a native Rust core, with build-time Tailwind styling and 60 FPS animation under an 8 MB memory budget.",
   "scripts": {
@@ -290,10 +290,11 @@
     "vapor:check": "bun vapor/compiler/cli.ts check vapor/examples/todo/todo.tsx"
   },
   "dependencies": {
+    "@solidjs/universal": "2.0.0-rc.6",
     "@vue/compiler-sfc": "3.6.0-rc.1",
     "@vue/compiler-vapor": "3.6.0-rc.1",
     "octane": "0.1.26",
-    "solid-js": "^1.9",
+    "solid-js": "2.0.0-rc.6",
     "vue": "3.6.0-rc.1",
     "vue-jsx-vapor": "3.2.19"
   },
@@ -310,7 +311,7 @@
     "@types/babel__core": "^7.20.5",
     "@types/bun": "^1.2",
     "@types/opentype.js": "^1.3.10",
-    "babel-preset-solid": "^1.9",
+    "babel-preset-solid": "2.0.0-rc.2",
     "codemirror": "^6.0.2",
     "jsnes": "^2.1.0",
     "marked": "^18.0.5",

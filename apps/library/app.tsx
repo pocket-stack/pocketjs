@@ -11,7 +11,7 @@
 // pre-split into <Text> lines), every class a FULL literal (the per-tile accent
 // border/gradient is baked per entry, never synthesized).
 
-import { createMemo, createSignal, onMount, Show } from "solid-js";
+import { createMemo, createSignal, onSettled, Show } from "solid-js";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { spring } from "@pocketjs/framework/animation";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
@@ -100,11 +100,11 @@ const SPINNER_FRAMES = [
 // Screens
 // ---------------------------------------------------------------------------
 
-/** Icon row. Remounts on every return to "library" — onMount restores focus
+/** Icon row. Remounts on every return to "library" — onSettled restores focus
  *  to the tile that was open (focusNode over the d-pad's own traversal). */
 function Grid(props: { selectedIndex: () => number; onOpen: (game: Game, index: number) => void }) {
   const refs: (NodeMirror | undefined)[] = [];
-  onMount(() => {
+  onSettled(() => {
     const i = props.selectedIndex();
     if (i >= 0) focusNode(refs[i] ?? null);
   });
@@ -152,7 +152,7 @@ function DetailStat(props: { label: string; value: string }) {
  *  panel never fades through the default dark style. */
 function Detail(props: { game: Game }) {
   let panel: NodeMirror | undefined;
-  onMount(() => {
+  onSettled(() => {
     if (panel) spring(panel, "translateY", 0);
   });
   return (

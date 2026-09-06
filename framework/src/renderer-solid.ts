@@ -3,7 +3,7 @@
 // This is the default `framework: "solid"` renderer and the
 // babel-preset-solid {generate:"universal"} moduleName target.
 
-import { createRenderer } from "solid-js/universal";
+import { createRenderer } from "@solidjs/universal";
 import {
   createElement as createNativeElement,
   createTextNode,
@@ -66,6 +66,11 @@ function setProperty<T>(node: NodeMirror, name: string, value: T, prev?: T): voi
 const renderer = createRenderer<NodeMirror>({
   createElement: createNativeElement,
   createTextNode,
+  createSentinel() {
+    const node = createNativeElement("view");
+    setProp(node, "style", { posType: 1, width: 0, height: 0, hitPass: 1 });
+    return node;
+  },
   replaceText,
   isTextNode,
   setProperty,
@@ -86,11 +91,27 @@ export const {
   memo,
   createComponent,
   createElement,
-  insert,
   spread,
   mergeProps,
-  use,
+  ref,
+  applyRef,
 } = renderer;
+
+/** Preserve a scalar text segment's native node across marked insertions.
+ * Universal v2 otherwise normalizes every scalar in a marked segment into a
+ * fresh text node. A per-segment node avoids allocation on counter/caret updates. */
+export const insert: typeof renderer.insert = (parent, accessor, marker, initial, options) => {
+  if (marker === undefined || typeof accessor !== "function") return renderer.insert(parent, accessor, marker, initial, options);
+  let text: NodeMirror | undefined;
+  return renderer.insert(parent, () => {
+    const value = (accessor as () => unknown)();
+    if (typeof value !== "string" && typeof value !== "number") return value;
+    const next = String(value);
+    if (!text?.parent) text = createTextNode(next);
+    else if (text.text !== next) replaceText(text, next);
+    return text;
+  }, marker, initial, options);
+};
 
 export function createRenderRoot(root: NodeMirror) {
   let dispose: (() => void) | undefined;

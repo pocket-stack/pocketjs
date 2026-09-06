@@ -12,7 +12,7 @@
 // (Same rule applies to Bun.build in tools/build.ts: conditions:["browser"].)
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, flush, For, Show } from "solid-js";
 
 // Fail fast with a real message if the SSR build got resolved.
 if (Bun.resolveSync("solid-js", import.meta.dir).endsWith("server.js")) {
@@ -208,17 +208,17 @@ test("classic buttons provide press, slide-out, disabled and cancelled feedback"
   const dispose = render(() => ClassicButton({ label: "Save", style: { width: 80, height: 24 },
     get disabled() { return disabled(); }, onPress() { clicked++; },
   }) as unknown as NodeMirror, root);
-  setInputRoot(root);
+  setInputRoot(root); flush();
   const button = root.children[0]; hit = button.id;
-  const pump = (down: boolean) => { __advanceClock(); __setTouches(down ? [__packTouch(0, 10, 10)] : []); __runGestures(); };
+  const pump = (down: boolean) => { __advanceClock(); __setTouches(down ? [__packTouch(0, 10, 10)] : []); __runGestures(); flush(); };
   const changes = () => host.of("setProp").filter(call => call[1] === button.id && call[2] === PROP.gradFrom);
   host.clear(); pump(true); expect(changes()).toHaveLength(1); expect(clicked).toBe(0);
   pump(false); expect(changes()).toHaveLength(2); expect(clicked).toBe(1);
   pump(true); hit = 0;
-  __advanceClock(); __setTouches([__packTouch(0, 100, 10)]); __runGestures();
+  __advanceClock(); __setTouches([__packTouch(0, 100, 10)]); __runGestures(); flush();
   pump(false); expect(clicked).toBe(1); // release outside cancels
-  hit = button.id; pump(true); setDisabled(true); pump(false); expect(clicked).toBe(1);
-  setDisabled(false); pump(true); const unblock = pushTouchBlock(); pump(false); unblock(); expect(clicked).toBe(1);
+  hit = button.id; pump(true); setDisabled(true); flush(); pump(false); expect(clicked).toBe(1);
+  setDisabled(false); flush(); pump(true); const unblock = pushTouchBlock(); pump(false); unblock(); expect(clicked).toBe(1);
   pump(true); pump(false); expect(clicked).toBe(2);
   dispose(); resetGestures(); __resetTouches();
 });
@@ -231,16 +231,16 @@ test("classic sheets animate natively and retain modality through close and reop
     onCancel() {}, onModalChange(value) { modal.push(value); },
   }) as unknown as NodeMirror, root);
   const frame = root.children[0], body = frame.children[1];
-  host.clear(); setOpen(true);
+  host.clear(); setOpen(true); flush();
   expect(modal).toEqual([true]);
   expect(host.of("animate").some(c => c[1] === body.id && c[2] === PROP.translateY && c[3] === 0)).toBe(true);
-  setOpen(false); for (let i = 0; i < 4; i++) __advanceClock();
+  setOpen(false); flush(); for (let i = 0; i < 4; i++) __advanceClock();
   expect(modal).toEqual([true]);
-  setOpen(true); for (let i = 0; i < 15; i++) __advanceClock();
+  setOpen(true); flush(); for (let i = 0; i < 15; i++) __advanceClock();
   expect(modal).toEqual([true]); // stale closing deadline cannot hide a reopened sheet
-  setOpen(false); for (let i = 0; i < 12; i++) __advanceClock();
+  setOpen(false); flush(); for (let i = 0; i < 12; i++) __advanceClock();
   expect(modal).toEqual([true, false]);
-  setOpen(true); dispose();
+  setOpen(true); flush(); dispose();
   expect(modal.at(-1)).toBe(false);
   resetGestures(); resetClock();
 });
@@ -258,22 +258,22 @@ test("resource images retain their layout through fallback, retry and borrowed t
   expect(skeletons).toBe(1);
   expect(host.of("setImage")).toHaveLength(0);
   host.clear();
-  setState(pending());
+  setState(pending()); flush();
   expect(skeletons).toBe(1);
   // Handle zero is valid. The component never uploads or frees borrowed images.
-  setState(ready({ handle: 0, width: 256, height: 16 })); runSweep();
+  setState(ready({ handle: 0, width: 256, height: 16 })); flush(); runSweep();
   const image = frame.children[0];
   expect(host.of("setImage")).toEqual([["setImage", image.id, 0]]);
   host.clear();
-  setState(ready({ handle: 7, width: 256, height: 16 }));
+  setState(ready({ handle: 7, width: 256, height: 16 })); flush();
   expect(frame.children[0]).toBe(image);
   expect(host.of("setImage")).toEqual([["setImage", image.id, 7]]);
   host.clear();
-  setState(ready({ handle: 7, width: 256, height: 16 }));
+  setState(ready({ handle: 7, width: 256, height: 16 })); flush();
   expect(host.of("setImage")).toHaveLength(0);
-  setState(failed("offline")); runSweep();
+  setState(failed("offline")); flush(); runSweep();
   expect(host.of("setText").some(call => call[2] === "Retry")).toBe(true);
-  setState(pending()); runSweep();
+  setState(pending()); flush(); runSweep();
   expect(skeletons).toBe(2);
   expect(root.children[0]).toBe(frame);
   expect(host.of("setProp").filter(call => call[1] === frame.id)).toHaveLength(0);
@@ -289,7 +289,7 @@ beforeEach(() => {
   resetTextures();
   resetPack();
   resetInput();
-  setStyleResolver(resolveStyle);
+  setStyleResolver(resolveStyle); flush();
   root = freshRoot();
   const g = globalThis as {
     ui?: HostOps;
@@ -413,7 +413,7 @@ describe("<For> reorder — DOM move semantics [R]", () => {
     runSweep();
     host.clear();
 
-    setRows([...first].reverse());
+    setRows([...first].reverse()); flush();
     runSweep();
     expect(childIds(root)).toEqual(
       [6, 5, 4, 3, 2, 1].map((id) => byId.get(id)!.id),
@@ -426,9 +426,9 @@ describe("<For> reorder — DOM move semantics [R]", () => {
 
     // Exercise the update-then-reverse shape used by the external benchmark.
     const second = first.map((row, i) => (i === 2 ? { id: 99 } : row));
-    setRows(second);
+    setRows(second); flush();
     runSweep();
-    setRows([...second].reverse());
+    setRows([...second].reverse()); flush();
     runSweep();
     expect(childIds(root)).toEqual(
       [...second].reverse().map((row) => byId.get(row.id)!.id),
@@ -459,7 +459,7 @@ describe("<For> reorder — DOM move semantics [R]", () => {
     expect(childIds(root)).toEqual([a.id, b.id, c.id]);
     host.clear();
 
-    setItems(["c", "a", "b"]);
+    setItems(["c", "a", "b"]); flush();
 
     // mirror order matches, no duplicate children
     expect(childIds(root)).toEqual([c.id, a.id, b.id]);
@@ -503,12 +503,12 @@ describe("<For> reorder — DOM move semantics [R]", () => {
 
     const [a, b, c] = [byLabel.get("a")!, byLabel.get("b")!, byLabel.get("c")!];
     host.clear();
-    setItems(["b", "a", "c"]);
+    setItems(["b", "a", "c"]); flush();
     expect(childIds(root)).toEqual([b.id, a.id, c.id]);
     expect(new Set(childIds(root)).size).toBe(3);
     expect(host.of("createNode")).toEqual([]);
     expect(host.of("destroyNode")).toEqual([]);
-    setItems(["b", "c", "a"]);
+    setItems(["b", "c", "a"]); flush();
     expect(childIds(root)).toEqual([b.id, c.id, a.id]);
     runSweep();
     expect(host.of("destroyNode")).toEqual([]);
@@ -537,7 +537,7 @@ describe("<For> reorder — DOM move semantics [R]", () => {
     const b = byLabel.get("b")!;
     host.clear();
 
-    setItems(["a"]);
+    setItems(["a"]); flush();
     // detached but NOT yet destroyed (Solid may re-insert within the frame)
     expect(host.of("removeChild")).toEqual([["removeChild", ROOT_ID, b.id]]);
     expect(host.of("destroyNode")).toEqual([]);
@@ -570,7 +570,7 @@ describe("<For> reorder — DOM move semantics [R]", () => {
     retain(b);
     host.clear();
 
-    setItems(["a"]);
+    setItems(["a"]); flush();
     runSweep();
     expect(host.of("destroyNode")).toEqual([]); // retained: survives detached
 
@@ -606,14 +606,14 @@ describe("<Show> toggle", () => {
     expect(childIds(root)).toEqual([first.id]);
     host.clear();
 
-    setShow(false);
+    setShow(false); flush();
     expect(host.of("removeChild").length).toBe(1);
     expect(childIds(root)).toEqual([]);
     runSweep();
     expect(host.of("destroyNode")).toEqual([["destroyNode", first.id]]);
     host.clear();
 
-    setShow(true);
+    setShow(true); flush();
     const second = shown! as NodeMirror;
     expect(second.id).not.toBe(first.id); // fresh native node
     expect(childIds(root)).toEqual([second.id]);
@@ -678,13 +678,13 @@ describe("mixed text — 'Count: {n()} items'", () => {
     expect(dynSet).toBeDefined();
     const dynId = dynSet[1] as number;
 
-    // mirror: text element children are [head, dyn, tail]
+    // The temporary Solid 2 sentinel is removed after insertion.
     const textEl = root.children[0];
     expect(textEl.children.length).toBe(3);
     expect(textEl.children[1].id).toBe(dynId);
     host.clear();
 
-    setN(42);
+    setN(42); flush();
     // updates replace text in place — no new nodes, no re-insert
     expect(host.of("replaceText")).toEqual([["replaceText", dynId, "42"]]);
     expect(host.of("createNode")).toEqual([]);
@@ -702,9 +702,8 @@ describe("setProperty dispatch table [R]", () => {
 
     const dispose = render(() => {
       const el = createElement("view");
-      effect<string | undefined>((prev) =>
-        setProp(el, "class", hot() ? "bg-blue p-2" : "bg-red p-2", prev),
-      );
+      effect(() => hot() ? "bg-blue p-2" : "bg-red p-2",
+        (value, prev) => { setProp(el, "class", value, prev); flush(); });
       return el;
     }, root);
 
@@ -712,11 +711,11 @@ describe("setProperty dispatch table [R]", () => {
     expect(host.of("setStyle")).toEqual([["setStyle", el.id, 7]]);
     host.clear();
 
-    setHot(true);
+    setHot(true); flush();
     expect(host.of("setStyle")).toEqual([["setStyle", el.id, 8]]);
     host.clear();
 
-    setHot(false);
+    setHot(false); flush();
     expect(host.of("setStyle")).toEqual([["setStyle", el.id, 7]]);
 
     dispose();
@@ -725,7 +724,7 @@ describe("setProperty dispatch table [R]", () => {
   test("token-sorted alias: 'p-2 bg-red' resolves the 'bg-red p-2' style", () => {
     registerStyles({ "bg-red p-2": 7 });
     const el = createElement("view");
-    setProp(el, "class", "p-2  bg-red", undefined); // extra spaces + reorder
+    setProp(el, "class", "p-2  bg-red", undefined); flush(); // extra spaces + reorder
     expect(host.of("setStyle")).toEqual([["setStyle", el.id, 7]]);
   });
 
@@ -758,20 +757,20 @@ describe("setProperty dispatch table [R]", () => {
     installHost(native);
     const before = missCounters.unknownClass;
     const el2 = createElement("view");
-    setProp(el2, "class", "not-compiled", undefined); // silent
+    setProp(el2, "class", "not-compiled", undefined); flush(); // silent
     expect(missCounters.unknownClass).toBe(before + 1);
     expect(native.of("setStyle")).toEqual([]);
   });
 
   test("null class clears back to the default style", () => {
     const el = createElement("view");
-    setProp(el, "class", null, "bg-red p-2");
+    setProp(el, "class", null, "bg-red p-2"); flush();
     expect(host.of("setStyle")).toEqual([["setStyle", el.id, STYLE_ID_NONE]]);
   });
 
   test("style object diffs per key and encodes per VALUE_KIND", () => {
     const el = createElement("view");
-    setProp(el, "style", { width: 120, bgColor: "#ff0000" }, undefined);
+    setProp(el, "style", { width: 120, bgColor: "#ff0000" }, undefined); flush();
     expect(host.of("setProp")).toEqual([
       ["setProp", el.id, PROP.width, 120],
       ["setProp", el.id, PROP.bgColor, 0xff0000ff], // ABGR: opaque red
@@ -784,7 +783,7 @@ describe("setProperty dispatch table [R]", () => {
       "style",
       { width: 120, bgColor: "#00ff00" },
       { width: 120, bgColor: "#ff0000" },
-    );
+    ); flush();
     expect(host.of("setProp")).toEqual([
       ["setProp", el.id, PROP.bgColor, 0xff00ff00],
     ]);
@@ -800,7 +799,7 @@ describe("setProperty dispatch table [R]", () => {
   test("src looks up the texture registry", () => {
     registerTexture("logo.png", 77);
     const el = createElement("image");
-    setProp(el, "src", "logo.png", undefined);
+    setProp(el, "src", "logo.png", undefined); flush();
     expect(host.of("setImage")).toEqual([["setImage", el.id, 77]]);
     expect(() => setProp(el, "src", "nope.png", "logo.png")).toThrow(
       /unknown image src/,
@@ -810,13 +809,13 @@ describe("setProperty dispatch table [R]", () => {
   test("clearing src sends setImage(-1) — 0 is a real (first) texture handle", () => {
     registerTexture("logo.png", 0); // first upload => handle 0
     const el = createElement("image");
-    setProp(el, "src", "logo.png", undefined);
+    setProp(el, "src", "logo.png", undefined); flush();
     expect(host.of("setImage")).toEqual([["setImage", el.id, 0]]);
     host.clear();
-    setProp(el, "src", "", "logo.png");
+    setProp(el, "src", "", "logo.png"); flush();
     expect(host.of("setImage")).toEqual([["setImage", el.id, -1]]);
     host.clear();
-    setProp(el, "src", null, "");
+    setProp(el, "src", null, ""); flush();
     expect(host.of("setImage")).toEqual([["setImage", el.id, -1]]);
   });
 
@@ -835,19 +834,19 @@ describe("setProperty dispatch table [R]", () => {
 
 describe("focus + onPress (input.ts)", () => {
   test("d-pad traversal in document order, CIRCLE fires focused handler", () => {
-    setInputRoot(root);
+    setInputRoot(root); flush();
     let pressedA = 0;
     let pressedB = 0;
 
     const dispose = render(() => {
       const list = createElement("view");
       const a = createElement("view");
-      setProp(a, "focusable", true, undefined);
-      setProp(a, "onPress", () => pressedA++, undefined);
+      setProp(a, "focusable", true, undefined); flush();
+      setProp(a, "onPress", () => pressedA++, undefined); flush();
       insertNode(list, a);
       const b = createElement("view");
-      setProp(b, "focusable", true, undefined);
-      setProp(b, "onPress", () => pressedB++, undefined);
+      setProp(b, "focusable", true, undefined); flush();
+      setProp(b, "onPress", () => pressedB++, undefined); flush();
       insertNode(list, b);
       return list;
     }, root);
@@ -882,14 +881,14 @@ describe("focus + onPress (input.ts)", () => {
   });
 
   test("CIRCLE hold applies active: on the focused node, release clears", () => {
-    setInputRoot(root);
+    setInputRoot(root); flush();
     const dispose = render(() => {
       const list = createElement("view");
       const a = createElement("view");
-      setProp(a, "focusable", true, undefined);
+      setProp(a, "focusable", true, undefined); flush();
       insertNode(list, a);
       const b = createElement("view");
-      setProp(b, "focusable", true, undefined);
+      setProp(b, "focusable", true, undefined); flush();
       insertNode(list, b);
       return list;
     }, root);
@@ -919,7 +918,7 @@ describe("focus + onPress (input.ts)", () => {
 
     // CIRCLE with nothing focused: no active call.
     handleFrame(0);
-    setInputRoot(root);
+    setInputRoot(root); flush();
     const before = host.of("setActive").length;
     handleFrame(BTN.CIRCLE);
     expect(host.of("setActive").length).toBe(before);
@@ -928,7 +927,7 @@ describe("focus + onPress (input.ts)", () => {
   });
 
   test("focus repair on removal: next sibling, else prev, else ancestor [R]", () => {
-    setInputRoot(root);
+    setInputRoot(root); flush();
     const [items, setItems] = createSignal(["a", "b", "c"]);
     const byLabel = new Map<string, NodeMirror>();
 
@@ -940,7 +939,7 @@ describe("focus + onPress (input.ts)", () => {
           },
           children: (item: string) => {
             const el = createElement("view");
-            setProp(el, "focusable", true, undefined);
+            setProp(el, "focusable", true, undefined); flush();
             byLabel.set(item, el);
             return el;
           },
@@ -953,13 +952,13 @@ describe("focus + onPress (input.ts)", () => {
     handleFrame(BTN.DOWN); // focus 'b'
     expect(getFocused()).toBe(byLabel.get("b")!);
 
-    setItems(["a", "c"]); // remove focused 'b' → next sibling 'c'
+    setItems(["a", "c"]); flush(); // remove focused 'b' → next sibling 'c'
     expect(getFocused()).toBe(byLabel.get("c")!);
 
-    setItems(["a"]); // remove focused 'c' → no next → prev sibling 'a'
+    setItems(["a"]); flush(); // remove focused 'c' → no next → prev sibling 'a'
     expect(getFocused()).toBe(byLabel.get("a")!);
 
-    setItems([]); // remove focused 'a' → nothing focusable left
+    setItems([]); flush(); // remove focused 'a' → nothing focusable left
     expect(getFocused()).toBe(null);
     expect(host.of("setFocus").at(-1)).toEqual(["setFocus", 0]);
 
@@ -967,7 +966,7 @@ describe("focus + onPress (input.ts)", () => {
   });
 
   test("focus scope traps traversal/press and restores previous focus", () => {
-    setInputRoot(root);
+    setInputRoot(root); flush();
     let backgroundPresses = 0;
     let modalPresses = 0;
     let background!: NodeMirror;
@@ -977,14 +976,14 @@ describe("focus + onPress (input.ts)", () => {
     const dispose = render(() => {
       const page = createElement("view");
       background = createElement("view");
-      setProp(background, "focusable", true, undefined);
-      setProp(background, "onPress", () => backgroundPresses++, undefined);
+      setProp(background, "focusable", true, undefined); flush();
+      setProp(background, "onPress", () => backgroundPresses++, undefined); flush();
       insertNode(page, background);
 
       modalRoot = createElement("view");
       modalItem = createElement("view");
-      setProp(modalItem, "focusable", true, undefined);
-      setProp(modalItem, "onPress", () => modalPresses++, undefined);
+      setProp(modalItem, "focusable", true, undefined); flush();
+      setProp(modalItem, "onPress", () => modalPresses++, undefined); flush();
       insertNode(modalRoot, modalItem);
       insertNode(page, modalRoot);
       return page;
@@ -1015,11 +1014,11 @@ describe("focus + onPress (input.ts)", () => {
   });
 
   test("focus grid maps d-pad directions by row and column", () => {
-    setInputRoot(root);
+    setInputRoot(root); flush();
     const grid = createElement("view");
     const cells = ["a", "b", "c", "d", "e"].map(() => {
       const cell = createElement("view");
-      setProp(cell, "focusable", true, undefined);
+      setProp(cell, "focusable", true, undefined); flush();
       insertNode(grid, cell);
       return cell;
     });
@@ -1270,6 +1269,7 @@ describe("public render() (index.ts)", () => {
     expect(host.of("destroyNode").map((c) => c[1])).toEqual([
       appLayer.id,
       overlayLayer.id,
+      el.id, // Solid 2 detaches render-owned content on root disposal.
     ]);
   });
 
@@ -1319,7 +1319,7 @@ describe("public render() (index.ts)", () => {
     ).toEqual([]);
 
     host.clear();
-    setCount(8);
+    setCount(8); flush();
     expect(label.children[0]).toBe(dynamicText);
     expect(dynamicText.text).toBe("count:8");
     expect(host.of("replaceText")).toEqual([
@@ -1591,7 +1591,7 @@ describe("public render() (index.ts)", () => {
     const [backdrop, panel] = modalFrame.children;
     host.clear();
 
-    setOpen(false);
+    setOpen(false); flush();
     expect(overlayLayer.children).toEqual([portalHost]);
     expect(portalHost.children).toEqual([modalFrame]);
     expect(modalFrame.children).toEqual([backdrop, panel]);
@@ -1610,7 +1610,7 @@ describe("public render() (index.ts)", () => {
     );
 
     host.clear();
-    setOpen(true);
+    setOpen(true); flush();
     expect(overlayLayer.children).toEqual([portalHost]);
     expect(host.of("removeChild")).toEqual([]);
     expect(host.of("destroyNode")).toEqual([]);
@@ -1723,7 +1723,7 @@ describe("public render() (index.ts)", () => {
     const dispose = publicMount(() => {
       onFrame((buttons) => before.push(buttons));
       const img = createElement("image");
-      setProp(img, "src", "logo.png", undefined);
+      setProp(img, "src", "logo.png", undefined); flush();
       return img;
     });
 
@@ -1817,7 +1817,7 @@ describe("public render() (index.ts)", () => {
     g.frame?.(BTN.SELECT);
     expect(presses).toBe(0);
 
-    setEnabled(true);
+    setEnabled(true); flush();
     g.frame?.(BTN.SELECT);
     expect(presses).toBe(0);
 

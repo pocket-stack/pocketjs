@@ -16,6 +16,8 @@ if (typeof (globalThis as { queueMicrotask?: unknown }).queueMicrotask !== "func
   };
 }
 
+import { flush, latest } from "solid-js";
+
 import {
   detectHost,
   getOps,
@@ -278,6 +280,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
       touchSurfaces?: readonly number[],
       rightAnalog?: number,
     ) => {
+      latest(() => {
       __advanceClock(); // virtual frame++, fire due after() timers
       __setAnalog(analog, rightAnalog); // latch the nub before any app code reads it
       __setTouches(touches, hits, touchSurfaces); // latch contacts + surface-specific hit facts
@@ -286,6 +289,8 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
       __runGestures(); // contact lifecycles resolve before app hooks read them
       runFrameHooks(buttons); // app lifecycle callbacks: onFrame/onButtonPress/etc.
       handleFrame(buttons); // edge-detect, focus nav, onPress (runs effects)
+      });
+      flush(); // commit Solid 2 writes and renderer effects before native draw/sweep
       runSweep(); // then destroy subtrees still detached [R]
     }),
   );

@@ -4,7 +4,7 @@
 // but application code should register component-scoped lifecycle callbacks instead of
 // patching mount() with a global per-frame callback.
 
-import { createSignal, onCleanup, type Accessor } from "solid-js";
+import { createSignal, onCleanup, flush, latest, type Accessor } from "solid-js";
 import { __resetAnalog } from "./analog.ts";
 
 export { __setAnalog, analogRaw, analogX, analogY, rightAnalogRaw, rightAnalogX, rightAnalogY } from "./analog.ts";
@@ -21,7 +21,8 @@ export function resetFrameHooks(): void {
 }
 
 export function runFrameHooks(buttons: number): void {
-  for (const cb of [...callbacks]) cb(buttons);
+  for (const cb of [...callbacks]) latest(() => cb(buttons));
+  flush();
 }
 
 export function onFrame(callback: FrameCallback): void {

@@ -1,3 +1,4 @@
+import { flush } from "solid-js";
 // VirtualList renderer-level tests: mount through the public render() with a
 // mock HostOps (the devtools.test.ts pattern) and drive the real frame pump —
 // windowing math, reference stability, d-pad focus-follow, touch tap/pan
@@ -165,7 +166,7 @@ describe("windowing", () => {
 
   test("scrolling re-windows in O(window) rows at absolute offsets", () => {
     const h = mountList();
-    h.scroller.scrollTo(500, { immediate: true });
+    h.scroller.scrollTo(500, { immediate: true }); flush();
     // first = floor(480/10) = 48, last = floor(569/10) = 56 → 9 rows.
     const kids = canvasNode().children;
     expect(kids.length).toBe(9);
@@ -173,9 +174,9 @@ describe("windowing", () => {
 
   test("sub-row scrolls keep the same window (reference-stable <For> input)", () => {
     const h = mountList();
-    h.scroller.scrollTo(500, { immediate: true });
+    h.scroller.scrollTo(500, { immediate: true }); flush();
     const before = canvasNode().children.slice();
-    h.scroller.scrollTo(500.5, { immediate: true });
+    h.scroller.scrollTo(500.5, { immediate: true }); flush();
     const after = canvasNode().children;
     expect(after.length).toBe(before.length);
     for (let i = 0; i < after.length; i++) expect(after[i]).toBe(before[i]);
@@ -184,7 +185,7 @@ describe("windowing", () => {
   test("a shrinking count clamps the window", () => {
     const [count, setCount] = createSignal(100);
     mountList({ count });
-    setCount(3);
+    setCount(3); flush();
     expect(canvasNode().children.length).toBe(3);
   });
 });
@@ -231,7 +232,7 @@ describe("touch", () => {
   test("tap on a row fires the shared onPress path (hit fact names the row)", () => {
     const pressed: number[] = [];
     const h = mountList({ onRowPress: (i) => pressed.push(i) });
-    h.scroller.scrollTo(100, { immediate: true });
+    h.scroller.scrollTo(100, { immediate: true }); flush();
     // y 25 in-view → content y 125 → row 12; window first = 8 → child 4.
     const row12 = canvasNode().children[4];
     frame(0, [__packTouch(1, 100, 25)], [row12.id]);
@@ -307,20 +308,20 @@ describe("touch", () => {
 describe("data-flow invariants", () => {
   test("rebaseRows shifts the offset by exactly the added height", () => {
     const h = mountList();
-    h.scroller.scrollTo(100, { immediate: true });
-    h.rebaseRows(5);
+    h.scroller.scrollTo(100, { immediate: true }); flush();
+    h.rebaseRows(5); flush();
     expect(h.scroller.offset()).toBe(150);
   });
 
   test("stickToBottom follows appends only while the intent is at the end", () => {
     const [count, setCount] = createSignal(10); // total 100, max = 50
     const h = mountList({ count, stickToBottom: true });
-    h.scroller.scrollTo(50, { immediate: true }); // at the end
-    setCount(12); // max becomes 70
+    h.scroller.scrollTo(50, { immediate: true }); flush(); // at the end
+    setCount(12); flush(); // max becomes 70
     for (let i = 0; i < 40; i++) frame(0);
     expect(h.scroller.offset()).toBe(70); // followed
-    h.scroller.scrollTo(0, { immediate: true }); // reading history
-    setCount(14);
+    h.scroller.scrollTo(0, { immediate: true }); flush(); // reading history
+    setCount(14); flush();
     for (let i = 0; i < 10; i++) frame(0);
     expect(h.scroller.offset()).toBe(0); // did not move
   });
@@ -330,7 +331,7 @@ describe("data-flow invariants", () => {
     const h = mountList({ onNearEnd: () => hits++ });
     frame(0);
     expect(hits).toBe(0);
-    h.scroller.scrollTo(920, { immediate: true }); // max = 950, zone = 36
+    h.scroller.scrollTo(920, { immediate: true }); flush(); // max = 950, zone = 36
     frame(0);
     expect(hits).toBe(1);
   });
@@ -339,14 +340,14 @@ describe("data-flow invariants", () => {
 describe("focusRow", () => {
   test("focuses a row programmatically, scrolling it into view", () => {
     const h = mountList();
-    h.focusRow(0);
+    h.focusRow(0); flush();
     frame(0);
     expect(h.focusedIndex()).toBe(0);
     expect(getFocused()).toBe(canvasNode().children[0]);
-    h.focusRow(50); // off-window: chases + focuses on mount
+    h.focusRow(50); flush(); // off-window: chases + focuses on mount
     for (let i = 0; i < 60; i++) frame(0);
     expect(h.focusedIndex()).toBe(50);
-    h.focusRow(999); // clamps to the last row
+    h.focusRow(999); flush(); // clamps to the last row
     for (let i = 0; i < 120; i++) frame(0);
     expect(h.focusedIndex()).toBe(99);
   });
@@ -370,16 +371,16 @@ describe("handle reactivity hygiene", () => {
             h = handle;
           },
         });
-        createEffect(() => {
+        createEffect(() => true, () => {
           effectRuns++;
-          h.focusRow(0); // must NOT leak a props.count subscription
+          h.focusRow(0); flush(); // must NOT leak a props.count subscription
         });
         return el;
       },
       { ops: host.ops, styles: {} },
     );
     const runsAfterMount = effectRuns;
-    setCount(11); // an append must not re-fire the caller's effect
+    setCount(11); flush(); // an append must not re-fire the caller's effect
     expect(effectRuns).toBe(runsAfterMount);
     expect(h.focusedIndex()).toBe(0);
   });

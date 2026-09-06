@@ -10,7 +10,7 @@
 // press, entirely covered by the engine's default input pass (framework/src/input.ts)
 // — unlike continuous demos, this entry needs no frame hook.
 
-import { createEffect, createSignal, Show } from "solid-js";
+import { createTrackedEffect, createSignal, Show } from "solid-js";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 
@@ -131,7 +131,7 @@ function themeByName(name: ThemeName): ThemeOption {
 function Toggle(props: { label: string; value: boolean; theme: ThemeOption; onToggle: () => void }) {
   let knob: NodeMirror | undefined;
   let initialized = false;
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!knob) return;
     const x = props.value ? 15.5 : 0.5;
     animate(knob, "translateX", x, {
@@ -190,7 +190,7 @@ function Brightness(props: { theme: ThemeOption }) {
   let thumb: NodeMirror | undefined;
   let initialized = false;
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const target = brightnessWidth(level());
     const scale = brightnessScale(level());
     const fillOffset = brightnessFillOffset(level());

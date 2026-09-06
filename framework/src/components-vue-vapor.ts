@@ -7,7 +7,7 @@ import {
   shallowRef,
   watchEffect,
 } from "vue";
-import type { JSX as SolidJSX } from "solid-js";
+import type { Element as SolidElement } from "solid-js";
 import { ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { animate, type EasingName } from "./animation.ts";
 import { pushButtonHandlerBlock, onButtonPress, onFrame, type ButtonPressOptions } from "./frame-vue-vapor.ts";
@@ -34,14 +34,14 @@ type NodeRef = ((node: NodeMirror | null) => void) | { current: NodeMirror | nul
 type SlotFn = (...args: unknown[]) => unknown;
 type SlotBag = Record<string, SlotFn | undefined> | SlotFn | undefined;
 
-export type VNodeChild = SolidJSX.Element | (() => SolidJSX.Element);
+export type VNodeChild = SolidElement | (() => SolidElement);
 const NO_FALLTHROUGH = { inheritAttrs: false } as const;
 type VaporCtx = { slots: SlotBag; attrs: Record<string, unknown> };
 type VaporSetup<P extends object> = (props: P, ctx: VaporCtx) => unknown;
 const definePocketVaporComponent = defineVaporComponent as unknown as <P extends object>(
   setup: VaporSetup<P>,
   extraOptions?: typeof NO_FALLTHROUGH,
-) => (props: P) => SolidJSX.Element;
+) => (props: P) => SolidElement;
 const insertVaporBlock = vaporInsert as unknown as (
   block: unknown,
   parent: NodeMirror,

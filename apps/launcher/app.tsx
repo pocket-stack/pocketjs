@@ -13,7 +13,7 @@
 // deck still browses (build-time registry), launch is a visible no-op, and
 // the footer says why. That degraded mode is what plain goldens exercise.
 
-import { createEffect, createSignal, onMount, Show, untrack } from "solid-js";
+import { createTrackedEffect, createSignal, onSettled, Show, untrack } from "solid-js";
 import { registerTexture } from "@pocketjs/framework";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate, createJumpBatch } from "@pocketjs/framework/animation";
@@ -135,7 +135,7 @@ export default function Launcher(props: LauncherProps) {
    *  a discrete step's previous target or a released scrub's fraction). */
   const applyTweens = (s: number) =>
     applyCards(s, (el, prop, v) => animate(el, prop, v, { dur: 140, easing: "out" }));
-  createEffect(() => {
+  createTrackedEffect(() => {
     const s = sel();
     untrack(() => {
       // While flowing, jump() owns the cards; the release path below tweens
@@ -147,7 +147,7 @@ export default function Launcher(props: LauncherProps) {
 
   const clampSel = (v: number) => Math.min(apps.length - 1, Math.max(0, v));
 
-  onMount(() => {
+  onSettled(() => {
     // The held path changes 4 props × every card each virtual frame. Compile
     // those writes once so native QuickJS hosts cross into Rust once per deck
     // update instead of once per property; fallback hosts keep setProp parity.

@@ -66,7 +66,7 @@ export function ClassicButton(props: ClassicButtonProps) {
   const [pressed, setPressed] = createSignal(false);
   let node: NodeMirror | undefined, contact: number | undefined;
   const clear = () => { contact = undefined; setPressed(false); };
-  createEffect(() => { if (props.disabled) clear(); });
+  createEffect(() => props.disabled, disabled => { if (disabled) clear(); });
   createGesture({ surface: props.surface, allowWhenBlocked: props.allowWhenBlocked,
     region: { node: () => node },
     onDown(c) { if (!props.disabled && contact === undefined) { contact = c.id; setPressed(true); } },
@@ -150,8 +150,7 @@ export function ClassicSheet(props: ClassicSheetProps) {
   let unblock: (() => void) | undefined, deadline: (() => void) | undefined;
   let slide = 0, fade = 0;
   const release = () => { unblock?.(); unblock = undefined; props.onModalChange?.(false); };
-  createEffect(() => {
-    const open = props.open;
+  createEffect(() => props.open, open => {
     deadline?.(); deadline = undefined;
     if (slide) cancelAnim(slide); if (fade) cancelAnim(fade);
     if (open) {

@@ -9,7 +9,7 @@
 // focus emphasis = translate-y lift + bg/border color (never scale — glyphs
 // don't scale), all text single-line, every class a FULL literal.
 
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, onSettled, Show } from "solid-js";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate, spring } from "@pocketjs/framework/animation";
 
@@ -56,7 +56,7 @@ const CARDS: Card[] = [
  *  replays on every open; colors are static on the first visible frame. */
 function Detail(props: { card: Card }) {
   let el: NodeMirror | undefined;
-  onMount(() => {
+  onSettled(() => {
     if (el) spring(el, "translateY", 0);
   });
   return (
@@ -81,7 +81,7 @@ export default function Cards() {
 
   let streakA: NodeMirror | undefined;
   let streakB: NodeMirror | undefined;
-  onMount(() => {
+  onSettled(() => {
     // Slow ambient drift: one long linear tween each, declared once — the
     // Rust core owns the motion from here (zero steady-state JS).
     if (streakA) animate(streakA, "translateX", 300, { dur: 20000, easing: "linear" });

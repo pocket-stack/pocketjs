@@ -25,7 +25,7 @@
 // frame's button mask + analog value only, so a given input tape always
 // reproduces the same trajectory (docs/DETERMINISM.md).
 
-import { onCleanup, type JSX as SolidJSX } from "solid-js";
+import { onCleanup, type Element as SolidElement } from "solid-js";
 import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { ticksPerFrame, TICKS_PER_SECOND } from "./clock.ts";
 import { getOps, hostViewport } from "./host.ts";
@@ -149,7 +149,7 @@ interface MountedTile {
   textured: boolean;
 }
 
-export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
+export function DeepZoom(props: DeepZoomProps): SolidElement {
   const fixedViewport = props.width !== undefined || props.height !== undefined;
   const initialViewport = fixedViewport ? null : hostViewport(getOps());
   let vw = props.width ?? initialViewport?.w ?? SCREEN_W;
@@ -523,5 +523,5 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
     for (const m of overviewMounted.splice(0)) unmountTile(overviewWorld, m);
   });
 
-  return container as unknown as SolidJSX.Element;
+  return container as unknown as SolidElement;
 }

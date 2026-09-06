@@ -1,5 +1,5 @@
 // @title NS Engine — pocketjs guest talking to a NativeScript host
-import { createSignal, onMount } from "solid-js";
+import { createSignal, onSettled } from "solid-js";
 import { Image, Screen, Text, View } from "@pocketjs/framework/components";
 import { runEffect } from "@pocketjs/framework/effects";
 import { createSpriteAnimation, onFrame } from "@pocketjs/framework/lifecycle";
@@ -53,7 +53,7 @@ export default function App() {
   };
 
   // Fire one round trip unprompted so the channel proves itself on boot.
-  onMount(() => ping());
+  onSettled(() => ping());
 
   return (
     <Screen class="relative flex-col w-full h-full overflow-hidden justify-between p-5 bg-gradient-to-b from-slate-950 to-slate-900">

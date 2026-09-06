@@ -72,7 +72,7 @@ const SOLID_RUNTIME_PATH = fileURLToPath(
   new URL("../../node_modules/solid-js/dist/solid.js", import.meta.url),
 );
 const SOLID_UNIVERSAL_RUNTIME_PATH = fileURLToPath(
-  new URL("../../node_modules/solid-js/universal/dist/universal.js", import.meta.url),
+  new URL("../../node_modules/@solidjs/universal/dist/universal.js", import.meta.url),
 );
 
 const PACKAGE_NAME = "@pocketjs/framework";
@@ -582,10 +582,13 @@ export function jsxPlugin(
       // sides of the renderer boundary to PocketJS's browser-mode Solid copy,
       // otherwise identical packages at different paths form two reactive
       // ownership domains and lifecycle hooks silently stop crossing it.
+      build.onResolve({ filter: /^@solidjs\/signals$/ }, () => ({
+        path: fileURLToPath(new URL("../../node_modules/@solidjs/signals/dist/prod/index.js", import.meta.url)),
+      }));
       build.onResolve({ filter: /^solid-js$/ }, () => ({
         path: SOLID_RUNTIME_PATH,
       }));
-      build.onResolve({ filter: /^solid-js\/universal$/ }, () => ({
+      build.onResolve({ filter: /^@solidjs\/universal$/ }, () => ({
         path: SOLID_UNIVERSAL_RUNTIME_PATH,
       }));
       build.onResolve({ filter: /^@pocketjs\/framework(?:\/.*)?$/ }, (args) => {

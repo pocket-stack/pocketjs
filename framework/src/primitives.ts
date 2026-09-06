@@ -5,7 +5,7 @@
 // host tags directly. This file intentionally contains no JSX so ordinary Bun
 // tests can import the public entry without a Solid transform step.
 
-import type { JSX as SolidJSX } from "solid-js";
+import type { Element as SolidElement } from "solid-js";
 import { createElement, spread } from "./renderer.ts";
 import type { NodeMirror } from "./renderer.ts";
 
@@ -25,7 +25,7 @@ export interface ViewProps {
   debugName?: string;
   ref?: RefProp;
   nodeRef?: RefProp;
-  children?: SolidJSX.Element;
+  children?: SolidElement;
 }
 
 export interface TextProps {
@@ -35,7 +35,7 @@ export interface TextProps {
   debugName?: string;
   ref?: RefProp;
   nodeRef?: RefProp;
-  children?: SolidJSX.Element;
+  children?: SolidElement;
 }
 
 export interface ImageProps {
@@ -76,28 +76,28 @@ export interface CompositorSurfaceProps {
   nodeRef?: RefProp;
 }
 
-function primitive(tag: "view" | "text" | "image" | "surface", props: Record<string, unknown>): SolidJSX.Element {
+function primitive(tag: "view" | "text" | "image" | "surface", props: Record<string, unknown>): SolidElement {
   const el = createElement(tag);
   spread(el, props, false);
   callRef(props.nodeRef as RefProp, el);
-  return el as unknown as SolidJSX.Element;
+  return el as unknown as SolidElement;
 }
 
-export function View(props: ViewProps): SolidJSX.Element {
+export function View(props: ViewProps): SolidElement {
   return primitive("view", props as Record<string, unknown>);
 }
 
-export function Text(props: TextProps): SolidJSX.Element {
+export function Text(props: TextProps): SolidElement {
   return primitive("text", props as Record<string, unknown>);
 }
 
-export function Image(props: ImageProps): SolidJSX.Element {
+export function Image(props: ImageProps): SolidElement {
   return primitive("image", props as Record<string, unknown>);
 }
 
 /** A package AppInstance composed by a native host. It participates in
  *  ordinary layout, clipping and z-order but has no image/texture semantics. */
-export function CompositorSurface(props: CompositorSurfaceProps): SolidJSX.Element {
+export function CompositorSurface(props: CompositorSurfaceProps): SolidElement {
   return primitive("surface", props as unknown as Record<string, unknown>);
 }
 
@@ -107,6 +107,6 @@ export function CompositorSurface(props: CompositorSurfaceProps): SolidJSX.Eleme
  * (deterministic, zero per-frame JS). It plays from the first frame the moment
  * it is displayed, so revealing/paging one starts its animation automatically.
  */
-export function Sprite(props: SpriteProps): SolidJSX.Element {
+export function Sprite(props: SpriteProps): SolidElement {
   return primitive("image", props as Record<string, unknown>);
 }
