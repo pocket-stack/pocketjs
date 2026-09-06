@@ -118,3 +118,15 @@ test("frame expiry revalidates only desired entries and keeps the old value visi
   expect(loads).toBe(1); x.scheduler.step(); expect(loads).toBe(2); expect(cache.state("live")).toEqual({ status: "ready", value: "1" });
   cache.reconcile([]); for (let i = 0; i < 5; i++) x.scheduler.step(); expect(loads).toBe(2);
 });
+
+
+test("invalid demand costs leave the previous working set and request intact", () => {
+  const scheduler = createResourceScheduler({ maxConcurrent: 1, startsPerFrame: 1, completionsPerFrame: 1, maxCollections: 1 });
+  let cancelled = false;
+  const cache = scheduler.createCache({ key: (s: string) => s, maxEntries: 2, maxCost: 2, maxResponseBytes: 2,
+    cost: s => s === "bad" ? NaN : 1, load: () => ({ cancel() { cancelled = true; } }), materialize: (s: string) => s });
+  cache.reconcile([{ input: "active", priority: 0, pin: true }]); scheduler.step();
+  expect(() => cache.reconcile([{ input: "bad", priority: 0 }])).toThrow("cost");
+  expect(cancelled).toBe(false); expect(cache.snapshot("active").refreshing).toBe(true);
+  expect(cache.stats().entries).toBe(1); scheduler.dispose();
+});
