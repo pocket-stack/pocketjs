@@ -1,6 +1,6 @@
 import { flush } from "solid-js";
 import { expect, test } from "bun:test";
-import { createRoot, createSignal, onCleanup, type Element as SolidElement } from "solid-js";
+import { createRoot, createSignal, onCleanup, runWithOwner, type Element as SolidElement } from "solid-js";
 import { createResourceSlot, pending, ready, failed, type ResourceState } from "../framework/src/resource-state.ts";
 import { ResourceBoundary } from "../framework/src/resource.ts";
 
@@ -36,6 +36,7 @@ test("boundary lazily reveals content, updates ready values and disposes only it
       children: value => { mounts++; onCleanup(() => cleanups++); return (() => `value:${value()}`) as unknown as SolidElement; },
     });
     const read = () => { let value: unknown = output; while (typeof value === "function") value = value(); return value; };
+    runWithOwner(null, () => {
     expect(read()).toBe("skeleton"); expect(mounts).toBe(0);
     setLabel("waiting"); flush(); expect(read()).toBe("waiting");
     setLabel("skeleton"); flush();
@@ -45,5 +46,6 @@ test("boundary lazily reveals content, updates ready values and disposes only it
     setState(failed("offline")); flush(); expect(read()).toBe("error:offline");
     setState(ready(9)); flush(); expect(read()).toBe("value:9");
     dispose(); expect(cleanups).toBe(2);
+    });
   });
 });

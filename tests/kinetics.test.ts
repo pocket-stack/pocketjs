@@ -1,3 +1,4 @@
+import { flush } from "solid-js";
 // Kinetic scroller unit tests. No host, no renderer — the scroller is pure
 // state + a Solid signal. The load-bearing assertions are the determinism
 // ones: repeat runs are identical, and tick-integrated modes (fling/spring)
@@ -24,7 +25,7 @@ function fling(s: Scroller, v: number): void {
 function trace(s: Scroller, maxFrames = 600): number[] {
   const out: number[] = [];
   for (let i = 0; i < maxFrames && s.state() !== "idle"; i++) {
-    s.step();
+    s.step(); flush();
     out.push(s.offset());
   }
   return out;
@@ -165,9 +166,9 @@ describe("chase (im parity)", () => {
   test("covers 0.3 of the remaining distance per frame and snaps under 0.6", () => {
     const s = createScroller({ max: () => 1000 });
     s.chaseTo(100);
-    s.step();
+    s.step(); flush();
     expect(s.offset()).toBe(30);
-    s.step();
+    s.step(); flush();
     expect(s.offset()).toBe(51);
     const t = trace(s);
     expect(t[t.length - 1]).toBe(100); // exact arrival via the snap
@@ -193,7 +194,7 @@ describe("chase (im parity)", () => {
 describe("tween + snap", () => {
   test("scrollTo lands exactly at the target after round(durMs·hz/1000) frames", () => {
     const s = createScroller({ max: () => 1000 });
-    s.scrollTo(400, { durMs: 200 });
+    s.scrollTo(400, { durMs: 200 }); flush();
     const t = trace(s);
     expect(t.length).toBe(12); // 200 ms at 60 Hz
     expect(t[t.length - 1]).toBe(400);
@@ -201,7 +202,7 @@ describe("tween + snap", () => {
 
   test("scrollTo immediate jumps and clamps", () => {
     const s = createScroller({ max: () => 300 });
-    s.scrollTo(999, { immediate: true });
+    s.scrollTo(999, { immediate: true }); flush();
     expect(s.offset()).toBe(300);
     expect(s.state()).toBe("idle");
   });
@@ -227,9 +228,9 @@ describe("rebase + settle callback", () => {
   test("rebase shifts the offset and in-flight anchors", () => {
     const s = createScroller({ max: () => 10_000 });
     s.chaseTo(100);
-    s.step();
+    s.step(); flush();
     const before = s.offset();
-    s.rebase(500);
+    s.rebase(500); flush();
     expect(s.offset()).toBe(before + 500);
     const t = trace(s);
     expect(t[t.length - 1]).toBe(600); // target rebased too

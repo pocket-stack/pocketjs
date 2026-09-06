@@ -4,7 +4,7 @@
 // binds the offset to a Solid signal and registers the d-pad pump on the
 // Solid frame hook. Vue Vapor builds resolve kinetics.vue-vapor.ts instead.
 
-import { createSignal, type Accessor } from "solid-js";
+import { createSignal, latest, type Accessor } from "solid-js";
 import { BTN } from "../../contracts/spec/spec.ts";
 import { analogY } from "./analog.ts";
 import { onFrame } from "./frame.ts";
@@ -23,7 +23,11 @@ export interface Scroller extends ScrollerCore {
 }
 
 export function createScroller(opts: ScrollerOptions): Scroller {
-  return createScrollerWith((initial) => createSignal(initial), opts);
+  return createScrollerWith((initial) => {
+    const [read, write] = createSignal(initial);
+    // Physics integrates the latest staged offset; rendering still commits per frame.
+    return [() => latest(read), write];
+  }, opts);
 }
 
 /**

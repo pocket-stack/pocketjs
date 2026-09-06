@@ -173,7 +173,7 @@ export function Portal(props: PortalProps): SolidElement {
   let host: NodeMirror | undefined;
   let dispose: (() => void) | undefined;
 
-  onSettled(() => {
+  (() => {
     host = createElement("view");
     // Size to the live logical viewport — desktop widget hosts resize it
     // (resizeViewport keeps ui.__viewport fresh); console hosts read the
@@ -201,7 +201,7 @@ export function Portal(props: PortalProps): SolidElement {
     );
     insertNode(getOverlayRoot(), host);
     dispose = rendererRender(() => renderPortalChild(props.children) as NodeMirror, host);
-  });
+  })();
 
   onCleanup(() => {
     dispose?.();
@@ -219,7 +219,7 @@ export interface AuxiliarySurfaceProps {
 export function AuxiliarySurface(props: AuxiliarySurfaceProps): SolidElement {
   let host: NodeMirror | undefined;
   let dispose: (() => void) | undefined;
-  onSettled(() => {
+  (() => {
     const surface = getAuxiliarySurfaceRoots();
     host = createElement("view");
     setProp(
@@ -234,7 +234,7 @@ export function AuxiliarySurface(props: AuxiliarySurfaceProps): SolidElement {
     );
     insertNode(surface.app, host);
     dispose = rendererRender(() => renderPortalChild(props.children) as NodeMirror, host);
-  });
+  })();
   onCleanup(() => {
     dispose?.();
     if (host?.parent) detachNode(host.parent, host);
@@ -246,7 +246,7 @@ export function AuxiliarySurface(props: AuxiliarySurfaceProps): SolidElement {
 export function AuxiliaryPortal(props: AuxiliarySurfaceProps): SolidElement {
   let host: NodeMirror | undefined;
   let dispose: (() => void) | undefined;
-  onSettled(() => {
+  (() => {
     const surface = getAuxiliarySurfaceRoots();
     host = createElement("view");
     setProp(
@@ -266,7 +266,7 @@ export function AuxiliaryPortal(props: AuxiliarySurfaceProps): SolidElement {
     );
     insertNode(surface.overlay, host);
     dispose = rendererRender(() => renderPortalChild(props.children) as NodeMirror, host);
-  });
+  })();
   onCleanup(() => {
     dispose?.();
     if (host?.parent) detachNode(host.parent, host);
