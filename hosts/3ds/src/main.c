@@ -784,6 +784,7 @@ int main(void) {
     uint32_t touch = 0;
     size_t touch_count = input_touch(&touch);
 #else
+    if (input_exit_requested()) break;
     if (devserver_result == DEVSERVER_ERROR && run_frame % 300 == 299) {
       /* One retry every ~5 s until the transient boot-time failure clears. */
       devserver_result = devserver_init(&runtime_state, runtime_error, sizeof runtime_error);

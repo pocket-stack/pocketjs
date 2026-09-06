@@ -69,10 +69,11 @@ recovery guest; it no longer embeds independent `app.js` and `app.pak` files.
 
 ## Updating the guest from SD
 
-The runtime checks one staging path at boot:
+The build prints the application's 16-hex-digit runtime slot. The runtime
+checks that application's staging path at boot:
 
 ```text
-sdmc:/pocketjs/runtime/pending.pocket
+sdmc:/pocketjs/runtime/apps/<runtime-slot>/pending.pocket
 ```
 
 With an FTP server running as a separate homebrew application, build and upload
@@ -81,22 +82,33 @@ the guest package, then exit the FTP server and start Pocket Runtime:
 ```sh
 bun tools/3ds.ts 3ds-demo --pocket-only
 curl --ftp-create-dirs -T dist/3ds/pocket3ds-demo-main.pocket \
-  ftp://<device>/pocketjs/runtime/pending.pocket
+  ftp://<device>/pocketjs/runtime/apps/<runtime-slot>/pending.pocket
 ```
 
 The runtime verifies the package footer, exact `3ds-dev` target, host ABI,
 identity, resolved plan and NUL-terminated JS section before it can boot. A
 complete pending package is renamed to
-`sdmc:/pocketjs/runtime/packages/<hash>.pocket`; package blobs are immutable.
+`sdmc:/pocketjs/runtime/apps/<runtime-slot>/packages/<hash>.pocket`; package
+blobs are immutable.
 An incomplete FTP upload stays at `pending.pocket` and does not replace the
 running or accepted guest.
 
+**Each embedded application id has its own package, generation and recovery
+state.** The slot is the first 16 hexadecimal digits of SHA-256 over the
+manifest `id`; the fixed length keeps native paths bounded. Contacts, Pocket
+Shell and Pocket Term can therefore live as separate `.3dsx` files on one SD
+card without one app's last-good package booting under another app's icon.
+The pairing key remains device-wide at `sdmc:/pocketjs/runtime/dev.key`, so the
+console is paired once. Pre-slot state directly under
+`sdmc:/pocketjs/runtime/{packages,state}` is left untouched and is not loaded
+by a slotted runtime.
+
 **A package becomes active only after its first submitted PICA command list has
 retired successfully.** State is committed by appending a generation marker
-under `sdmc:/pocketjs/runtime/state/`. Eval, frame or first-render failure loads
-the previous active package, then last-good, then the embedded ROMFS recovery
-package. Power loss before the generation marker leaves the previous generation
-active.
+under the application's `state/` directory. Eval, frame or first-render failure
+loads the previous active package, then last-good, then the embedded ROMFS
+recovery package. Power loss before the generation marker leaves the previous
+generation active.
 
 `L+R+X` requests the same package check at a GPU-idle frame boundary. The full
 chord is removed from the application's button mask. This supports an emulator
@@ -106,13 +118,22 @@ Runtime.
 Runtime receipts are written to:
 
 ```text
-sdmc:/pocketjs/runtime/status.txt
-sdmc:/pocketjs/runtime/last-error.txt
+sdmc:/pocketjs/runtime/apps/<runtime-slot>/status.txt
+sdmc:/pocketjs/runtime/apps/<runtime-slot>/last-error.txt
 ```
 
-`status.txt` records the current generation, active hash, last-good hash,
+`status.txt` records the slot, current generation, active hash, last-good hash,
 running package hash and source path. `last-error.txt` records the failed phase
 without deleting the rejected package blob.
+
+## Multiple Homebrew Launcher entries
+
+Copy each product's `.3dsx` to a distinct filename under `/3ds/`; the SMDH
+inside each file supplies its own title and icon. **`L+R+START` is owned by the
+native host and exits the running `.3dsx` back to the Homebrew Launcher.** The
+complete chord is removed from guest input. Select the next Pocket app in HBL
+to switch while preserving each app's independent accepted and last-good
+packages.
 
 ## In-process development connection
 

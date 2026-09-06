@@ -53,10 +53,25 @@ int main(int argc, char **argv) {
   assert(chdir(argv[1]) == 0);
   assert(mkdir("sdmc:", 0777) == 0 || errno == EEXIST);
 
+  /* Pre-slot state belongs to no application. A newly namespaced runtime
+   * starts from its embedded guest instead of inheriting this package. */
+  assert(mkdir("sdmc:/pocketjs", 0777) == 0);
+  assert(mkdir("sdmc:/pocketjs/runtime", 0777) == 0);
+  assert(mkdir("sdmc:/pocketjs/runtime/state", 0777) == 0);
+  FILE *legacy = fopen(
+    "sdmc:/pocketjs/runtime/state/state-00000007-1111222233334444-0000000000000000.commit",
+    "wb"
+  );
+  assert(legacy != NULL);
+  assert(fputs("accepted\n", legacy) >= 0);
+  assert(fclose(legacy) == 0);
+
   char error[256] = {0};
   PocketRuntimeState state;
   assert(runtime_storage_init(&state, error, sizeof error));
   assert(state.generation == 0 && state.active_hash == 0 && state.last_good_hash == 0);
+  assert(strcmp(POCKET_RUNTIME_APP_ROOT, "sdmc:/pocketjs/runtime/apps/0123456789abcdef") == 0);
+  assert(strcmp(POCKET_RUNTIME_DEV_KEY, "sdmc:/pocketjs/runtime/dev.key") == 0);
 
   const uint64_t first_hash = 0x1111222233334444ULL;
   write_package(POCKET_RUNTIME_PENDING, first_hash, 1);
@@ -64,7 +79,9 @@ int main(int argc, char **argv) {
   assert(runtime_prepare_pending(&first, error, sizeof error) == RUNTIME_PENDING_READY);
   assert(first != NULL && first->guest.package_hash == first_hash);
   assert(!exists(POCKET_RUNTIME_PENDING));
-  assert(exists("sdmc:/pocketjs/runtime/packages/1111222233334444.pocket"));
+  assert(exists(
+    "sdmc:/pocketjs/runtime/apps/0123456789abcdef/packages/1111222233334444.pocket"
+  ));
   runtime_package_free(first);
   assert(runtime_commit(&state, first_hash, 0, error, sizeof error));
 
@@ -123,7 +140,7 @@ int main(int argc, char **argv) {
 
   /* The transport-declared footer is an independent admission check. A
    * mismatch remains inspectable at its staging path and creates no blob. */
-  const char *network = "sdmc:/pocketjs/runtime/network-upload.pocket";
+  const char *network = POCKET_RUNTIME_UPLOAD;
   write_package(network, 0x123456789abcdef0ULL, 1);
   PocketRuntimePackage *mismatch = NULL;
   assert(runtime_prepare_file(

@@ -7,9 +7,18 @@
 
 #include "pocket_core.h"
 
+#ifndef POCKETJS_RUNTIME_SLOT
+#error "POCKETJS_RUNTIME_SLOT must come from the verified application id"
+#endif
+
+/* Pairing identifies the console, so every Pocket app shares one key. Guest
+ * state is application-scoped: two .3dsx entries on the same SD card must not
+ * recover or hot-load one another's package. */
 #define POCKET_RUNTIME_ROOT "sdmc:/pocketjs/runtime"
-#define POCKET_RUNTIME_PENDING POCKET_RUNTIME_ROOT "/pending.pocket"
-#define POCKET_RUNTIME_UPLOAD POCKET_RUNTIME_ROOT "/network-upload.pocket"
+#define POCKET_RUNTIME_APPS POCKET_RUNTIME_ROOT "/apps"
+#define POCKET_RUNTIME_APP_ROOT POCKET_RUNTIME_APPS "/" POCKETJS_RUNTIME_SLOT
+#define POCKET_RUNTIME_PENDING POCKET_RUNTIME_APP_ROOT "/pending.pocket"
+#define POCKET_RUNTIME_UPLOAD POCKET_RUNTIME_APP_ROOT "/network-upload.pocket"
 #define POCKET_RUNTIME_DEV_KEY POCKET_RUNTIME_ROOT "/dev.key"
 
 typedef struct {
