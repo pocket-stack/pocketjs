@@ -2,6 +2,23 @@ import { expect, test } from "bun:test";
 import { createTileCamera, visibleTiles, planTileWindow } from "../framework/src/tile-viewport.ts";
 import { createDragFilter } from "../framework/src/drag-filter.ts";
 const options = { width: 400, height: 240, x: 128, y: 128, zoom: 10, minZoom: 1, maxZoom: 18 };
+test("opening a finite atlas replaces wrapping and zoom limits without replacing the camera", () => {
+  const c = createTileCamera({ ...options, bounds: { width: 256, height: 256, wrapX: true } });
+  c.zoomBy(2);
+  c.setWorld({ minZoom: 0, maxZoom: 7, bounds: { width: 256, height: 256 } });
+  c.jump(300, -10, 10);
+  expect(c.view().zoom).toBe(7); expect(c.view().x).toBeCloseTo(256 - 200 / 128);
+  expect(c.view().y).toBeCloseTo(120 / 128); expect(c.view().moving).toBe(false);
+  const before = c.view();
+  expect(() => c.setWorld({ minZoom: 8, maxZoom: 7 })).toThrow();
+  expect(c.view()).toEqual(before);
+  c.zoomBy(-20); for (let n = 0; n < 20; n++) c.step(1 / 60);
+  expect(c.view().zoom).toBe(0); expect(c.view().x).toBe(128);
+  const p = { x: 128, y: 128, zoom: 5, level: 5, width: 400, height: 240, maxTiles: 12, margin: 256, leadX: 384, maxExtra: 12 };
+  const window = planTileWindow(p);
+  expect(window.visible).toEqual(visibleTiles(p)); expect(window.lookAhead).toHaveLength(12);
+  expect(() => planTileWindow({ ...p, margin: 513 })).toThrow();
+});
 test("anchored zoom preserves the world point beneath the chosen viewport pixel", () => {
   const camera = createTileCamera(options), before = camera.view();
   const at = (v: typeof before) => ({ x: v.x + (50 - 200) / v.scale, y: v.y + (80 - 120) / v.scale });

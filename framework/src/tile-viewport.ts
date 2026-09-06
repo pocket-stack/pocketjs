@@ -12,10 +12,11 @@ export function createTileCamera(options: TileCameraOptions) {
   if (options.width <= 0 || options.height <= 0 || options.minZoom > options.maxZoom || options.minZoom < -20 || options.maxZoom > 24) throw new Error("Invalid tile camera bounds");
   if (options.bounds) { finite(options.bounds.width, options.bounds.height); if (options.bounds.width <= 0 || options.bounds.height <= 0) throw new Error("Invalid world bounds"); }
   let x = options.x, y = options.y, zoom = clamp(options.zoom, options.minZoom, options.maxZoom);
+  let minZoom = options.minZoom, maxZoom = options.maxZoom, bounds = options.bounds;
   let vx = 0, vy = 0, dragging = false;
   let tween: { start: number; end: number; elapsed: number; anchorX: number; anchorY: number } | undefined;
   function constrain() {
-    const b = options.bounds; if (!b) return;
+    const b = bounds; if (!b) return;
     if (b.wrapX) x = ((x % b.width) + b.width) % b.width;
     else { const half = Math.min(b.width / 2, options.width / 2 / 2 ** zoom); x = clamp(x, half, b.width - half); }
     const half = Math.min(b.height / 2, options.height / 2 / 2 ** zoom);
@@ -23,7 +24,7 @@ export function createTileCamera(options: TileCameraOptions) {
   }
   function pan(dx: number, dy: number) { finite(dx, dy); x -= dx / 2 ** zoom; y -= dy / 2 ** zoom; constrain(); }
   function setZoom(next: number, ax: number, ay: number) {
-    next = clamp(next, options.minZoom, options.maxZoom);
+    next = clamp(next, minZoom, maxZoom);
     const before = 2 ** -zoom, after = 2 ** -next;
     x += (ax - options.width / 2) * (before - after); y += (ay - options.height / 2) * (before - after);
     zoom = next; constrain();
@@ -32,15 +33,27 @@ export function createTileCamera(options: TileCameraOptions) {
   return {
     view: () => ({ x, y, zoom, scale: 2 ** zoom, moving: dragging || !!tween || Math.abs(vx) + Math.abs(vy) > 1 }),
     stop() { vx = vy = 0; dragging = false; tween = undefined; },
+    /** Replace the admitted world's bounds when an asynchronous source opens. */
+    setWorld(world: Pick<TileCameraOptions, "minZoom" | "maxZoom" | "bounds">) {
+      finite(world.minZoom, world.maxZoom);
+      if (world.minZoom > world.maxZoom || world.minZoom < -20 || world.maxZoom > 24) throw new Error("Invalid tile camera bounds");
+      if (world.bounds) {
+        finite(world.bounds.width, world.bounds.height);
+        if (world.bounds.width <= 0 || world.bounds.height <= 0) throw new Error("Invalid world bounds");
+      }
+      minZoom = world.minZoom; maxZoom = world.maxZoom; bounds = world.bounds;
+      vx = vy = 0; dragging = false; tween = undefined;
+      zoom = clamp(zoom, minZoom, maxZoom); constrain();
+    },
     beginDrag() { vx = vy = 0; dragging = true; tween = undefined; },
     drag: pan,
     endDrag(dx: number, dy: number) { finite(dx, dy); dragging = false; vx = clamp(dx, -1800, 1800); vy = clamp(dy, -1800, 1800); },
     zoomBy(delta: number, anchorX = options.width / 2, anchorY = options.height / 2) {
       finite(delta, anchorX, anchorY); vx = vy = 0;
-      tween = { start: zoom, end: clamp((tween?.end ?? zoom) + delta, options.minZoom, options.maxZoom), elapsed: 0, anchorX, anchorY };
+      tween = { start: zoom, end: clamp((tween?.end ?? zoom) + delta, minZoom, maxZoom), elapsed: 0, anchorX, anchorY };
     },
     jump(nextX: number, nextY: number, nextZoom = zoom) {
-      finite(nextX, nextY, nextZoom); x = nextX; y = nextY; zoom = clamp(nextZoom, options.minZoom, options.maxZoom);
+      finite(nextX, nextY, nextZoom); x = nextX; y = nextY; zoom = clamp(nextZoom, minZoom, maxZoom);
       vx = vy = 0; tween = undefined; dragging = false; constrain();
     },
     /** Screen-space controller velocity (pixels/second); positive moves map.
@@ -77,7 +90,7 @@ export interface TileWindowOptions {
 export function planTileWindow(options: TileWindowOptions & { margin: number; leadX?: number; leadY?: number; maxExtra: number }) {
   const { margin, maxExtra } = options, leadX = options.leadX ?? 0, leadY = options.leadY ?? 0;
   finite(margin, leadX, leadY, maxExtra);
-  if (margin < 0 || margin > 128 || Math.abs(leadX) > 128 || Math.abs(leadY) > 128 || !Number.isSafeInteger(maxExtra) || maxExtra < 0 || maxExtra > 16) throw new Error("Invalid tile look-ahead");
+  if (margin < 0 || margin > 512 || Math.abs(leadX) > 512 || Math.abs(leadY) > 512 || !Number.isSafeInteger(maxExtra) || maxExtra < 0 || maxExtra > 16) throw new Error("Invalid tile look-ahead");
   const visible = visibleTiles(options);
   if (!maxExtra) return { visible, lookAhead: [] as VisibleTile[] };
   const expanded = visibleTiles({ ...options, x: options.x + leadX / 2 / 2 ** options.zoom, y: options.y + leadY / 2 / 2 ** options.zoom,
