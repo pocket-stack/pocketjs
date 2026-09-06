@@ -72,6 +72,7 @@ const GL_NO_ERROR: GLenum = 0;
 unsafe extern "C" {
     fn glBindBuffer(target: GLenum, buffer: GLuint);
     fn glBindTexture(target: GLenum, texture: GLuint);
+    fn glBlendFunc(source: GLenum, destination: GLenum);
     fn glBufferData(target: GLenum, size: GLsizeiptr, data: *const c_void, usage: GLenum);
     fn glClear(mask: GLbitfield);
     fn glClearColor(red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat);
@@ -124,6 +125,7 @@ struct Command {
     first: i32,
     count: i32,
     clip: Clip,
+    premultiplied: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -156,7 +158,18 @@ struct FontTexture {
     dirty: bool,
 }
 
+/// Borrowed GL_TEXTURE_2D content for one compositor surface. Bounds are
+/// normalized to the surface rectangle; UV coordinates address the texture.
+/// The host owns the texture and must keep it alive through GPU completion.
+#[derive(Clone, Copy, Debug)]
+pub struct SurfaceLayer {
+    pub texture: u32,
+    pub bounds: [f32; 4],
+    pub uv: [f32; 4],
+}
+
 struct Renderer {
+    surfaces: Vec<(u32, Vec<SurfaceLayer>)>,
     pipeline: Pipeline,
     vertex_buffer: GLuint,
     white: GLuint,
@@ -346,6 +359,7 @@ impl Renderer {
             vertices: Vec::new(),
             commands: Vec::new(),
             max_texture_size: max_texture_size as u32,
+            surfaces: Vec::new(),
         })
     }
 
@@ -610,6 +624,7 @@ impl Renderer {
                 first: *start as i32,
                 count: (end - *start) as i32,
                 clip,
+                premultiplied: false,
             });
             *start = end;
         }
@@ -810,6 +825,29 @@ impl Renderer {
                     index += 1;
                 }
                 spec::draw_op::SURFACE_QUAD if index + 9 <= words.len() => {
+                    self.flush(texture, clip, &mut start);
+                    let handle = words[index + 1];
+                    let [x, y, w, h] = [2, 3, 4, 5].map(|i| f32::from_bits(words[index + i]));
+                    let (cx, cy) = xy(words[index + 6]);
+                    let (cw, ch) = wh(words[index + 7]);
+                    let left = clip.x.max(cx as i32);
+                    let top = clip.y.max(cy as i32);
+                    let right = (clip.x + clip.w).min((cx + cw) as i32);
+                    let bottom = (clip.y + clip.h).min((cy + ch) as i32);
+                    let surface_clip = Clip {x:left,y:top,w:(right-left).max(0),h:(bottom-top).max(0)};
+                    if w > 0.0 && h > 0.0 && surface_clip.w > 0 && surface_clip.h > 0 {
+                        // Copy the small descriptor list so vertex construction can
+                        // mutably borrow the renderer. Pixel data stays on the GPU.
+                        if let Some(layers) = self.surfaces.iter().find(|(id,_)|*id==handle).map(|(_,layers)|layers.clone()) {
+                            for layer in layers {
+                                let [lx,ly,lw,lh] = layer.bounds;
+                                self.quad([x+lx*w,y+ly*h],[x+(lx+lw)*w,y+(ly+lh)*h],
+                                    [layer.uv[0],layer.uv[1]],[layer.uv[2],layer.uv[3]],[0xffffffff;4]);
+                                self.flush(layer.texture,surface_clip,&mut start);
+                                if let Some(command)=self.commands.last_mut(){command.premultiplied=true;}
+                            }
+                        }
+                    }
                     index += 9;
                 }
                 _ => break,
@@ -912,7 +950,13 @@ impl Renderer {
         }
 
         let mut bound = 0;
+        let mut premultiplied = false;
         for command in &self.commands {
+            if command.premultiplied != premultiplied {
+                if command.premultiplied { glBlendFunc(1, 0x0303); }
+                else { self.pipeline.set_blend(); }
+                premultiplied = command.premultiplied;
+            }
             if command.texture != bound {
                 glBindTexture(GL_TEXTURE_2D, command.texture);
                 bound = command.texture;
@@ -1058,6 +1102,7 @@ mod tests {
             dirty: false,
         });
         Renderer {
+            surfaces: Vec::new(),
             pipeline: Pipeline::stub(),
             vertex_buffer: 0,
             white: 1,
@@ -1067,6 +1112,33 @@ mod tests {
             commands: Vec::new(),
             max_texture_size: 2048,
         }
+    }
+
+    #[test]
+    fn borrowed_surfaces_preserve_order_clip_uv_and_blend() {
+        let mut renderer = planner(0, 9);
+        renderer.surfaces.push((7, vec![SurfaceLayer {
+            texture: 42, bounds: [-0.25, 0.0, 1.0, 1.0], uv: [0.0, 1.0, 1.0, 0.0],
+        }]));
+        let rect = [spec::draw_op::RECT, pack_xy(0, 0), pack_wh(10, 10), 0xffffffff];
+        let mut words = rect.to_vec();
+        words.extend_from_slice(&[spec::draw_op::SCISSOR, pack_xy(20, 20), pack_wh(40, 40),
+            spec::draw_op::SURFACE_QUAD, 7,
+            10f32.to_bits(), 15f32.to_bits(), 100f32.to_bits(), 80f32.to_bits(),
+            pack_xy(10, 15), pack_wh(100, 80), 1,
+            spec::draw_op::SCISSOR_POP]);
+        words.extend_from_slice(&rect);
+        renderer.build(&words, 200, 120);
+        assert_eq!(renderer.commands.len(), 3);
+        assert_eq!(renderer.commands.iter().map(|c|c.texture).collect::<Vec<_>>(), [1,42,1]);
+        assert_eq!(renderer.commands.iter().map(|c|c.premultiplied).collect::<Vec<_>>(), [false,true,false]);
+        assert_eq!(renderer.commands[1].clip, Clip{x:20,y:20,w:40,h:40});
+        let vertex=renderer.vertices[renderer.commands[1].first as usize];
+        assert_eq!(vertex.position, [-15.0,15.0]);
+        assert_eq!(vertex.uv, [0.0,1.0]);
+        renderer.surfaces.clear();
+        renderer.build(&words,200,120);
+        assert!(renderer.commands.iter().all(|c|!c.premultiplied));
     }
 
     #[test]
@@ -1184,6 +1256,7 @@ mod tests {
             renderer.commands,
             vec![
                 Command {
+                    premultiplied: false,
                     texture,
                     first: 0,
                     count: 3,
@@ -1195,6 +1268,7 @@ mod tests {
                     },
                 },
                 Command {
+                    premultiplied: false,
                     texture,
                     first: 3,
                     count: 3,
@@ -1287,4 +1361,15 @@ mod tests {
             },
         );
     }
+}
+
+/// Replace borrowed compositor layers. An empty list removes the binding.
+/// Call on the renderer thread with its GL context current. Texture lifetime,
+/// synchronization and damage invalidation are the host's responsibility.
+pub unsafe fn set_surface_layers(handle:u32, layers:&[SurfaceLayer])->bool {
+    if layers.len()>64 || layers.iter().any(|l|l.texture==0 || l.bounds.iter().chain(l.uv.iter()).any(|n|!n.is_finite()) || l.bounds[2]<=0.0 || l.bounds[3]<=0.0){return false;}
+    let Some(renderer)=RENDERER.as_mut() else{return false;};
+    renderer.surfaces.retain(|(id,_)|*id!=handle);
+    if !layers.is_empty(){renderer.surfaces.push((handle,layers.to_vec()));}
+    true
 }

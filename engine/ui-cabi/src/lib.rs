@@ -918,3 +918,15 @@ mod tests {
         assert!(unsafe { with_initialized_ui_unchecked(|_| ()) }.is_none());
     }
 }
+
+#[cfg(all(any(target_os = "none", feature = "bare-platform", test), not(feature = "software-only")))]
+pub use gl::SurfaceLayer as GlSurfaceLayer;
+
+/// Bind host-owned GL textures to a compositor surface without pixel uploads.
+/// The host supplies premultiplied-alpha textures and retains them until GPU
+/// completion. Bindings do not increment Ui raster revisions; the host must
+/// invalidate damage when their content or placement changes.
+#[cfg(all(any(target_os = "none", feature = "bare-platform", test), not(feature = "software-only")))]
+pub unsafe fn gl_set_surface_layers(handle:u32,layers:&[GlSurfaceLayer])->bool {
+    gl::set_surface_layers(handle,layers)
+}
