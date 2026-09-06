@@ -50,7 +50,8 @@ describe("offload budgets and failure delivery", () => {
     r.client.request("slow.query", "{}", () => delivered++);
     r.replies.push("{bad");
     for (let i = 0; i <= OFFLOAD.timeoutFrames; i++) r.client.step();
-    expect(delivered).toBe(1); expect(r.client.pending()).toBe(0);
+    expect(delivered).toBe(1); expect(r.client.pending()).toBe(1);
+    r.disconnect(); r.client.step(); expect(r.client.pending()).toBe(0);
     expect(() => r.client.request("db.page", "中".repeat(2500), () => {})).toThrow();
   });
   test("UTF-8 records survive every split and reject oversized length immediately", () => {
@@ -61,6 +62,35 @@ describe("offload budgets and failure delivery", () => {
       expect(out).toEqual([record]);
     }
     expect(() => new OffloadDecoder().push(Buffer.from([0, 0, 16, 1]), () => {})).toThrow();
+  });
+  test("cancelled sent reads retain transport credit until replies arrive", () => {
+    const r = rig(); let delivered = 0;
+    for (let n = 0; n < 8; n++) {
+      const id = r.client.request("tile", "{}", () => delivered++); r.client.step(); r.client.cancel(id);
+    }
+    expect(r.client.pending()).toBe(8); expect(r.sent).toHaveLength(8);
+    expect(r.client.request("tile", "{}", () => {})).toBe(0);
+    for (let n = 0; n < 700; n++) r.client.step();
+    expect(r.client.pending()).toBe(8); expect(r.sent).toHaveLength(8);
+    r.replies.push(JSON.stringify({ id: JSON.parse(r.sent[0]).id, payload: "late" })); r.client.step();
+    expect(delivered).toBe(0); expect(r.client.pending()).toBe(7);
+    expect(r.client.request("tile", "{}", () => {})).toBeGreaterThan(0);
+    r.disconnect(); r.client.step(); expect(r.client.pending()).toBe(1);
+  });
+  test("timed-out sent work notifies once without opening more wire credit", () => {
+    const r = rig(); let delivered = 0;
+    const id = r.client.request("slow", "{}", () => delivered++); r.client.step();
+    for (let n = 0; n < 700; n++) r.client.step();
+    expect(delivered).toBe(1); expect(r.client.pending()).toBe(1);
+    r.replies.push(JSON.stringify({ id, payload: "late" })); r.client.step();
+    expect(delivered).toBe(1); expect(r.client.pending()).toBe(0);
+  });
+  test("frame decoder can pause mid-chunk at a record boundary without losing the suffix", () => {
+    const bytes = Buffer.concat([encodeOffloadRecord("one"), encodeOffloadRecord("two"), encodeOffloadRecord("three")]);
+    const decoder = new OffloadDecoder(), rows: string[] = [];
+    const first = decoder.push(bytes, value => { rows.push(value); }, () => false);
+    expect(rows).toEqual(["one"]); expect(first).toBe(7);
+    decoder.push(bytes.subarray(first), value => { rows.push(value); }); expect(rows).toEqual(["one", "two", "three"]);
   });
   test("provider enforces grants and reply budgets", async () => {
     expect(await dispatchOffload({}, { v: 1, id: 1, method: "constructor", payload: "" })).toHaveProperty("error");

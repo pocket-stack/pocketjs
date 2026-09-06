@@ -24,7 +24,9 @@ export class OffloadDecoder {
   private bytes = Buffer.alloc(OFFLOAD.recordBytes + 4);
   private have = 0;
   private want = 4;
-  push(chunk: Uint8Array, deliver: (record: string) => void) {
+  /** A false continueReading pauses after a complete record. The caller retains
+   * the unconsumed suffix and resumes it when downstream credit returns. */
+  push(chunk: Uint8Array, deliver: (record: string) => void, continueReading?: () => boolean): number {
     let offset = 0;
     while (offset < chunk.length) {
       const n = Math.min(chunk.length - offset, this.want - this.have);
@@ -37,8 +39,11 @@ export class OffloadDecoder {
         this.want = size + 4;
       } else {
         const record = this.bytes.toString("utf8", 4, this.want);
-        this.have = 0; this.want = 4; deliver(record);
+        this.have = 0; this.want = 4;
+        deliver(record);
+        if (continueReading && !continueReading()) break;
       }
     }
+    return offset;
   }
 }

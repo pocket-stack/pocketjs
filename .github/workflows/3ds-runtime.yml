@@ -18,4 +18,4 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - run: bun test tests/3ds-profile.test.ts tests/3ds-runtime-state.test.ts tests/3ds-runtime-wire.test.ts tests/3ds-soc.test.ts
-      - run: bun test --conditions=browser tests/offload.test.ts tests/offload-images.test.ts tests/tile-viewport.test.ts tests/resource-cache.test.ts tests/resource-view.test.ts
+      - run: bun test --conditions=browser tests/offload.test.ts tests/offload-images.test.ts tests/offload-provider.test.ts tests/tile-viewport.test.ts tests/resource-cache.test.ts tests/resource-view.test.ts

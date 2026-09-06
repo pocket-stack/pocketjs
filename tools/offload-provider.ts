@@ -3,7 +3,7 @@
 import { connect } from "node:net";
 import { resolve } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { OFFLOAD, OFFLOAD_IMAGE, type OffloadRequest, type OffloadProviderReply, type OffloadImage } from "../contracts/spec/offload.ts";
+import { OFFLOAD, type OffloadRequest, type OffloadProviderReply, type OffloadImage } from "../contracts/spec/offload.ts";
 import { OffloadDecoder, encodeOffloadRecord, encodeOffloadImage } from "./offload-wire.ts";
 export type { OffloadImage } from "../contracts/spec/offload.ts";
 
@@ -19,6 +19,7 @@ export function connectOffloadProvider(options: {
   let closeCurrent = () => {};
   let retry: ReturnType<typeof setTimeout> | undefined;
   let generation = 0;
+  let lastConnectFailure = "";
   const attach = () => {
     if (stopped) return;
     const socket = connect({ host: options.address, port: options.port ?? OFFLOAD.port });
@@ -29,14 +30,20 @@ export function connectOffloadProvider(options: {
     let closed = false, reason = "device closed connection";
     const pending = new Map<number, boolean>();
     const deadlines = new Map<number, ReturnType<typeof setTimeout>>();
+    const replies: Buffer[] = [];
+    let writing = false, held: Buffer | undefined, consumed = 0;
+    const canRead = () => !writing && replies.length === 0 && pending.size < OFFLOAD.pending;
     const fail = (why: string) => { if (closed) return; reason = why; socket.destroy(); };
+    const connecting = setTimeout(() => fail("connect timeout"), 5000);
     closeCurrent = () => fail("provider stopped");
     socket.setNoDelay(true);
     socket.setTimeout(15000, () => fail("device idle timeout"));
     socket.on("connect", () => {
+      clearTimeout(connecting); lastConnectFailure = "";
       socket.write(options.key);
       const replyToDevice = (reply: OffloadProviderReply) => {
         if (closed || socket.destroyed) return;
+        if (!reply || !Number.isSafeInteger(reply.id) || reply.id < 1 || reply.id > 0xffffffff) return fail("invalid provider reply ID");
         const expectsImage = pending.get(reply.id);
         if (!pending.delete(reply.id)) return fail("unexpected provider reply ID");
         clearTimeout(deadlines.get(reply.id)); deadlines.delete(reply.id);
@@ -44,8 +51,10 @@ export function connectOffloadProvider(options: {
           if (typeof reply.payload === "string" && reply.payload.length > OFFLOAD.payloadChars) throw new Error("Result budget exceeded");
           if (reply.image && !expectsImage) throw new Error("Unrequested image response");
           const record = reply.image ? encodeOffloadImage(reply.id, reply.image) : encodeOffloadRecord(JSON.stringify(reply));
-          if (socket.writableLength > (OFFLOAD_IMAGE.maxBytes + OFFLOAD_IMAGE.headerBytes + 4) * OFFLOAD.pending) return fail("device response backlog exceeded");
-          socket.write(record);
+          // Each queued reply replaces one admitted request. Slow LAN writes
+          // consume credit; they are not an invalid connection.
+          if (replies.length >= OFFLOAD.pending) return fail("provider reply credit exceeded");
+          replies.push(record); flush();
         } catch { fail("invalid provider response"); }
       };
       try {
@@ -71,30 +80,50 @@ export function connectOffloadProvider(options: {
         log("transport connected; waiting for paired device requests");
       } catch { fail("provider executor could not start"); }
     });
-    socket.on("data", chunk => {
+    const requestFromDevice = (raw: string) => {
+      const request = JSON.parse(raw) as OffloadRequest;
+      if (request.v === 1 && request.id === 0 && request.method === "offload.metrics" && typeof request.payload === "string" && request.payload.length < 160) {
+        options.log?.(`Device ${request.payload}`); return canRead();
+      }
+      if (request.v !== 1 || !Number.isSafeInteger(request.id) || request.id < 1 || request.id > 0xffffffff ||
+          typeof request.method !== "string" || !/^[a-z][a-z0-9_.-]{0,63}$/.test(request.method) ||
+          typeof request.payload !== "string" || request.payload.length > OFFLOAD.payloadChars ||
+          request.response !== undefined && request.response !== "image" ||
+          pending.size >= OFFLOAD.pending || pending.has(request.id)) throw new Error("Invalid request");
+      pending.set(request.id, request.response === "image");
+      deadlines.set(request.id, setTimeout(() => fail(`request deadline: ${request.method} id=${request.id}`), 9000));
+      worker!.postMessage(request);
+      return canRead();
+    };
+    function read() {
+      if (closed || socket.destroyed) return;
       try {
-        decoder.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk, raw => {
-          const request = JSON.parse(raw) as OffloadRequest;
-          if (request.v === 1 && request.id === 0 && request.method === "offload.metrics" && typeof request.payload === "string" && request.payload.length < 160) {
-            options.log?.(`Device ${request.payload}`); return;
-          }
-          if (request.v !== 1 || !Number.isSafeInteger(request.id) || request.id < 1 ||
-              typeof request.method !== "string" || !/^[a-z][a-z0-9_.-]{0,63}$/.test(request.method) ||
-              typeof request.payload !== "string" || request.payload.length > OFFLOAD.payloadChars ||
-              request.response !== undefined && request.response !== "image" ||
-              pending.size >= OFFLOAD.pending || pending.has(request.id)) throw new Error("Invalid request");
-          pending.set(request.id, request.response === "image");
-          // Terminate a wedged provider worker. Sent mutations are never retried.
-          deadlines.set(request.id, setTimeout(() => fail(`request deadline: ${request.method} id=${request.id}`), 9000));
-          worker!.postMessage(request);
-        });
+        if (held && canRead()) {
+          consumed += decoder.push(held.subarray(consumed), requestFromDevice, canRead);
+          if (consumed === held.length) { held = undefined; consumed = 0; }
+        }
+        if (canRead() && !held) socket.resume(); else socket.pause();
       } catch { fail("invalid device request or provider unavailable"); }
+    }
+    function flush() {
+      if (closed || socket.destroyed) return;
+      while (!writing && replies.length) writing = !socket.write(replies.shift()!);
+      read();
+    }
+    socket.on("drain", () => { writing = false; flush(); });
+    socket.on("data", chunk => {
+      socket.pause();
+      if (held) return fail("device input credit exceeded");
+      held = typeof chunk === "string" ? Buffer.from(chunk) : chunk; consumed = 0; read();
     });
     socket.on("error", (error: NodeJS.ErrnoException) => { reason = `socket ${error.code ?? "error"}`; });
     socket.on("close", () => {
       closed = true;
+      clearTimeout(connecting);
       for (const timer of deadlines.values()) clearTimeout(timer);
       if (worker) log(`disconnected: ${reason}; pending=${pending.size}`);
+      else if (!stopped && reason !== lastConnectFailure) { log(`waiting for device: ${reason}`); lastConnectFailure = reason; }
+      held = undefined; replies.length = 0; pending.clear(); deadlines.clear();
       // Reap the old process before starting another; its late replies cannot
       // enter a replacement session, including after request IDs restart.
       const reconnect = () => {

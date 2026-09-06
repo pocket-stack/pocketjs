@@ -331,3 +331,45 @@ scan of file labels and editor text. Framework subscriptions notify consumers by
 key. Deduplication, generation checks, retries, admission, eviction and texture
 release share the same scheduler implementation. Documents, SQLite drafts, Markdown layout and rasterization remain in
 the Mac provider. No renderer ABI or companion protocol changes are required.
+
+### Desktop executor isolation
+
+`connectOffloadProvider` accepts `isolation: "process"` for capabilities that
+use network clients, SQLite or native image codecs. **The connection manager
+and capability executor occupy different OS processes.** The provider module
+keeps its `self.onmessage` / `self.postMessage` interface. Bun IPC carries
+structured replies, including typed image planes; pairing keys remain in the
+connection manager.
+
+```ts
+import { connectOffloadProvider } from "@pocketjs/framework/offload/provider";
+connectOffloadProvider({ address, key, worker: new URL("./worker.ts", import.meta.url),
+  isolation: "process", data: providerConfig, log: console.log });
+```
+
+Process mode kills and reaps the executor on connection loss or a nine-second
+request deadline. Its exit cannot terminate the connection manager. A new
+connection starts a new executor after the old process exits; request IDs and
+late replies stay scoped to their connection. Sent commands are not replayed.
+Connect attempts have a five-second timeout. Logs record the session, process
+exit, request deadline or socket failure without request payloads.
+
+The default `"thread"` mode retains the existing Web Worker behavior. A native
+fault in that mode can terminate the whole host daemon; use process mode when
+fault containment is required. Process mode adds an OS process and IPC copies
+on the desktop. Guest budgets and the 3DS wire protocol remain unchanged.
+
+### Transmission credit and cancellation
+
+**Cancelling a sent request removes UI interest, not its transmission credit.**
+`offload().pending()` includes those reservations until a reply arrives or the
+connection generation changes. A sent request that times out delivers one
+error, drops its callback and retains the reservation. Late image replies
+return staging credit without a texture upload. Unsent cancellation releases
+its reservation because no remote work exists.
+
+The desktop transport pauses input at eight admitted requests or while output
+waits for `drain`. It retains the unconsumed suffix of one input chunk, the
+bounded frame decoder and at most eight admitted results. A slow receiver
+pauses progress instead of triggering a backlog disconnect. This keeps rapid
+viewport cancellation from creating an unbounded queue of remote image work.
