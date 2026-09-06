@@ -22,7 +22,13 @@
 // xoff. gid 0 is a drawn hollow "tofu" box and is also mapped from U+FFFD so it
 // has a discoverable advance.
 
-import { parse as parseFont, type Font, type Path } from "opentype.js";
+// opentype.js ships CJS on `main` and ESM only on the bundler-only `module`
+// field, so Node's ESM loader sees no named exports. The default import is
+// the module object under both runtimes, and companions bake glyphs from
+// Node (pocket-stack/pocket-term's daemon does).
+import opentype, { type Font, type Path } from "opentype.js";
+
+const parseFont = opentype.parse;
 import {
   FONT_CMAP_ENTRY_SIZE,
   FONT_FLAG_BOLD,

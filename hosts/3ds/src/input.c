@@ -36,6 +36,7 @@
 #define CIRCLE_PAD_RANGE 156
 #define RUNTIME_RELOAD_KEYS (KEY_L | KEY_R | KEY_X)
 #define RUNTIME_DEVMENU_KEYS (KEY_L | KEY_R | KEY_SELECT)
+#define RUNTIME_EXIT_KEYS (KEY_L | KEY_R | KEY_START)
 
 static bool devmenu_input_latched;
 static bool extra_input;
@@ -83,6 +84,9 @@ int32_t input_buttons(void) {
   if ((held & RUNTIME_DEVMENU_KEYS) == RUNTIME_DEVMENU_KEYS) {
     held &= ~RUNTIME_DEVMENU_KEYS;
   }
+  if ((held & RUNTIME_EXIT_KEYS) == RUNTIME_EXIT_KEYS) {
+    held &= ~RUNTIME_EXIT_KEYS;
+  }
   int32_t buttons = 0;
   for (size_t index = 0; index < sizeof KEY_MAP / sizeof KEY_MAP[0]; index += 1) {
     if (held & KEY_MAP[index].key) buttons |= KEY_MAP[index].button;
@@ -102,6 +106,13 @@ bool input_devmenu_toggle_requested(void) {
   uint32_t down = hidKeysDown();
   return (held & RUNTIME_DEVMENU_KEYS) == RUNTIME_DEVMENU_KEYS &&
          (down & RUNTIME_DEVMENU_KEYS) != 0;
+}
+
+bool input_exit_requested(void) {
+  uint32_t held = hidKeysHeld();
+  uint32_t down = hidKeysDown();
+  return (held & RUNTIME_EXIT_KEYS) == RUNTIME_EXIT_KEYS &&
+         (down & RUNTIME_EXIT_KEYS) != 0;
 }
 
 bool input_devmenu_close_requested(void) {

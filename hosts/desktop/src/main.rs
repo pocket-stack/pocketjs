@@ -53,6 +53,8 @@ use gpui::{
     UTF16Selection, Window, WindowBounds, WindowOptions, WindowTextSystem, canvas, div, point, px,
     size,
 };
+mod net;
+
 use pocket_mod::Guest;
 use pocket_ui_gpui::{GpuiRenderer, TextConfig, native_measure, native_wrap};
 use pocket_ui_surface::UiSurface;
@@ -299,6 +301,9 @@ struct Args {
     companions: Vec<String>,
     /// Complete Pocket System resolution. None runs one ordinary package.
     system: Option<ResolvedSystemPlan>,
+    /// `host:port` of a companion that speaks the SVC WIRE (PKNT) protocol.
+    /// Set by a companion that opens this window itself.
+    svc_connect: Option<String>,
     density: u32,
     script: Vec<ScriptEvent>,
     quit_after_ticks: Option<u64>,
@@ -323,6 +328,7 @@ fn parse_args() -> Result<Args> {
         editor: false,
         companions: Vec::new(),
         system: None,
+        svc_connect: None,
         density: 2,
         script: Vec::new(),
         quit_after_ticks: None,
@@ -359,6 +365,7 @@ fn parse_args() -> Result<Args> {
             "--system-plan" => {
                 system_plan_path = Some(PathBuf::from(val("--system-plan")?));
             }
+            "--svc-connect" => args.svc_connect = Some(val("--svc-connect")?),
             "--density" => args.density = val("--density")?.parse::<u32>()?.clamp(1, 4),
             "--type" => {
                 // --type TEXT@TICK
@@ -952,6 +959,10 @@ struct PocketRoot {
     /// IME composition: preedit string (the guest mirrors it at the caret).
     marked: Option<String>,
     script: Vec<ScriptEvent>,
+    /// Companion channel over TCP (--svc-connect). When present it owns the
+    /// svc queues: lines arrive from the socket and the guest's replies go
+    /// back out, instead of the in-process editor dialect.
+    wire: Option<net::SvcWire>,
 }
 
 impl PocketRoot {
@@ -1021,6 +1032,16 @@ impl PocketRoot {
         let viewport = args.viewport;
         let script = args.script.clone();
         let system_ui_input = args.companions.iter().any(|c| c == "system-ui");
+        // A companion reachable over TCP takes the svc channel: the app's
+        // dialect is its own business, so the host only moves whole lines.
+        let wire = args.svc_connect.clone().map(|addr| {
+            let app = args
+                .companions
+                .first()
+                .cloned()
+                .unwrap_or_else(|| args.app.clone());
+            net::SvcWire::spawn(addr, app)
+        });
         let root = PocketRoot {
             surface,
             guest,
@@ -1048,6 +1069,7 @@ impl PocketRoot {
             caret_rect: None,
             marked: None,
             script,
+            wire,
         };
         root.spawn_tick_loop(cx);
         Ok(root)
@@ -1099,7 +1121,11 @@ impl PocketRoot {
 
     /// Input lines flow when either JSON-line dialect is wired.
     fn forward_input(&self) -> bool {
-        self.args.editor || self.system_ui_input
+        // A window whose companion is reached over the wire forwards input
+        // too: the app on the other end is the only thing that knows what a
+        // keystroke means, and a window that can only watch is not much of a
+        // window.
+        self.args.editor || self.system_ui_input || self.wire.is_some()
     }
 
     /// The svc hello: viewport first, then the document (order matters — the
@@ -1201,6 +1227,15 @@ impl PocketRoot {
                 self.send_hello();
             }
         }
+        // Inbound companion lines BEFORE the guest frame that reads them.
+        // Draining after it costs every arriving line a whole tick of
+        // latency, which on a terminal is a whole tick between a keystroke
+        // and its echo. This is the order hosts/3ds/src/main.c pumps in.
+        if let Some(wire) = self.wire.as_mut() {
+            for line in wire.drain() {
+                self.surface.svc_push(line);
+            }
+        }
         // Window resizes land here (render records them), so the relayout is
         // part of the tick transaction, never of a paint.
         if let Some(vp) = self.pending_viewport.take()
@@ -1276,6 +1311,15 @@ impl PocketRoot {
             .sync(&self.surface, self.text_system.clone());
         for (package, message) in sync_failures {
             log::error!("pocket-desktop-host: starting AppInstance {package}: {message}");
+        }
+
+        // The guest's replies go out in the same tick it wrote them. It
+        // drains first, so the editor matcher below finds an empty queue and
+        // the two dialects never see each other's lines.
+        if let Some(wire) = self.wire.as_mut() {
+            for line in self.surface.svc_drain() {
+                wire.send(line);
+            }
         }
 
         // Guest → host intents (editor protocol).
@@ -1449,6 +1493,15 @@ impl PocketRoot {
             if let Some(k) = named {
                 self.svc(serde_json::json!({
                     "t": "key", "k": k, "sh": shift,
+                    "alt": ks.modifiers.alt, "ctl": ks.modifiers.control,
+                }));
+            } else if (ks.modifiers.control || ks.modifiers.alt) && ks.key.chars().count() == 1 {
+                // A control or option chord produces no text, so it never
+                // reaches the input handler below and would simply be lost.
+                // It is also the whole vocabulary of a terminal: ctrl-C,
+                // ctrl-D, alt-B. Apps that do not use chords ignore the line.
+                self.svc(serde_json::json!({
+                    "t": "key", "k": ks.key, "sh": shift,
                     "alt": ks.modifiers.alt, "ctl": ks.modifiers.control,
                 }));
             }

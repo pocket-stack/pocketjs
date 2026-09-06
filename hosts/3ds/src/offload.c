@@ -1,12 +1,12 @@
 /* All network service calls and key IO belong to this worker. The UI only
  * reads atomics and copies fixed-size SPSC slots. No mutex or socket on UI. */
 #include "offload.h"
+#include "soc.h"
 #include "offload_queue.h"
 #include <3ds.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <malloc.h>
 #include <stdio.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -61,11 +61,11 @@ static void serve(void *unused) {
   size_t count = fread(key, 1, sizeof key, file);
   fclose(file);
   if (count != sizeof key) return;
-  void *soc = memalign(0x1000, 1024 * 1024);
-  if (!soc) return;
-  if (R_FAILED(socInit(soc, 1024 * 1024))) { free(soc); return; }
+  /* Retry on this worker; a competing initializer never makes the UI wait. */
+  while (atomic_load(&running) && !soc_ensure(NULL, 0)) svcSleepThread(10000000);
+  if (!atomic_load(&running)) return;
   int listener = socket(AF_INET, SOCK_STREAM, 0);
-  if (listener < 0) goto shutdown_soc;
+  if (listener < 0) return;
   int reuse = 1;
   setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse);
   struct sockaddr_in address = { .sin_family = AF_INET, .sin_port = htons(8741), .sin_addr.s_addr = INADDR_ANY };
@@ -123,8 +123,7 @@ static void serve(void *unused) {
   }
 close_listener:
   close(listener);
-shutdown_soc:
-  socExit(); free(soc);
+  /* Process-wide SOC stays alive until every transport has stopped. */
 }
 bool offload_start(void) {
   atomic_store(&running, true);

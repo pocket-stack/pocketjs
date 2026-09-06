@@ -296,6 +296,19 @@ export class PocketRuntimeClient extends EventEmitter {
         reject(new Error(`Pocket Runtime control response timed out after ${timeoutMs} ms`));
       }, timeoutMs);
       const onCtrl = (value: CtrlValue) => {
+        // The device says when a record was too large for a frame. Whatever is
+        // being awaited may well be that record, and a stated size beats
+        // waiting out the timeout with nothing to go on.
+        if (value.t === "ctrlDropped") {
+          cleanup();
+          reject(
+            new Error(
+              `Pocket Runtime dropped a ${String(value.bytes)} byte control record ` +
+                `(frame cap ${String(value.cap)})`,
+            ),
+          );
+          return;
+        }
         if (!predicate(value)) return;
         cleanup();
         resolve(value);

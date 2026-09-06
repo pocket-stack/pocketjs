@@ -69,10 +69,11 @@ recovery guest; it no longer embeds independent `app.js` and `app.pak` files.
 
 ## Updating the guest from SD
 
-The runtime checks one staging path at boot:
+The build prints the application's 16-hex-digit runtime slot. The runtime
+checks that application's staging path at boot:
 
 ```text
-sdmc:/pocketjs/runtime/pending.pocket
+sdmc:/pocketjs/runtime/apps/<runtime-slot>/pending.pocket
 ```
 
 With an FTP server running as a separate homebrew application, build and upload
@@ -81,22 +82,33 @@ the guest package, then exit the FTP server and start Pocket Runtime:
 ```sh
 bun tools/3ds.ts 3ds-demo --pocket-only
 curl --ftp-create-dirs -T dist/3ds/pocket3ds-demo-main.pocket \
-  ftp://<device>/pocketjs/runtime/pending.pocket
+  ftp://<device>/pocketjs/runtime/apps/<runtime-slot>/pending.pocket
 ```
 
 The runtime verifies the package footer, exact `3ds-dev` target, host ABI,
 identity, resolved plan and NUL-terminated JS section before it can boot. A
 complete pending package is renamed to
-`sdmc:/pocketjs/runtime/packages/<hash>.pocket`; package blobs are immutable.
+`sdmc:/pocketjs/runtime/apps/<runtime-slot>/packages/<hash>.pocket`; package
+blobs are immutable.
 An incomplete FTP upload stays at `pending.pocket` and does not replace the
 running or accepted guest.
 
+**Each embedded application id has its own package, generation and recovery
+state.** The slot is the first 16 hexadecimal digits of SHA-256 over the
+manifest `id`; the fixed length keeps native paths bounded. Contacts, Pocket
+Shell and Pocket Term can therefore live as separate `.3dsx` files on one SD
+card without one app's last-good package booting under another app's icon.
+The pairing key remains device-wide at `sdmc:/pocketjs/runtime/dev.key`, so the
+console is paired once. Pre-slot state directly under
+`sdmc:/pocketjs/runtime/{packages,state}` is left untouched and is not loaded
+by a slotted runtime.
+
 **A package becomes active only after its first submitted PICA command list has
 retired successfully.** State is committed by appending a generation marker
-under `sdmc:/pocketjs/runtime/state/`. Eval, frame or first-render failure loads
-the previous active package, then last-good, then the embedded ROMFS recovery
-package. Power loss before the generation marker leaves the previous generation
-active.
+under the application's `state/` directory. Eval, frame or first-render failure
+loads the previous active package, then last-good, then the embedded ROMFS
+recovery package. Power loss before the generation marker leaves the previous
+generation active.
 
 `L+R+X` requests the same package check at a GPU-idle frame boundary. The full
 chord is removed from the application's button mask. This supports an emulator
@@ -106,13 +118,22 @@ Runtime.
 Runtime receipts are written to:
 
 ```text
-sdmc:/pocketjs/runtime/status.txt
-sdmc:/pocketjs/runtime/last-error.txt
+sdmc:/pocketjs/runtime/apps/<runtime-slot>/status.txt
+sdmc:/pocketjs/runtime/apps/<runtime-slot>/last-error.txt
 ```
 
-`status.txt` records the current generation, active hash, last-good hash,
+`status.txt` records the slot, current generation, active hash, last-good hash,
 running package hash and source path. `last-error.txt` records the failed phase
 without deleting the rejected package blob.
+
+## Multiple Homebrew Launcher entries
+
+Copy each product's `.3dsx` to a distinct filename under `/3ds/`; the SMDH
+inside each file supplies its own title and icon. **`L+R+START` is owned by the
+native host and exits the running `.3dsx` back to the Homebrew Launcher.** The
+complete chord is removed from guest input. Select the next Pocket app in HBL
+to switch while preserving each app's independent accepted and last-good
+packages.
 
 ## In-process development connection
 
@@ -208,6 +229,57 @@ Two build-time facts are load-bearing:
 - **`__stacksize__` is raised to 1 MiB.** devkitPro's 3dsx crt0 gives the main
   thread 32 KiB, and QuickJS's interpreter plus the guest's render pass recurse
   far past that.
+
+## The svc companion channel
+
+`src/svcwire.c` implements spec ops 30..32 (`svcOpen`/`svcPoll`/`svcSend`)
+over the **SVC WIRE (PKNT) protocol** (`contracts/spec/spec.ts`,
+`engine/core/src/wire.rs`) — the transport the Vita host speaks in
+`hosts/vita/src/net.rs`, reduced to the devserver.c shape: non-blocking
+sockets pumped once per frame by the main thread, no threads. The device
+listens for the companion's once-a-second UDP beacon on port 8621 (or reads a
+`sdmc:/pocketjs/host.txt` override, one line `a.b.c.d[:port]`, for
+broadcast-hostile networks — a failed override alternates back to beacon
+discovery), connects to the datagram's source address at its advertised TCP
+port, and exchanges `ctrl` JSON-line frames. `ping` is answered with `pong`;
+`file`/`stream` frame types are skipped by length and left unimplemented.
+
+**The dev transport, companion transport and offload worker share one SOC
+instance** through `src/soc.c`. An atomic state selects one initializer; a
+competing caller returns without waiting. Failed initialization retries after
+a three-second cooldown. Offload initializes and retries on its worker. The
+process releases SOC after every transport stops and the worker is joined.
+The companion channel works with or without a `dev.key`. Capture builds compile the whole
+transport to inert stubs (`svcOpen` reports false forever), which keeps
+golden runs deterministic — the Vita3K contract. A guest switch clears the
+guest-visible queues but keeps the TCP connection; a different app id in
+`svcOpen` restarts discovery.
+
+[Pocket Term](https://github.com/pocket-stack/pocket-term) is the reference
+consumer, in its own repository: a terminal multiplexer whose Mac companion
+owns the PTYs and one authoritative libghostty core per session and streams
+cell-grid snapshots + ordered row diffs to the device replica.
+
+**The transport outlives the guest.** A hot-pushed `.pocket` restarts
+QuickJS, not this host, so the TCP connection and the companion's view of it
+both survive. A guest therefore re-introduces itself on its first frame
+(`svcOpen` rising edge → a fresh `hello`), and a companion must treat that
+hello as "this replica has loaded nothing" rather than as a new socket — the
+Pocket Term companion re-sends its runtime font atlas there, without which
+the new guest draws blanks where the old one drew CJK.
+
+## ZL and ZR
+
+The New 3DS has four shoulder buttons and the PSP had two, so `BTN.ZL` /
+`BTN.ZR` (`contracts/spec/spec.ts`) take two bits the PSP never assigned.
+Hosts without these buttons leave the bits unset.
+
+They do not arrive on the ordinary HID pad. ZL, ZR and the C-stick live in
+**ir:rst**'s shared memory (libctru `irrst.h`), so `src/input.c` brings that
+service up in `input_init()` after checking the model. `input_buttons()`
+scans the shared memory and ORs `irrstKeysHeld()` into the held mask. An Old
+3DS skips initialization and leaves the bits unset. Apps must retain an
+interaction path that works without these extra buttons.
 
 ## The CIA, and the memory region it asks for
 

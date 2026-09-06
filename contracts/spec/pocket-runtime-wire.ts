@@ -17,6 +17,10 @@ export const POCKET_RUNTIME_HELLO_BYTES = 8 + POCKET_RUNTIME_TOKEN_BYTES;
 export const POCKET_RUNTIME_ACK_BYTES = 24;
 export const POCKET_RUNTIME_FRAME_HEADER_BYTES = 8;
 export const POCKET_RUNTIME_MAX_FRAME_BYTES = 64 * 1024;
+/** The largest control record a TOOL may send: a device sizes its inbound ring
+ *  from this. Records travelling the other way are bounded by the frame, since
+ *  a device queues them into a buffer already sized for one — a devtools tree
+ *  dump runs past 16 KiB on any app of a few hundred nodes. */
 export const POCKET_RUNTIME_MAX_CTRL_BYTES = 16 * 1024;
 export const POCKET_RUNTIME_PACKAGE_BEGIN_BYTES = 12;
 export const POCKET_RUNTIME_SCREENSHOT_BEGIN_BYTES = 24;

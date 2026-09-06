@@ -36,6 +36,8 @@
 #include "devserver.h"
 #include "devmenu.h"
 #include "runtime.h"
+#include "soc.h"
+#include "svcwire.h"
 
 /* The guest viewport comes from the resolved build plan, never a literal. */
 #ifndef POCKETJS_VIEW_W
@@ -416,6 +418,8 @@ static void teardown_guest(void) {
   qjs_shutdown();
   gfx_reset_resources();
   ui_shutdown();
+  /* The svc reset contract: the next guest never sees this guest's lines. */
+  svcwire_reset();
 }
 
 static void release_choice(GuestChoice *choice, PocketRuntimePackage *embedded) {
@@ -716,7 +720,9 @@ int main(void) {
   );
   if (devserver_result == DEVSERVER_ERROR) {
     /* Pairing/network failure must not make the accepted guest unbootable.
-     * Persist it for the next FTP inspection and continue without DevTools. */
+     * Persist it for the next FTP inspection and continue without DevTools.
+     * The main loop retries: socInit fails transiently when the app starts
+     * while WiFi is still re-associating (e.g. right after ftpd exits). */
     runtime_write_error("devserver-init", runtime_error);
   }
 #endif
@@ -778,7 +784,21 @@ int main(void) {
     uint32_t touch = 0;
     size_t touch_count = input_touch(&touch);
 #else
+    if (input_exit_requested()) break;
+    if (devserver_result == DEVSERVER_ERROR && run_frame % 300 == 299) {
+      /* One retry every ~5 s until the transient boot-time failure clears. */
+      devserver_result = devserver_init(&runtime_state, runtime_error, sizeof runtime_error);
+      if (devserver_result == DEVSERVER_READY) {
+        devserver_set_runtime(
+          &runtime_state,
+          guest.package,
+          guest.commit_on_accept ? "candidate" : "booted",
+          run_frame
+        );
+      }
+    }
     devserver_poll();
+    svcwire_pump();
     if (input_devmenu_toggle_requested()) devmenu_toggle();
     if (devmenu_visible() && input_devmenu_close_requested()) devmenu_hide();
     if (devmenu_visible() && input_devmenu_screenshot_requested()) {
@@ -1027,7 +1047,9 @@ int main(void) {
   release_choice(&guest, embedded);
   runtime_package_free(embedded);
 #ifndef POCKETJS_CAPTURE
+  svcwire_shutdown();
   devserver_shutdown();
+  soc_shutdown();
   devmenu_shutdown();
 #endif
   gfx_shutdown();

@@ -139,3 +139,7 @@ counter wrap and coverage decoding. Tests also exercise fragmented UTF-8,
 timeouts, cancellation, stale sessions, no mutation replay, provider grants,
 SQLite result budgets, HTTP redirects and oversized bodies. These checks are
 separate from device performance and interaction acceptance.
+
+Reusable reads can use the [shared resource scheduler](RESOURCES.md#shared-read-scheduling)
+for admission, priority, caching and bounded materialization. Commands retain
+the direct offload path and application-owned recovery semantics.

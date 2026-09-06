@@ -1488,6 +1488,15 @@ export const PAK_DTYPE = {
 // ---------------------------------------------------------------------------
 // Verified against dreamcart web/engine.js (BTN), framework/src/input.ts (Btn)
 // and rust-psp/psp/src/sys/ctrl.rs (CtrlButtons).
+//
+// ZL/ZR are the one addition to the PSP set: a machine can have more shoulder
+// buttons than a PSP did (a New 3DS has four), and an app that wants a HELD
+// modifier has nowhere else to put it — every other bit already means
+// something an app is using. They take two of the gap bits the PSP never
+// assigned, so the mask stays inside the 16-bit window real PSP hardware uses
+// (0x10000 is HOME and 0x20000 is HOLD there). A host without them simply
+// never sets the bits, and an app must treat them as an enhancement: no
+// input.buttons contract promises they exist.
 
 export const BTN = {
   SELECT: 0x0001,
