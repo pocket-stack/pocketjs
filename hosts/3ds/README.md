@@ -244,9 +244,12 @@ discovery), connects to the datagram's source address at its advertised TCP
 port, and exchanges `ctrl` JSON-line frames. `ping` is answered with `pong`;
 `file`/`stream` frame types are skipped by length and left unimplemented.
 
-SOC is shared with the dev transport through `src/soc.c` — libctru's
-`socInit` runs once per process, whichever transport comes up first — so the
-channel works with or without a `dev.key`. Capture builds compile the whole
+**The dev transport, companion transport and offload worker share one SOC
+instance** through `src/soc.c`. An atomic state selects one initializer; a
+competing caller returns without waiting. Failed initialization retries after
+a three-second cooldown. Offload initializes and retries on its worker. The
+process releases SOC after every transport stops and the worker is joined.
+The companion channel works with or without a `dev.key`. Capture builds compile the whole
 transport to inert stubs (`svcOpen` reports false forever), which keeps
 golden runs deterministic — the Vita3K contract. A guest switch clears the
 guest-visible queues but keeps the TCP connection; a different app id in
@@ -269,16 +272,14 @@ the new guest draws blanks where the old one drew CJK.
 
 The New 3DS has four shoulder buttons and the PSP had two, so `BTN.ZL` /
 `BTN.ZR` (`contracts/spec/spec.ts`) take two bits the PSP never assigned.
-They are the only place a 3DS app can put a **held modifier**: every other
-bit already means something an app is using.
+Hosts without these buttons leave the bits unset.
 
 They do not arrive on the ordinary HID pad. ZL, ZR and the C-stick live in
 **ir:rst**'s shared memory (libctru `irrst.h`), so `src/input.c` brings that
-service up in `input_init()`, refreshes it with `input_scan()` next to
-`hidScanInput()`, and ORs `irrstKeysHeld()` into the held mask. An Old 3DS
-has neither the service nor the buttons: `irrstInit()` fails, the bits are
-never set, and everything else is unaffected — which is why an app must
-treat them as an enhancement and keep a path that works without them.
+service up in `input_init()` after checking the model. `input_buttons()`
+scans the shared memory and ORs `irrstKeysHeld()` into the held mask. An Old
+3DS skips initialization and leaves the bits unset. Apps must retain an
+interaction path that works without these extra buttons.
 
 ## The CIA, and the memory region it asks for
 
