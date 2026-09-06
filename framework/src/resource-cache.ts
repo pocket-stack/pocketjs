@@ -239,13 +239,15 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
             if (candidate && (!chosen || candidate.priority < chosen.priority || candidate.priority === chosen.priority && candidate.order < chosen.order)) chosen = candidate;
           }
           if (!chosen) break;
+          // Do not discard useful in-flight prefetch if the replacement cannot
+          // even enter the transport. Sent offload cancellation retains credit.
+          if (options.available && !options.available()) break;
           if (active >= options.maxConcurrent) {
             let worst: ReturnType<Collection["speculative"]>;
             for (const collection of collections) { const candidate = collection.speculative(); if (candidate && (!worst || candidate.priority > worst.priority)) worst = candidate; }
             if (!worst || worst.priority <= chosen.priority) break;
             worst.cancel();
           }
-          if (options.available && !options.available()) break;
           if (chosen.start()) n++;
         }
       } finally { stepping = false; }

@@ -10,6 +10,8 @@ export type { OffloadImage } from "../contracts/spec/offload.ts";
 export function connectOffloadProvider(options: {
   address: string; key: string; worker: string | URL; data?: unknown;
   port?: number; log?: (message: string) => void;
+  /** Opt-in request timing and socket backpressure diagnostics; no payloads. */
+  trace?: boolean;
   /** Process mode isolates native codecs and fetch teardown from the transport.
    * Both modes use the same self.onmessage/postMessage provider module API. */
   isolation?: "thread" | "process";
@@ -28,11 +30,14 @@ export function connectOffloadProvider(options: {
     const log = (message: string) => options.log?.(`Session ${session}: ${message}`);
     let worker: { postMessage(value: unknown): void; terminate(): void | Promise<unknown> } | undefined;
     let closed = false, reason = "device closed connection";
-    const pending = new Map<number, boolean>();
+    const pending = new Map<number, { image: boolean; method: string; started: number }>();
     const deadlines = new Map<number, ReturnType<typeof setTimeout>>();
     const replies: Buffer[] = [];
     let writing = false, held: Buffer | undefined, consumed = 0;
-    const canRead = () => !writing && replies.length === 0 && pending.size < OFFLOAD.pending;
+    let blockedAt = 0;
+    // Sending an image and computing the next resource can overlap. The same
+    // eight credits cover active work, queued replies and the blocked write.
+    const canRead = () => pending.size + replies.length + Number(writing) < OFFLOAD.pending;
     const fail = (why: string) => { if (closed) return; reason = why; socket.destroy(); };
     const connecting = setTimeout(() => fail("connect timeout"), 5000);
     closeCurrent = () => fail("provider stopped");
@@ -44,13 +49,14 @@ export function connectOffloadProvider(options: {
       const replyToDevice = (reply: OffloadProviderReply) => {
         if (closed || socket.destroyed) return;
         if (!reply || !Number.isSafeInteger(reply.id) || reply.id < 1 || reply.id > 0xffffffff) return fail("invalid provider reply ID");
-        const expectsImage = pending.get(reply.id);
+        const request = pending.get(reply.id);
         if (!pending.delete(reply.id)) return fail("unexpected provider reply ID");
         clearTimeout(deadlines.get(reply.id)); deadlines.delete(reply.id);
         try {
           if (typeof reply.payload === "string" && reply.payload.length > OFFLOAD.payloadChars) throw new Error("Result budget exceeded");
-          if (reply.image && !expectsImage) throw new Error("Unrequested image response");
+          if (reply.image && !request?.image) throw new Error("Unrequested image response");
           const record = reply.image ? encodeOffloadImage(reply.id, reply.image) : encodeOffloadRecord(JSON.stringify(reply));
+          if (options.trace) log(`reply id=${reply.id} method=${request!.method} providerMs=${Date.now() - request!.started} bytes=${record.length} error=${!!reply.error} pending=${pending.size} queued=${replies.length}`);
           // Each queued reply replaces one admitted request. Slow LAN writes
           // consume credit; they are not an invalid connection.
           if (replies.length >= OFFLOAD.pending) return fail("provider reply credit exceeded");
@@ -90,7 +96,8 @@ export function connectOffloadProvider(options: {
           typeof request.payload !== "string" || request.payload.length > OFFLOAD.payloadChars ||
           request.response !== undefined && request.response !== "image" ||
           pending.size >= OFFLOAD.pending || pending.has(request.id)) throw new Error("Invalid request");
-      pending.set(request.id, request.response === "image");
+      pending.set(request.id, { image: request.response === "image", method: request.method, started: Date.now() });
+      if (options.trace) log(`request id=${request.id} method=${request.method} pending=${pending.size}`);
       deadlines.set(request.id, setTimeout(() => fail(`request deadline: ${request.method} id=${request.id}`), 9000));
       worker!.postMessage(request);
       return canRead();
@@ -107,10 +114,16 @@ export function connectOffloadProvider(options: {
     }
     function flush() {
       if (closed || socket.destroyed) return;
-      while (!writing && replies.length) writing = !socket.write(replies.shift()!);
+      while (!writing && replies.length) {
+        writing = !socket.write(replies.shift()!);
+        if (writing) { blockedAt = Date.now(); if (options.trace) log(`write blocked bytes=${socket.writableLength} queued=${replies.length}`); }
+      }
       read();
     }
-    socket.on("drain", () => { writing = false; flush(); });
+    socket.on("drain", () => {
+      if (options.trace && writing) log(`write drained waitMs=${Date.now() - blockedAt} queued=${replies.length}`);
+      writing = false; flush();
+    });
     socket.on("data", chunk => {
       socket.pause();
       if (held) return fail("device input credit exceeded");

@@ -4,6 +4,14 @@ import { connectOffloadProvider } from "../tools/offload-provider.ts";
 import { OffloadDecoder, encodeOffloadRecord } from "../tools/offload-wire.ts";
 import type { OffloadReply } from "../contracts/spec/offload.ts";
 
+test("slow writes preserve bounded duplex admission instead of stopping healthy work", async () => {
+  const child = Bun.spawn([process.execPath, new URL("./fixtures/offload-native/duplex-credit.ts", import.meta.url).pathname],
+    { stdout: "pipe", stderr: "pipe" });
+  const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  expect({ code, error: err }).toEqual({ code: 0, error: "" });
+  expect(out).toContain("20 intact images; eight total reservations; no disconnect");
+}, 10000);
+
 function queue<T>() {
   const values: T[] = [], pending: ((value: T) => void)[] = [];
   return { push(value: T) { const take = pending.shift(); if (take) take(value); else values.push(value); },
