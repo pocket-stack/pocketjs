@@ -352,3 +352,33 @@ tape tool in [DevTools](/docs/devtools/).
 - [Platform contracts](/docs/platform-contracts/) — declaring `input.touch` and
   guarding optional enhancements.
 - [DevTools](/docs/devtools/) — recording and replaying input tapes.
+
+## Filter quantized drag coordinates
+
+`createDragFilter` consumes **total travel since contact-down**, once per pan
+frame. A one-pixel hysteresis rejects stationary quantization; an adaptive
+response limits smoothing lag to three pixels beyond that hysteresis. Sampling
+uses simulation time and constant-size state. The filter changes neither
+recognition nor the raw touch snapshot.
+
+```ts
+import { createGesture, createDragFilter } from "@pocketjs/framework/gesture";
+import { simulationHz } from "@pocketjs/framework/clock";
+
+const filter = createDragFilter({ deadband: 1, maxLag: 3 });
+createGesture({
+  region: { node: () => pad },
+  onDown() { filter.reset(); camera.beginDrag(); },
+  onPanMove(c) {
+    const d = filter.update(c.dx, c.dy, 1 / simulationHz());
+    camera.drag(d.dx, d.dy);
+  },
+  onPanEnd() { const v = filter.velocity(); camera.endDrag(v.x, v.y); },
+  onTap() { camera.endDrag(0, 0); },
+  onCancel() { camera.stop(); },
+});
+```
+
+Call `update` on stationary pan frames too, so the release velocity decays
+after a hold. The returned delta record is reused; consume it within the
+callback. Do not pass per-frame `fdx` / `fdy` as total travel.

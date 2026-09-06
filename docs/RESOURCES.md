@@ -200,8 +200,8 @@ const runtime = createResourceRuntime({
 const tiles = createOffloadImageCollection(runtime, io, {
   key: (tile: TileAddress) => `${tile.source}/${tile.z}/${tile.x}/${tile.y}`,
   method: "map.tile", payload: JSON.stringify,
-  width: 256, height: 256, maxEntries: 24, maxViews: 2,
-  maxDemandsPerView: 12,
+  width: 256, height: 256, maxEntries: 40, maxViews: 2,
+  maxDemandsPerView: 16,
 });
 const view = createResourceView(tiles, { demand: visibleTileDemand });
 
@@ -221,17 +221,35 @@ after materialization, including failure, or when cancellation or late delivery
 prevents materialization. It is separate from `dispose(value)`, which releases
 an adopted value. Both hooks must be bounded and must not throw.
 
-`@pocketjs/framework/tile-viewport` supplies `createTileCamera` and `visibleTiles`.
+`@pocketjs/framework/tile-viewport` supplies `createTileCamera`, `visibleTiles`
+and `planTileWindow`.
 The camera stores level-zero pixel coordinates, integrates screen-space velocity
 and inertia, and keeps the world point beneath an anchor fixed during zoom.
 `visibleTiles` returns a near-first window and rejects an excessive window
-before enumeration. Neither API performs IO or knows geographic coordinates.
+before enumeration. `planTileWindow` returns separate visible and look-ahead
+arrays, with an extra-tile cap and screen-pixel margins / directional lead.
+**The application selects look-ahead policy and priority.** These functions
+perform no IO and contain no geographic projection.
+
+```ts
+const window = planTileWindow({ ...camera.view(), level, width: 400, height: 240,
+  maxTiles: 12, margin: 64, leadX: predictedX, leadY: predictedY, maxExtra: 4 });
+const demand = [
+  ...window.visible.map(tile => ({ input: address(tile), priority: tile.priority, pin: true })),
+  ...window.lookAhead.map(tile => ({ input: address(tile), priority: 1000 + tile.priority, pin: false })),
+];
+```
+
+The extra entries share cache and concurrency budgets with visible entries.
+Retaining an unused ready value costs residency but creates no new request.
+A lower-priority read in flight still occupies its slot until completion or
+cancellation; priority does not preempt a network request.
 
 [Pocket Map](https://github.com/pocket-stack/pocket-map) supplies Mercator
 projection, wrapped tile identities, source selection, explicit place searches
 and viewport demand. Its Mac worker owns HTTP caching, PNG decoding and label
-rasterization. Only the active viewport is downloaded; a previous zoom layer
-retains already loaded tiles until the new layer fills. The native image
+rasterization. Its demand includes at most four nearby look-ahead tiles; a
+previous zoom layer retains loaded tiles until the new layer fills. The native image
 transport and resource APIs also apply to document pages, photo renditions and
 other tile pyramids.
 
