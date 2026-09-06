@@ -8,6 +8,7 @@ import type { NodeMirror } from "@pocketjs/framework/components";
 import { removeTodo, type Todo, type TodoList } from "./model.ts";
 import { ROW_H, SCREEN_H } from "./metrics.ts";
 import { KB_H, makeKeyboard, type Keyboard } from "./keyboard.tsx";
+import { CLEAR_COLOR_PALETTE, type ClearPalette } from "./palette.ts";
 import type { RowSlot } from "./rows.tsx";
 
 export interface EditorHost {
@@ -28,7 +29,10 @@ export interface Editor {
   close(commit: boolean): void;
 }
 
-export function makeEditor(host: EditorHost): Editor {
+export function makeEditor(
+  host: EditorHost,
+  palette: ClearPalette = CLEAR_COLOR_PALETTE,
+): Editor {
   let editing: Todo | null = null;
   let editCaret = 0;
   let editOriginal = "";
@@ -103,7 +107,7 @@ export function makeEditor(host: EditorHost): Editor {
       paintEditRow();
     },
     onEnter: () => close(true),
-  });
+  }, palette);
 
   return { kb, editing: () => editing, open, close };
 }

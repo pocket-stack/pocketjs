@@ -269,6 +269,7 @@ hardware bootable is its own work, tracked in Pocket Museum.
 | Windows CE 6 | GDI framebuffer | [From message pump to multitouch](https://pocketjs.dev/blog/pocketjs-on-windows-ce/) |
 | BlackBerry 10.3 | QNX, native ELF | [One square screen, two native stacks](https://pocketjs.dev/blog/blackberry-classic/) |
 | Android 4.3 | BlackBerry runtime, JNI | [#298](https://github.com/pocket-stack/pocketjs/pull/298) |
+| Android 11 | BOOX Leaf3, JNI/GLES2 | [`hosts/boox-leaf3-android`](./hosts/boox-leaf3-android) |
 | PocketBook e-ink | inkview, partial refresh | [#172](https://github.com/pocket-stack/pocketjs/pull/172) |
 | ESP-IDF 6.0/6.1 | P4 PPA or S3 software RGB565 | [ESP-IDF components](https://pocketjs.dev/docs/esp-idf/) |
 | The browser | WebAssembly core | [Playground](https://pocketjs.dev/playground/) |
@@ -276,8 +277,8 @@ hardware bootable is its own work, tracked in Pocket Museum.
 Devices verified so far: **Sony PSP** (2004), **PS Vita** (2011),
 **iPhone** (2007), **iPhone 4S** (2011), **iPod touch 6** (2015),
 **Nokia E7** (2011), **Meizu M8** (2009), **BlackBerry Classic** (2014),
-**PocketBook reader** (e-ink), **ESP32-P4 devkit** (microcontroller), and
-**Mac** (Apple silicon).
+**PocketBook reader** (e-ink), **BOOX Leaf3** (e-ink), **ESP32-P4 devkit**
+(microcontroller), and **Mac** (Apple silicon).
 
 The authoritative host and target inventory is
 [`contracts/spec/platforms.ts`](./contracts/spec/platforms.ts); each entry

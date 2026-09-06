@@ -8,7 +8,7 @@
 import { animate, jump } from "@pocketjs/framework/animation";
 import { createGesture } from "@pocketjs/framework/gesture";
 import type { Todo } from "./model.ts";
-import { DONE_FROM, DONE_TO, GREEN_FROM, GREEN_TO, todoRowColors } from "./palette.ts";
+import { CLEAR_COLOR_PALETTE, type ClearPalette } from "./palette.ts";
 import { ROW_H, SCREEN_W, SWIPE_COMMIT, SWITCH_MS } from "./metrics.ts";
 import type { RowSlot } from "./rows.tsx";
 
@@ -33,29 +33,38 @@ function swipeDisplay(dx: number): number {
 
 /** Past the rightward bound the slider changes its mind: a pending row goes
  *  green, a done row previews its restored position tint. */
-function paintArmed(slot: RowSlot, todo: Todo, index: number, armed: boolean): void {
+function paintArmed(
+  slot: RowSlot,
+  todo: Todo,
+  index: number,
+  armed: boolean,
+  palette: ClearPalette,
+): void {
   if (!slot.front) return;
   if (armed) {
     if (todo.done) {
       slot.done.value = false;
-      const [from, to] = todoRowColors(Math.min(index, 7), 1);
+      const [from, to] = palette.todoRows(Math.min(index, 7), 1);
       jump(slot.front, "gradFrom", from);
       jump(slot.front, "gradTo", to);
     } else {
-      jump(slot.front, "gradFrom", GREEN_FROM);
-      jump(slot.front, "gradTo", GREEN_TO);
+      jump(slot.front, "gradFrom", palette.completeFrom);
+      jump(slot.front, "gradTo", palette.completeTo);
     }
   } else if (todo.done) {
     slot.done.value = true;
-    jump(slot.front, "gradFrom", DONE_FROM);
-    jump(slot.front, "gradTo", DONE_TO);
+    jump(slot.front, "gradFrom", palette.doneFrom);
+    jump(slot.front, "gradTo", palette.doneTo);
   } else {
     jump(slot.front, "gradFrom", slot.gradFrom);
     jump(slot.front, "gradTo", slot.gradTo);
   }
 }
 
-export function attachSwipeGesture(host: SwipeHost): void {
+export function attachSwipeGesture(
+  host: SwipeHost,
+  palette: ClearPalette = CLEAR_COLOR_PALETTE,
+): void {
   let slot: RowSlot | null = null;
   let todo: Todo | null = null;
   let index = -1;
@@ -66,7 +75,7 @@ export function attachSwipeGesture(host: SwipeHost): void {
     if (current.strike) jump(current.strike, "scaleX", target.done ? 1 : 0);
     if (armed) {
       armed = false;
-      paintArmed(current, target, index, false);
+      paintArmed(current, target, index, false, palette);
     }
   }
 
@@ -101,7 +110,7 @@ export function attachSwipeGesture(host: SwipeHost): void {
       const next = raw >= SWIPE_COMMIT;
       if (next !== armed) {
         armed = next;
-        paintArmed(slot, todo, index, next);
+        paintArmed(slot, todo, index, next, palette);
       }
     },
     onPanEnd: (c) => {

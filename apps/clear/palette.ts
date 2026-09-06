@@ -1,11 +1,6 @@
-// Row colors, matching the reference demo's HSL ramps exactly.
-//
-// Todo rows sweep hue 354 → +7/row (red toward orange) with lightness 46 → +2,
-// saturation 100 on row 0 and 90 below; when the stack exceeds 7 rows the
-// steps compress so the full sweep always spans the stack. List rows sweep
-// hue 212 → -2.5/row (blue, brightening), compressing past 5 rows. Every row
-// paints a vertical gradient one lightness step either side of its ramp color
-// so the fill reads slightly lit from above.
+// Pocket Clear palettes. The color theme preserves the reference ramps; the
+// e-ink theme uses neutral grays with larger luminance steps so adjacent rows
+// remain distinct on a 16-level panel and after partial refreshes.
 
 const TODO_H = 354;
 const TODO_S = 100;
@@ -21,18 +16,43 @@ const LIST_STEP_H = -2.5;
 const LIST_STEP_S = 1;
 const LIST_STEP_L = 2.5;
 const LIST_SPAN = 5;
-
-/** Inner-gradient half-spread, in lightness points. */
 const GRAD_L = 2;
 
-export const DONE_FROM = "#0c0c0c";
-export const DONE_TO = "#000000";
-export const DONE_TEXT = "#666666";
-/** Swipe-right armed slider fill (#0A3 in the reference). */
-export const GREEN_FROM = "#00b236";
-export const GREEN_TO = "#009e30";
-// The flap/preview/cross red literals in app.tsx class strings are
-// todoRowColors(0, 1): #f50018 / #e00016 around the row-0 base #eb0017.
+export interface KeyboardPalette {
+  readonly panelFrom: string;
+  readonly panelTo: string;
+  readonly divider: string;
+  readonly char: readonly [string, string, string, string];
+  readonly action: readonly [string, string, string, string];
+  readonly engaged: readonly [string, string, string, string];
+  readonly keyText: string;
+  readonly engagedText: string;
+  readonly popupFrom: string;
+  readonly popupTo: string;
+  readonly popupBorder: string;
+}
+
+export interface ClearPalette {
+  readonly canvas: string;
+  readonly foreground: string;
+  readonly mutedForeground: string;
+  readonly disabledForeground: string;
+  readonly edgeLight: string;
+  readonly edgeDark: string;
+  readonly countCell: string;
+  readonly doneFrom: string;
+  readonly doneTo: string;
+  readonly doneText: string;
+  readonly completeFrom: string;
+  readonly completeTo: string;
+  readonly completeIcon: string;
+  readonly deleteIcon: string;
+  readonly flapFrom: string;
+  readonly flapTo: string;
+  readonly todoRows: (order: number, pendingRows: number) => readonly [string, string];
+  readonly listRows: (order: number, rows: number) => readonly [string, string];
+  readonly keyboard: KeyboardPalette;
+}
 
 function hex2(value: number): string {
   const v = Math.max(0, Math.min(255, Math.round(value)));
@@ -59,9 +79,7 @@ export function hsl(h: number, s: number, l: number): string {
   return `#${hex2((r + m) * 255)}${hex2((g + m) * 255)}${hex2((b + m) * 255)}`;
 }
 
-/** Gradient endpoints for the PENDING todo row at `order` in a stack of
- *  `pendingRows`. */
-export function todoRowColors(order: number, pendingRows: number): readonly [string, string] {
+function colorTodoRows(order: number, pendingRows: number): readonly [string, string] {
   let stepH = TODO_STEP_H;
   let stepL = TODO_STEP_L;
   if (pendingRows > TODO_SPAN) {
@@ -74,8 +92,7 @@ export function todoRowColors(order: number, pendingRows: number): readonly [str
   return [hsl(h, s, l + GRAD_L), hsl(h, s, l - GRAD_L)];
 }
 
-/** Gradient endpoints for the list row at `order` among `rows` lists. */
-export function listRowColors(order: number, rows: number): readonly [string, string] {
+function colorListRows(order: number, rows: number): readonly [string, string] {
   let stepH = LIST_STEP_H;
   let stepS = LIST_STEP_S;
   let stepL = LIST_STEP_L;
@@ -90,3 +107,89 @@ export function listRowColors(order: number, rows: number): readonly [string, st
   return [hsl(h, s, l + GRAD_L), hsl(h, s, l - GRAD_L)];
 }
 
+function grayRamp(order: number, rows: number, start: number, span: number): readonly [string, string] {
+  const denominator = Math.max(1, Math.min(rows, 10) - 1);
+  const center = start + Math.min(order, denominator) * span / denominator;
+  return [hsl(0, 0, center + 2.5), hsl(0, 0, center - 2.5)];
+}
+
+export const CLEAR_COLOR_PALETTE: ClearPalette = {
+  canvas: "#000000",
+  foreground: "#ffffff",
+  mutedForeground: "#ffffff40",
+  disabledForeground: "#333333",
+  edgeLight: "#ffffff12",
+  edgeDark: "#0000001a",
+  countCell: "#ffffff26",
+  doneFrom: "#0c0c0c",
+  doneTo: "#000000",
+  doneText: "#666666",
+  completeFrom: "#00b236",
+  completeTo: "#009e30",
+  completeIcon: "#ffffff",
+  deleteIcon: "#eb0017",
+  flapFrom: "#f50018",
+  flapTo: "#e00016",
+  todoRows: colorTodoRows,
+  listRows: colorListRows,
+  keyboard: {
+    panelFrom: "#17191d",
+    panelTo: "#0d0f12",
+    divider: "#000000",
+    char: ["#3a3f46", "#2d3138", "#5c626b", "#4b515a"],
+    action: ["#24272c", "#1a1d21", "#3d4249", "#31363c"],
+    engaged: ["#dfe2e6", "#c9cdd3", "#b7bcc3", "#a8adb5"],
+    keyText: "#d3d7dc",
+    engagedText: "#16181c",
+    popupFrom: "#454b53",
+    popupTo: "#34383f",
+    popupBorder: "#101215",
+  },
+};
+
+export const CLEAR_EINK_PALETTE: ClearPalette = {
+  canvas: "#f2f2f2",
+  foreground: "#ffffff",
+  mutedForeground: "#555555",
+  disabledForeground: "#aaaaaa",
+  edgeLight: "#ffffff55",
+  edgeDark: "#00000055",
+  countCell: "#00000033",
+  doneFrom: "#eeeeee",
+  doneTo: "#d8d8d8",
+  doneText: "#444444",
+  completeFrom: "#1c1c1c",
+  completeTo: "#080808",
+  completeIcon: "#111111",
+  deleteIcon: "#111111",
+  flapFrom: "#343434",
+  flapTo: "#202020",
+  todoRows: (order, rows) => grayRamp(order, rows, 20, 24),
+  listRows: (order, rows) => grayRamp(order, rows, 16, 30),
+  keyboard: {
+    panelFrom: "#303030",
+    panelTo: "#181818",
+    divider: "#000000",
+    char: ["#555555", "#414141", "#777777", "#626262"],
+    action: ["#333333", "#242424", "#505050", "#3f3f3f"],
+    engaged: ["#eeeeee", "#d5d5d5", "#c5c5c5", "#b4b4b4"],
+    keyText: "#ffffff",
+    engagedText: "#111111",
+    popupFrom: "#666666",
+    popupTo: "#4a4a4a",
+    popupBorder: "#111111",
+  },
+};
+
+// Compatibility exports used by the existing color app and its tests.
+export const DONE_FROM = CLEAR_COLOR_PALETTE.doneFrom;
+export const DONE_TO = CLEAR_COLOR_PALETTE.doneTo;
+export const DONE_TEXT = CLEAR_COLOR_PALETTE.doneText;
+export const GREEN_FROM = CLEAR_COLOR_PALETTE.completeFrom;
+export const GREEN_TO = CLEAR_COLOR_PALETTE.completeTo;
+export function todoRowColors(order: number, pendingRows: number): readonly [string, string] {
+  return colorTodoRows(order, pendingRows);
+}
+export function listRowColors(order: number, rows: number): readonly [string, string] {
+  return colorListRows(order, rows);
+}

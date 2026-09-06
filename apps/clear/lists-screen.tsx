@@ -7,7 +7,7 @@
 import { shallowRef } from "vue";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { pendingCount, type TodoList } from "./model.ts";
-import { listRowColors } from "./palette.ts";
+import { CLEAR_COLOR_PALETTE, type ClearPalette } from "./palette.ts";
 import { ROW_H } from "./metrics.ts";
 
 export interface ListsScreen {
@@ -20,7 +20,10 @@ export interface ListsScreen {
   refresh(index?: number): void;
 }
 
-export function makeListsScreen(lists: TodoList[]): ListsScreen {
+export function makeListsScreen(
+  lists: TodoList[],
+  palette: ClearPalette = CLEAR_COLOR_PALETTE,
+): ListsScreen {
   let canvasNode: NodeMirror | null = null;
   const rowNodes: (NodeMirror | null)[] = lists.map(() => null);
   const counts = lists.map((l) => shallowRef(String(pendingCount(l))));
@@ -36,7 +39,7 @@ export function makeListsScreen(lists: TodoList[]): ListsScreen {
   }
 
   function renderListRow(title: string, i: number) {
-    const [from, to] = listRowColors(i, lists.length);
+    const [from, to] = palette.listRows(i, lists.length);
     return (
       <View
         nodeRef={(node) => {
@@ -46,18 +49,27 @@ export function makeListsScreen(lists: TodoList[]): ListsScreen {
         style={{ translateY: i * ROW_H }}
       >
         <View
-          class="absolute inset-0 bg-gradient-to-b from-[#1780f7] to-[#1780f7]"
+          class="absolute inset-0 bg-gradient-to-b"
           style={{ gradFrom: from, gradTo: to }}
         >
-          <View class="absolute left-0 right-0 top-0 bg-[#ffffff12]" style={{ height: 1 }} />
-          <View class="absolute left-0 right-0 bottom-0 bg-[#0000001a]" style={{ height: 1 }} />
+          <View class="absolute left-0 right-0 top-0" style={{ height: 1, bgColor: palette.edgeLight }} />
+          <View class="absolute left-0 right-0 bottom-0" style={{ height: 1, bgColor: palette.edgeDark }} />
           <View class="absolute inset-0 flex-row items-center pl-3">
-            <Text class={empty[i].value ? "text-xl font-bold text-[#ffffff80]" : "text-xl font-bold text-white"}>
+            <Text
+              class="text-xl font-bold"
+              style={{ textColor: empty[i].value ? palette.mutedForeground : palette.foreground }}
+            >
               {title}
             </Text>
           </View>
-          <View class="absolute right-0 top-0 bottom-0 items-center justify-center bg-[#ffffff26]" style={{ width: ROW_H }}>
-            <Text class={empty[i].value ? "text-xl font-bold text-[#ffffff80]" : "text-xl font-bold text-white"}>
+          <View
+            class="absolute right-0 top-0 bottom-0 items-center justify-center"
+            style={{ width: ROW_H, bgColor: palette.countCell }}
+          >
+            <Text
+              class="text-xl font-bold"
+              style={{ textColor: empty[i].value ? palette.mutedForeground : palette.foreground }}
+            >
               {counts[i].value}
             </Text>
           </View>
@@ -78,8 +90,12 @@ export function makeListsScreen(lists: TodoList[]): ListsScreen {
         class="absolute left-0 right-0 flex-col items-center justify-center"
         style={{ translateY: -2.5 * ROW_H, height: ROW_H }}
       >
-        <Text class="text-sm text-[#ffffff40] text-center">Made with PocketJS + Vue Vapor</Text>
-        <Text class="text-sm text-[#ffffff40] text-center">Original by Evan You, iOS app by Realmac</Text>
+        <Text class="text-sm text-center" style={{ textColor: palette.mutedForeground }}>
+          Made with PocketJS + Vue Vapor
+        </Text>
+        <Text class="text-sm text-center" style={{ textColor: palette.mutedForeground }}>
+          Original by Evan You, iOS app by Realmac
+        </Text>
       </View>
       {lists.map((l, i) => renderListRow(l.title, i))}
     </View>

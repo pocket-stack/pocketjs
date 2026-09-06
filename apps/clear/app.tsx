@@ -38,8 +38,12 @@ import {
   setDone,
   MAX_TODOS,
   type Todo,
+  type TodoList,
 } from "./model.ts";
-import { DONE_FROM, DONE_TEXT, DONE_TO, todoRowColors } from "./palette.ts";
+import {
+  CLEAR_COLOR_PALETTE,
+  type ClearPalette,
+} from "./palette.ts";
 import {
   OVERSCROLL,
   PINCH_COMMIT,
@@ -63,8 +67,14 @@ const VIEW_H = SCREEN_H;
 /** Where the todos canvas rests while the lists screen owns the display. */
 const TODOS_PARKED_Y = SCREEN_H + 2 * ROW_H;
 
-export default () => {
-  const lists = seedLists();
+export interface ClearProps {
+  readonly palette?: ClearPalette;
+  readonly seed?: () => TodoList[];
+}
+
+export default (props: ClearProps = {}) => {
+  const palette = props.palette ?? CLEAR_COLOR_PALETTE;
+  const lists = props.seed?.() ?? seedLists();
   let activeIndex = 0;
   let screenName: "lists" | "todos" | "switching" = "lists";
   let order: Todo[] = [];
@@ -73,7 +83,7 @@ export default () => {
 
   const list = () => lists[activeIndex];
 
-  const listsScreen = makeListsScreen(lists);
+  const listsScreen = makeListsScreen(lists, palette);
   let todosCanvas: NodeMirror | null = null;
   let flapNode: NodeMirror | null = null;
   let topSwitchNode: NodeMirror | null = null;
@@ -172,10 +182,12 @@ export default () => {
       if (slot.strike && editor.editing() !== todo) {
         jump(slot.strike, "width", measureTitle(slot, todo.text));
         jump(slot.strike, "scaleX", todo.done ? 1 : 0);
-        jump(slot.strike, "bgColor", todo.done ? DONE_TEXT : "#ffffff");
+        jump(slot.strike, "bgColor", todo.done ? palette.doneText : palette.foreground);
       }
 
-      const [from, to] = todo.done ? [DONE_FROM, DONE_TO] : todoRowColors(index, pending);
+      const [from, to] = todo.done
+        ? [palette.doneFrom, palette.doneTo]
+        : palette.todoRows(index, pending);
       if (slot.front && (from !== slot.gradFrom || to !== slot.gradTo)) {
         if (animated && slot.gradFrom !== "") {
           animate(slot.front, "gradFrom", from, { dur: 220, easing: "out" });
@@ -229,7 +241,7 @@ export default () => {
     canvas: () => todosCanvas,
     layout,
     report,
-  });
+  }, palette);
   const kb = editor.kb;
 
   // ------------------------------------------------------------- creation
@@ -390,7 +402,7 @@ export default () => {
       layout(true);
       report();
     },
-  });
+  }, palette);
 
   // Long-press: pick a pending row up and reorder it.
   let dragSlot: RowSlot | null = null;
@@ -631,7 +643,7 @@ export default () => {
 
   // -------------------------------------------------------------- render
   return (
-    <View class="w-full h-full bg-[#000000] overflow-hidden">
+    <View class="w-full h-full overflow-hidden" style={{ bgColor: palette.canvas }}>
       <View
         nodeRef={(node) => {
           todosCanvas = node ?? null;
@@ -646,7 +658,9 @@ export default () => {
           class="absolute left-0 right-0 items-center justify-center"
           style={{ translateY: -2 * ROW_H, height: ROW_H, opacity: 0 }}
         >
-          <Text class="text-xl font-bold text-white">Switch to Lists</Text>
+          <Text class="text-xl font-bold" style={{ textColor: palette.mutedForeground }}>
+            Switch to Lists
+          </Text>
         </View>
         <View
           class="absolute left-0 right-0"
@@ -656,17 +670,26 @@ export default () => {
             nodeRef={(node) => {
               flapNode = node ?? null;
             }}
-            class="absolute inset-0 flex-row items-center pl-3 bg-gradient-to-b from-[#f50018] to-[#e00016]"
-            style={{ originY: 0.5, rotateX: -90, opacity: 0 }}
+            class="absolute inset-0 flex-row items-center pl-3 bg-gradient-to-b"
+            style={{
+              originY: 0.5,
+              rotateX: -90,
+              opacity: 0,
+              gradFrom: palette.flapFrom,
+              gradTo: palette.flapTo,
+            }}
           >
-            <Text class="text-xl font-bold text-white">{flapText.value}</Text>
+            <Text class="text-xl font-bold" style={{ textColor: palette.foreground }}>
+              {flapText.value}
+            </Text>
           </View>
         </View>
         <View
           nodeRef={(node) => {
             previewNode = node ?? null;
           }}
-          class="absolute left-0 right-0 top-0 bg-gradient-to-b from-[#f50018] to-[#e00016]"
+          class="absolute left-0 right-0 top-0 bg-gradient-to-b"
+          style={{ gradFrom: palette.flapFrom, gradTo: palette.flapTo }}
         />
         <View
           nodeRef={(node) => {
@@ -675,11 +698,16 @@ export default () => {
           class="absolute left-0 right-0 items-center justify-center"
           style={{ height: 2 * ROW_H }}
         >
-          <Text class={hasDone.value ? "text-xl font-bold text-white" : "text-xl font-bold text-[#333333]"}>
+          <Text
+            class="text-xl font-bold"
+            style={{
+              textColor: hasDone.value ? palette.mutedForeground : palette.disabledForeground,
+            }}
+          >
             Pull to Clear
           </Text>
         </View>
-        {slots.map((slot) => renderRow(slot))}
+        {slots.map((slot) => renderRow(slot, palette))}
       </View>
 
       {listsScreen.view}

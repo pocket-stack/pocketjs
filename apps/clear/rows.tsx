@@ -8,6 +8,7 @@ import { shallowRef, type ShallowRef } from "vue";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { jump } from "@pocketjs/framework/animation";
 import { ROW_H } from "./metrics.ts";
+import { CLEAR_COLOR_PALETTE, type ClearPalette } from "./palette.ts";
 
 /** Off-canvas parking spot for unassigned row slots. */
 export const PARKED_Y = 4000;
@@ -66,7 +67,10 @@ export function resetSlotMotion(slot: RowSlot): void {
   if (slot.strike) jump(slot.strike, "scaleX", 0);
 }
 
-export function renderRow(slot: RowSlot) {
+export function renderRow(
+  slot: RowSlot,
+  palette: ClearPalette = CLEAR_COLOR_PALETTE,
+) {
   return (
     <View
       nodeRef={(node) => {
@@ -84,8 +88,14 @@ export function renderRow(slot: RowSlot) {
       >
         {/* Both strokes overshoot the valley center (23, 39.5) by half a
             thickness so the rotated bars overlap into one clean joint. */}
-        <View class="absolute bg-[#ffffff]" style={{ insetL: 9.3, insetT: 31.3, width: 19, height: 7, rotate: 45 }} />
-        <View class="absolute bg-[#ffffff]" style={{ insetL: 15.3, insetT: 25.8, width: 35, height: 7, rotate: -45 }} />
+        <View
+          class="absolute"
+          style={{ insetL: 9.3, insetT: 31.3, width: 19, height: 7, rotate: 45, bgColor: palette.completeIcon }}
+        />
+        <View
+          class="absolute"
+          style={{ insetL: 15.3, insetT: 25.8, width: 35, height: 7, rotate: -45, bgColor: palette.completeIcon }}
+        />
       </View>
       <View
         nodeRef={(node) => {
@@ -94,19 +104,29 @@ export function renderRow(slot: RowSlot) {
         class="absolute right-0 top-0"
         style={{ width: ROW_H, height: ROW_H, opacity: 0 }}
       >
-        <View class="absolute bg-[#eb0017]" style={{ insetL: 15, insetT: 28, width: 32, height: 7, rotate: 45 }} />
-        <View class="absolute bg-[#eb0017]" style={{ insetL: 15, insetT: 28, width: 32, height: 7, rotate: -45 }} />
+        <View
+          class="absolute"
+          style={{ insetL: 15, insetT: 28, width: 32, height: 7, rotate: 45, bgColor: palette.deleteIcon }}
+        />
+        <View
+          class="absolute"
+          style={{ insetL: 15, insetT: 28, width: 32, height: 7, rotate: -45, bgColor: palette.deleteIcon }}
+        />
       </View>
       <View
         nodeRef={(node) => {
           slot.front = node ?? null;
         }}
-        class="absolute inset-0 bg-gradient-to-b from-[#f50018] to-[#e00016]"
+        class="absolute inset-0 bg-gradient-to-b"
+        style={{ gradFrom: palette.flapFrom, gradTo: palette.flapTo }}
       >
-        <View class="absolute left-0 right-0 top-0 bg-[#ffffff12]" style={{ height: 1 }} />
-        <View class="absolute left-0 right-0 bottom-0 bg-[#0000001a]" style={{ height: 1 }} />
+        <View class="absolute left-0 right-0 top-0" style={{ height: 1, bgColor: palette.edgeLight }} />
+        <View class="absolute left-0 right-0 bottom-0" style={{ height: 1, bgColor: palette.edgeDark }} />
         <View class="absolute inset-0 flex-row items-center pl-3">
-          <Text class={slot.done.value ? "text-xl font-bold text-[#666666]" : "text-xl font-bold text-white"}>
+          <Text
+            class="text-xl font-bold"
+            style={{ textColor: slot.done.value ? palette.doneText : palette.foreground }}
+          >
             {slot.text.value}
           </Text>
         </View>
@@ -114,8 +134,16 @@ export function renderRow(slot: RowSlot) {
           nodeRef={(node) => {
             slot.strike = node ?? null;
           }}
-          class="absolute bg-[#ffffff]"
-          style={{ insetL: 12, insetT: 30, height: 2, width: 0, originX: -0.5, scaleX: 0 }}
+          class="absolute"
+          style={{
+            insetL: 12,
+            insetT: 30,
+            height: 2,
+            width: 0,
+            originX: -0.5,
+            scaleX: 0,
+            bgColor: palette.foreground,
+          }}
         />
       </View>
     </View>
