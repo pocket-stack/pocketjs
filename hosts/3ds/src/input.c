@@ -38,8 +38,20 @@
 #define RUNTIME_DEVMENU_KEYS (KEY_L | KEY_R | KEY_SELECT)
 
 static bool devmenu_input_latched;
-/* ir:rst came up: this console has the extra shoulder pair. */
-static bool extra_shoulders;
+static bool extra_input;
+
+void input_init(void) {
+#ifndef POCKETJS_CAPTURE
+  bool supported = false;
+  if (R_SUCCEEDED(APT_CheckNew3DS(&supported)) && supported)
+    extra_input = R_SUCCEEDED(irrstInit());
+#endif
+}
+
+void input_shutdown(void) {
+  if (extra_input) irrstExit();
+  extra_input = false;
+}
 
 static const struct {
   uint32_t key;
@@ -61,28 +73,10 @@ static const struct {
   { KEY_DRIGHT, BTN_RIGHT },
 };
 
-/*
- * ZL/ZR are New-3DS-only and do NOT arrive on the ordinary HID pad: they live
- * in ir:rst's shared memory alongside the C-stick (libctru irrst.h). An Old
- * 3DS has neither the buttons nor the service, so a failed init is simply a
- * console without them — every other key is unaffected.
- */
-void input_init(void) {
-  extra_shoulders = R_SUCCEEDED(irrstInit());
-}
-
-void input_shutdown(void) {
-  if (extra_shoulders) irrstExit();
-  extra_shoulders = false;
-}
-
-void input_scan(void) {
-  if (extra_shoulders) irrstScanInput();
-}
-
 int32_t input_buttons(void) {
   uint32_t held = hidKeysHeld();
-  if (extra_shoulders) held |= irrstKeysHeld() & (KEY_ZL | KEY_ZR);
+  /* Shared-memory scan only; service initialization happens before UI boot. */
+  if (extra_input) { irrstScanInput(); held |= irrstKeysHeld(); }
   if ((held & RUNTIME_RELOAD_KEYS) == RUNTIME_RELOAD_KEYS) {
     held &= ~RUNTIME_RELOAD_KEYS;
   }
@@ -144,6 +138,12 @@ int32_t input_analog(void) {
   return (axis(pad.dx) << 8) | axis(-pad.dy);
 }
 
+int32_t input_right_analog(void) {
+  if (!extra_input) return 0x8080;
+  circlePosition stick; irrstCstickRead(&stick);
+  return (axis(stick.dx) << 8) | axis(-stick.dy);
+}
+
 size_t input_touch(uint32_t *packed) {
   if (packed == NULL || (hidKeysHeld() & KEY_TOUCH) == 0) return 0;
   touchPosition touch;
@@ -152,4 +152,9 @@ size_t input_touch(uint32_t *packed) {
    * contact, so id 0 remains stable until KEY_TOUCH lifts. */
   *packed = ((uint32_t)touch.py << 9) | (uint32_t)touch.px;
   return 1;
+}
+
+bool input_offload_exit_requested(void) {
+  const uint32_t keys = KEY_L | KEY_R | KEY_START;
+  return (hidKeysHeld() & keys) == keys;
 }

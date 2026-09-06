@@ -315,7 +315,7 @@ function buildRuntime(): void {
       "-Z",
       "build-std-features=compiler-builtins-mem",
     ],
-    join(repository, "engine/symbian"),
+    join(repository, "engine/ui-cabi"),
     {
       ...process.env,
       CARGO_TARGET_DIR: rustTarget,

@@ -1,0 +1,78 @@
+name: Native C harness
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/native-c-harness.yml"
+      - "engine/quickjs-c/**"
+      - "engine/ui-cabi/**"
+      - "engine/core/**"
+      - "framework/src/**"
+      - "framework/compiler/**"
+      - "contracts/**"
+      - "tests/fixtures/quickjs-c-harness/**"
+      - "tests/fixtures/ui-cabi-allocator/**"
+      - "tests/quickjs-c-harness.test.ts"
+      - "tests/ui-cabi-allocator.test.ts"
+      - "tests/renderer.test.ts"
+      - "tests/virtual-list.test.ts"
+      - "tests/vue-vapor-dom.test.ts"
+      - "tools/build.ts"
+      - "package.json"
+      - "bun.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/native-c-harness.yml"
+      - "engine/quickjs-c/**"
+      - "engine/ui-cabi/**"
+      - "engine/core/**"
+      - "framework/src/**"
+      - "framework/compiler/**"
+      - "contracts/**"
+      - "tests/fixtures/quickjs-c-harness/**"
+      - "tests/fixtures/ui-cabi-allocator/**"
+      - "tests/quickjs-c-harness.test.ts"
+      - "tests/ui-cabi-allocator.test.ts"
+      - "tests/renderer.test.ts"
+      - "tests/virtual-list.test.ts"
+      - "tests/vue-vapor-dom.test.ts"
+      - "tools/build.ts"
+      - "package.json"
+      - "bun.lock"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    name: C runtime + allocator (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - run: bun install --frozen-lockfile
+      - name: Install the UI C ABI's pinned nightly
+        run: |
+          toolchain=$(bun -e 'console.log(Bun.TOML.parse(await Bun.file("engine/ui-cabi/rust-toolchain.toml").text()).toolchain.channel)')
+          rustup toolchain install "$toolchain" --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine/ui-cabi
+      - name: Build renderer test styles
+        run: bun tools/build.ts hero
+      - name: Renderer and runtime stage/dispatcher contracts
+        run: bun test --conditions=browser tests/quickjs-c-harness.test.ts tests/renderer.test.ts tests/virtual-list.test.ts tests/vue-vapor-dom.test.ts
+      - name: UI singleton access and alignment policy
+        run: cargo test --locked --manifest-path engine/ui-cabi/Cargo.toml --features harness-access
+      - name: Link and execute the real C allocator
+        run: bun test tests/ui-cabi-allocator.test.ts
+      - name: Contract drift
+        run: bun tests/contract.ts

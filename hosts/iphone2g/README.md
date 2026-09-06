@@ -8,7 +8,8 @@ than the installed-system target.
 
 The host is C on purpose. Modern `ld-classic` can link ARMv6 code and stock
 ObjC libraries, but crashes while translating ObjC1 class-reference
-relocations emitted for an `@implementation`. `runtime.c` therefore registers
+relocations emitted for an `@implementation`. `hosts/ios-legacy/runtime.c`
+therefore registers
 its view and delegate through the Objective-C runtime API. It uses the 3.x
 application lifecycle and UIKit touch selectors on the current phone, while
 retaining the older 1.x event path as an ABI fallback. Device input is exposed

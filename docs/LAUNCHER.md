@@ -153,7 +153,7 @@ in-repository admission set remains unchanged.
 - **hosts/vita** — the same package-table and ops contract with a
   process-global frame/input tape across fresh guests, SELECT interception,
   CPU-oracle frozen shots, and an explicit GXM-safe guest-resource reset.
-- **hosts/symbian** — the E7 Qt process owns the fullscreen window, timer,
+- **hosts/nokia-e7** — the E7 Qt process owns the fullscreen window, timer,
   keyboard, touch stream, and catalog blob. Each switch happens after a
   synchronous presented frame, then frees the complete QuickJS realm and
   native `Ui` before the next package boots. The launcher background, frozen

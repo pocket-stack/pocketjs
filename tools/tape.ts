@@ -22,6 +22,7 @@ import { createWasmUi } from "../hosts/web/wasm-ops.js";
 import {
   expandTape,
   expandTapeAnalog,
+  expandTapeRightAnalog,
   expandTapeTouch,
   expandTapeTouchSurfaces,
   type Tape,
@@ -83,6 +84,7 @@ interface BootResult {
     touches?: readonly number[],
     hits?: readonly number[],
     touchSurfaces?: readonly number[],
+    rightAnalog?: number,
   ) => void;
   tick: () => void;
   render: () => Uint8Array;
@@ -153,6 +155,7 @@ async function cmdReplay(): Promise<void> {
   const tape = loadTape(tapePathArg);
   const masks = expandTape(tape);
   const analogs = expandTapeAnalog(tape);
+  const rightAnalogs = expandTapeRightAnalog(tape);
   const touches = expandTapeTouch(tape);
   const touchSurfaces = expandTapeTouchSurfaces(tape);
   const hashesOut = argValue("--hashes");
@@ -169,7 +172,7 @@ async function cmdReplay(): Promise<void> {
   if (pngFrames.size) mkdirSync(outdir, { recursive: true });
   const hashes: string[] = [];
   for (let f = 0; f < masks.length; f++) {
-    b.frame(masks[f], analogs[f], touches[f], undefined, touchSurfaces[f]);
+    b.frame(masks[f], analogs[f], touches[f], undefined, touchSurfaces[f], rightAnalogs[f]);
     b.tick();
     const fb = b.render();
     const h = fnv1a(fb);
@@ -206,13 +209,14 @@ async function cmdTree(): Promise<void> {
   const tape = loadTape(tapePathArg);
   const masks = expandTape(tape);
   const analogs = expandTapeAnalog(tape);
+  const rightAnalogs = expandTapeRightAnalog(tape);
   const touches = expandTapeTouch(tape);
   const touchSurfaces = expandTapeTouchSurfaces(tape);
   const at = Number(argValue("--at") ?? masks.length);
   const upTo = Math.min(at, masks.length);
   const b = await boot(app);
   for (let f = 0; f < upTo; f++) {
-    b.frame(masks[f], analogs[f], touches[f], undefined, touchSurfaces[f]);
+    b.frame(masks[f], analogs[f], touches[f], undefined, touchSurfaces[f], rightAnalogs[f]);
     b.tick();
   }
   b.outbox.length = 0;

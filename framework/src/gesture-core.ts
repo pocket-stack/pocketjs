@@ -21,11 +21,13 @@
 //     pinch even when each finger alone would satisfy a pan; two fingers
 //     travelling together (span steady, centroid moving) stay available to
 //     the pan recognizers.
-//   - Region hit-testing uses the ink-claiming hitTest op when present; a
-//     `rect` is the geometry fallback for hosts without op 27 AND the
-//     complement for ink misses inside the region (gaps between rows still
-//     pan the list). A non-null hit OUTSIDE the subtree never rect-matches —
-//     ink above the region occludes it.
+//   - Region hit-testing goes through resolveTouchHit (input.ts): the host's
+//     down-edge hit FACT first, then hitTestBounds (op 42) in preference to
+//     the ink-claiming hitTest (op 27). A `rect` is the geometry fallback for
+//     hosts with neither op AND the complement for hit misses inside the
+//     region (gaps between rows still pan the list). A non-null hit OUTSIDE
+//     the subtree never rect-matches — what paints above the region
+//     occludes it.
 //
 // The gesture layer never touches focus itself. Components translate
 // gestures into focus/press explicitly via setActiveNode()/pressNode()
@@ -112,12 +114,13 @@ export interface GesturePinch {
 }
 
 export interface GestureRegion {
-  /** Own contacts whose ink-claiming hit chain lands inside this node's
-   *  subtree (spec op 27). */
+  /** Own contacts whose resolved hit lands inside this node's subtree. The
+   *  hit comes from resolveTouchHit (input.ts): the down-edge fact, else
+   *  hitTestBounds (op 42) in preference to the ink hitTest (op 27). */
   node?: () => NodeMirror | null | undefined;
-  /** Geometry fallback: used when the host lacks hitTest, and as the
-   *  complement when the hit misses (nothing painted under the finger)
-   *  inside the region. Logical px. */
+  /** Geometry fallback: used when the host provides neither hit op, and as
+   *  the complement when the hit misses (nothing under the finger) inside
+   *  the region. Logical px. */
   rect?: () => { x: number; y: number; w: number; h: number } | null | undefined;
 }
 
@@ -494,8 +497,10 @@ function recognizePinches(): void {
       continue;
     }
 
-    // Candidate pair: the two earliest-landed contacts this recognizer still
-    // observes unclaimed. Slot order breaks downFrame ties deterministically.
+    // Candidate pair: the first two unclaimed contacts this recognizer still
+    // observes, in pool-slot order (slots are recycled lowest-free-first, so
+    // this is not necessarily the two earliest-landed contacts). Slot order
+    // makes the choice deterministic.
     let a: Track | null = null;
     let b: Track | null = null;
     for (const t of tracks) {

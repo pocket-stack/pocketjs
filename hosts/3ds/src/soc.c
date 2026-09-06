@@ -2,63 +2,67 @@
 
 #include <3ds.h>
 #include <malloc.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-/* The homebrew-conventional 1 MiB SOC service buffer (shared by every socket
- * in the process). It must be 0x1000-aligned and stays referenced by the
- * service for the process lifetime. */
 #define SOC_BUFFER_BYTES (1024u * 1024u)
-
-/* A failure is retried after a cooldown rather than latched for the boot:
- * socInit fails TRANSIENTLY on real hardware when the app starts while WiFi
- * is still re-associating (observed launching right after ftpd exited), and
- * a permanent latch turns that hiccup into a network-less process. The
- * cooldown keeps a genuinely stackless environment from re-probing a doomed
- * init every frame. */
 #define SOC_RETRY_COOLDOWN_MS 3000u
 
-static bool soc_up;
+enum { SOC_IDLE, SOC_INITIALIZING, SOC_READY };
+_Static_assert(ATOMIC_INT_LOCK_FREE == 2, "SOC requires lock-free state access");
+static _Atomic int soc_state;
+/* Only the initializer accesses these fields. Shutdown runs after all users
+ * have stopped, including the joined offload worker. */
+static bool soc_failed;
 static uint64_t soc_last_failure_ms;
 static uint32_t *soc_buffer;
 
 bool soc_ensure(char *error, size_t error_length) {
-  if (soc_up) return true;
+  int expected = SOC_IDLE;
+  if (!atomic_compare_exchange_strong(&soc_state, &expected, SOC_INITIALIZING)) {
+    if (expected == SOC_READY) return true;
+    if (error != NULL && error_length > 0)
+      snprintf(error, error_length, "SOC initialization in progress; retry pending");
+    return false;
+  }
   uint64_t now = osGetTime();
-  if (soc_last_failure_ms != 0 && now - soc_last_failure_ms < SOC_RETRY_COOLDOWN_MS) {
-    if (error != NULL && error_length > 0) {
+  if (soc_failed && now - soc_last_failure_ms < SOC_RETRY_COOLDOWN_MS) {
+    if (error != NULL && error_length > 0)
       snprintf(error, error_length, "SOC init failed recently; retry pending");
-    }
+    atomic_store(&soc_state, SOC_IDLE);
     return false;
   }
   if (soc_buffer == NULL) soc_buffer = memalign(0x1000, SOC_BUFFER_BYTES);
   if (soc_buffer == NULL) {
-    soc_last_failure_ms = now;
-    if (error != NULL && error_length > 0) {
+    if (error != NULL && error_length > 0)
       snprintf(error, error_length, "network needs a 1 MiB aligned SOC buffer");
-    }
-    return false;
+    goto failed;
   }
   Result result = socInit(soc_buffer, SOC_BUFFER_BYTES);
   if (R_FAILED(result)) {
-    soc_last_failure_ms = now;
-    if (error != NULL && error_length > 0) {
+    if (error != NULL && error_length > 0)
       snprintf(error, error_length, "socInit failed (0x%08lx)", (unsigned long)result);
-    }
-    return false;
+    goto failed;
   }
-  soc_up = true;
+  atomic_store(&soc_state, SOC_READY);
   return true;
+failed:
+  soc_failed = true;
+  soc_last_failure_ms = now;
+  atomic_store(&soc_state, SOC_IDLE);
+  return false;
 }
 
 bool soc_active(void) {
-  return soc_up;
+  return atomic_load(&soc_state) == SOC_READY;
 }
 
 void soc_shutdown(void) {
-  if (!soc_up) return;
-  socExit();
+  if (atomic_exchange(&soc_state, SOC_IDLE) == SOC_READY) socExit();
+  /* Also release a buffer retained after a failed init. */
   free(soc_buffer);
   soc_buffer = NULL;
-  soc_up = false;
+  soc_failed = false;
+  soc_last_failure_ms = 0;
 }

@@ -8,7 +8,7 @@
 //  (c) Regenerates package.json's exports block from the subpath registry
 //      (framework/compiler/subpaths.ts) and byte-compares: the npm surface
 //      can never drift from the one declaration. Fix = `bun tools/gen-exports.ts`.
-//  (d) Regenerates hosts/iphone2g/pocket_spec.h (the C input constants native
+//  (d) Regenerates contracts/generated/pocket_spec.h (the C input constants native
 //      hosts include) from spec.ts and byte-compares. Fix = `bun contracts/spec/gen-c.ts`.
 
 import { generateC } from "../contracts/spec/gen-c.ts";
@@ -52,11 +52,11 @@ check(
 
 // ---- (d) generated pocket_spec.h is in sync -----------------------------------
 
-const specHPath = new URL("../hosts/iphone2g/pocket_spec.h", import.meta.url).pathname;
+const specHPath = new URL("../contracts/generated/pocket_spec.h", import.meta.url).pathname;
 const committedHeader = await Bun.file(specHPath).text().catch(() => null);
 check(
   committedHeader !== null && committedHeader === generateC(),
-  "hosts/iphone2g/pocket_spec.h matches spec.ts",
+  "contracts/generated/pocket_spec.h matches spec.ts",
   "run `bun contracts/spec/gen-c.ts` and commit the result",
 );
 

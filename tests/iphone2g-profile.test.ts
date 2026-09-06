@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,8 +20,8 @@ const ENTRY_PATH = join(REPOSITORY, "apps/iphone2g-demo/main.tsx");
 const APP_PATH = join(REPOSITORY, "apps/iphone2g-demo/app.tsx");
 const INFO_PLIST_PATH = join(REPOSITORY, "hosts/iphone2g/Info.plist");
 const ICON_PATH = join(REPOSITORY, "hosts/iphone2g/Icon.png");
-const RUNTIME_PATH = join(REPOSITORY, "hosts/iphone2g/runtime.c");
-const POCKET_RUNTIME_PATH = join(REPOSITORY, "hosts/iphone2g/pocket_runtime.c");
+const RUNTIME_PATH = join(REPOSITORY, "hosts/ios-legacy/runtime.c");
+const POCKET_RUNTIME_PATH = join(REPOSITORY, "engine/quickjs-c/pocket_runtime.c");
 const ROOT_TSCONFIG = join(REPOSITORY, "tsconfig.json");
 const JSX_DECLARATIONS = join(REPOSITORY, "framework/src/jsx.d.ts");
 
@@ -42,7 +41,7 @@ describe("private iPhone 2G build profile", () => {
     expect(POCKET_TARGETS).not.toHaveProperty(IPHONE2G_DEV_TARGET_ID);
     expect(IPHONE2G_DEV_CONTRACTS.targets[IPHONE2G_DEV_TARGET_ID]).toEqual({
       hostAbi: IPHONE2G_DEV_HOST_ABI,
-      platform: "iphoneos",
+      platform: "ios",
       form: "takeover",
       display: {
         physicalViewport: IPHONE2G_VIEWPORT,
@@ -109,32 +108,34 @@ describe("private iPhone 2G build profile", () => {
     ).toBe(true);
   });
 
-  test("ships a precomposed skeuomorphic metal SpringBoard icon", async () => {
-    expect(
-      createHash("sha256").update(readFileSync(ICON_PATH)).digest("hex"),
-    ).toBe("198a1c3768a028d825da6b1e2213434766ad1ed0fe9c4350f901440cad062a2f");
+  test("ships a precomposed skeuomorphic SpringBoard icon", async () => {
     const image = await loadImage(ICON_PATH);
-    expect([image.width, image.height]).toEqual([59, 60]);
+    expect([image.width, image.height]).toEqual([57, 57]);
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext("2d");
     context.drawImage(image, 0, 0);
     const pixelAt = (x: number, y: number) =>
       Array.from(context.getImageData(x, y, 1, 1).data);
     const alphaAt = (x: number, y: number) => pixelAt(x, y)[3];
+    // SpringBoard on 1.x rounds nothing itself, so the artwork carries its own
+    // corners: transparent outside them, opaque everywhere inside.
     expect(alphaAt(0, 0)).toBe(0);
-    expect(alphaAt(58, 0)).toBe(0);
-    expect(alphaAt(0, 59)).toBe(0);
-    expect(alphaAt(58, 59)).toBe(0);
+    expect(alphaAt(56, 0)).toBe(0);
+    expect(alphaAt(0, 56)).toBe(0);
+    expect(alphaAt(56, 56)).toBe(0);
     expect(alphaAt(29, 29)).toBe(255);
-    expect(pixelAt(10, 48)).toEqual([5, 5, 4, 255]);
-    expect(pixelAt(29, 0)).toEqual([176, 180, 188, 255]);
-    expect(pixelAt(29, 8)).toEqual([110, 109, 109, 255]);
-    expect(pixelAt(29, 29).slice(0, 3)).toEqual([249, 249, 249]);
+    // The selected palette retains a clear yellow outline over plum.
+    const center = pixelAt(28, 48);
+    expect(center[2]).toBeGreaterThan(center[1]);
+    const shell = pixelAt(10, 29);
+    expect(shell[0]).toBeGreaterThan(200);
+    expect(shell[1]).toBeGreaterThan(170);
+    expect(shell[2]).toBeLessThan(150);
   });
 
   test("the ES 1.1 pipeline enables the fixed-function state ES 2 gets from its shader", () => {
     const es1 = readFileSync(
-      join(REPOSITORY, "engine/symbian/src/gl/es1.rs"),
+      join(REPOSITORY, "engine/ui-cabi/src/gl/es1.rs"),
       "utf8",
     );
     // Texturing is a per-unit enable in ES 1.1 and has no ES 2 equivalent, so

@@ -28,11 +28,11 @@ import {
 const REPOSITORY = fileURLToPath(new URL("../", import.meta.url));
 const MANIFEST = join(REPOSITORY, "apps/ipodtouch-demo/pocket.json");
 const ENTRY = join(REPOSITORY, "apps/ipodtouch-demo/main.tsx");
-const ICON = join(REPOSITORY, "hosts/ipodtouch/Icon.svg");
-const INFO = join(REPOSITORY, "hosts/ipodtouch/Info.plist");
-const RUNTIME = join(REPOSITORY, "hosts/ipodtouch/runtime.m");
-const SURFACE = join(REPOSITORY, "engine/apple/apple/PocketSurfaceView.m");
-const APPLE_CORE = join(REPOSITORY, "engine/apple/src/lib.rs");
+const ICON = join(REPOSITORY, "hosts/ipodtouch6/Icon.svg");
+const INFO = join(REPOSITORY, "hosts/ipodtouch6/Info.plist");
+const RUNTIME = join(REPOSITORY, "hosts/ipodtouch6/runtime.m");
+const SURFACE = join(REPOSITORY, "engine/ios/uikit/PocketSurfaceView.m");
+const APPLE_CORE = join(REPOSITORY, "engine/ios/src/lib.rs");
 const POCKET_MOD = join(REPOSITORY, "engine/crates/pocket-mod/src/lib.rs");
 const ICON_TOOL = join(REPOSITORY, "tools/ipodtouch-icon.ts");
 const TOOL = join(REPOSITORY, "tools/ipodtouch.ts");
@@ -49,7 +49,7 @@ describe("private iPod touch 6 profile", () => {
     expect(POCKET_TARGETS).not.toHaveProperty(IPODTOUCH_DEV_TARGET_ID);
     expect(IPODTOUCH_DEV_CONTRACTS.targets[IPODTOUCH_DEV_TARGET_ID]).toEqual({
       hostAbi: IPODTOUCH_DEV_HOST_ABI,
-      platform: "iphoneos",
+      platform: "ios",
       form: "takeover",
       display: {
         physicalViewport: IPODTOUCH_PHYSICAL_VIEWPORT,
@@ -107,9 +107,10 @@ describe("private iPod touch 6 profile", () => {
     expect(source).toContain('id="ios7-background"');
     expect(source).toContain('id="ios7-highlight"');
     expect(source).toContain('id="pocket-ambient"');
-    expect(source).toContain('stop-color="#05070d"');
-    expect(source).toContain('stop-color="#60a5fa"');
-    expect(source).toContain('stop-color="#22d3ee"');
+    expect(source).toContain('stop-color="#171226"');
+    expect(source).toContain('stop-color="#ffd23f"');
+    expect(source).toContain('stop-color="#ff5f9e"');
+    expect(source).toContain('stroke="#ffd23f" stroke-width="2.6"');
     expect(source).toContain('data-brand-source="site/assets/favicon.svg"');
     expect(source).toContain('transform="translate(96 96) scale(26)"');
     expect(source).toContain('<circle cx="10" cy="16" r="3.1"');
@@ -196,7 +197,7 @@ describe("private iPod touch 6 profile", () => {
     expect(tool.indexOf("await tunnel.exited")).toBeLessThan(
       tool.indexOf("new Response(tunnel.stderr"),
     );
-    expect(tool).toContain('join(REPOSITORY, "hosts/ipodtouch/Info.plist")');
+    expect(tool).toContain('join(REPOSITORY, "hosts/ipodtouch6/Info.plist")');
     expect(tool).toContain('join(REPOSITORY, "tools/ipodtouch-icon.ts")');
     expect(tool).toContain("pocketjs-ipodtouch.deploy.lock");
     expect(tool.indexOf('if mkdir \\"$lock\\"')).toBeLessThan(

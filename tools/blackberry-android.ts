@@ -115,7 +115,7 @@ const androidJar = join(
   `android-${toolchain.android.apiLevel}`,
   "android.jar",
 );
-const appHost = join(repository, "hosts/blackberry-android/app");
+const appHost = join(repository, "hosts/blackberry-classic-android/app");
 const build = join(repository, ".pocket-build/blackberry-android");
 const staging = join(build, "staging");
 const appOutput = join(repository, toolchain.app.output);
@@ -366,7 +366,7 @@ function compileActivity(): void {
     `/android-sdk/platforms/android-${toolchain.android.apiLevel}/android.jar`,
     "-d",
     "/build/classes",
-    "/repo/hosts/blackberry-android/app/src/dev/pocketstack/blackberry/PocketActivity.java",
+    "/repo/hosts/blackberry-classic-android/app/src/dev/pocketstack/blackberry/PocketActivity.java",
   ]);
   dockerJava(["jar", "cf", "/build/classes.jar", "-C", "/build/classes", "."]);
   dockerJava([
@@ -484,7 +484,7 @@ function buildRustCore(): string {
       "--target-dir",
       rustTarget,
     ],
-    join(repository, "engine/symbian"),
+    join(repository, "engine/ui-cabi"),
     {
       ...process.env,
       CARGO_PROFILE_RELEASE_LTO: "false",
@@ -548,10 +548,12 @@ function buildNativeLibrary(bundle: GuestBundle, quickJsLibrary: string, coreLib
     `-DPOCKETJS_TARGET_ID="${bundle.inputs.target}"`,
     `-DPOCKETJS_HOST_ABI=${bundle.inputs.hostAbi}`,
     `-DPOCKET_RASTER_DENSITY=${bundle.inputs.viewport.rasterDensity}`,
-    `-I${join(repository, "hosts/iphone2g")}`,
+    `-I${join(repository, "engine/quickjs-c")}`,
+    `-I${join(repository, "engine/ui-cabi/include")}`,
+    `-I${join(repository, "contracts/generated")}`,
     `-I${quickJs.source}`,
     "-c",
-    join(repository, "hosts/iphone2g/pocket_runtime.c"),
+    join(repository, "engine/quickjs-c/pocket_runtime.c"),
     "-o",
     portableRuntime,
   ]);
@@ -560,19 +562,36 @@ function buildNativeLibrary(bundle: GuestBundle, quickJsLibrary: string, coreLib
     ...cFlags,
     `-DPOCKET_LOGICAL_WIDTH=${bundle.inputs.viewport.logical[0]}`,
     `-DPOCKET_LOGICAL_HEIGHT=${bundle.inputs.viewport.logical[1]}`,
-    `-I${join(repository, "hosts/iphone2g")}`,
+    `-I${join(repository, "engine/quickjs-c")}`,
+    `-I${join(repository, "hosts/blackberry-classic")}`,
+    `-I${join(repository, "contracts/generated")}`,
     "-c",
     join(appHost, "jni/runtime.c"),
     "-o",
     androidRuntime,
   ]);
-  const sharedObjects = ["pocket_input", "rust_eh_personality"].map((name) => {
+  const sharedSources = [
+    {
+      name: "pocket_input",
+      source: join(repository, "hosts/blackberry-classic/pocket_input.c"),
+      includes: [
+        `-I${join(repository, "hosts/blackberry-classic")}`,
+        `-I${join(repository, "contracts/generated")}`,
+      ],
+    },
+    {
+      name: "rust_eh_personality",
+      source: join(repository, "engine/quickjs-c/rust_eh_personality.c"),
+      includes: [],
+    },
+  ] satisfies Array<{ name: string; source: string; includes: string[] }>;
+  const sharedObjects = sharedSources.map(({ name, source, includes }) => {
     const object = join(objects, `${name}.o`);
     mustRun(clang, [
       ...cFlags,
-      `-I${join(repository, "hosts/iphone2g")}`,
+      ...includes,
       "-c",
-      join(repository, `hosts/iphone2g/${name}.c`),
+      source,
       "-o",
       object,
     ]);

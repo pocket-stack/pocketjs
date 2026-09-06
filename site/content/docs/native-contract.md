@@ -1,23 +1,25 @@
 # Native contract
 
-Everything in PocketJS — the framework adapters, styling, animation, and input
-— ultimately drives a native, retained-mode UI tree through one small,
-synchronous op surface: `ui.*`. This page documents that surface, the runtime
-model around it, and the constraints that let the same application contract run
-through PSP, PS Vita, web, desktop, and headless hosts.
+The framework adapters, styling, animation, and input all drive one native,
+retained-mode UI tree through a single synchronous op surface: `ui.*`. This
+page documents that surface, the runtime model around it, and the constraints
+that let one application contract run on every host under `hosts/`.
 
 If you only write app code you never call these ops directly — you write [`View` / `Text` / `Image`](/docs/components/) and the renderer emits ops for you. This page is for understanding *why* the surface looks the way it does, and for anyone writing a new host.
 
 ## The shape of the contract
 
-Three rules define the whole model:
+Three rules constrain the surface:
 
 1. **Mutation-oriented.** Tree operations are immediate commands; returned node,
    texture, and animation handles are synchronous results. The few read-shaped
    diagnostics and `measureText` never expose or walk native tree structure.
-2. **Synchronous.** Each op is a single blocking FFI call. There is no command
-   buffer or async batching at this layer; framework reactivity avoids emitting
-   unchanged mutations one level up.
+2. **Synchronous.** Each op is one blocking FFI call that returns on the same
+   stack. The one batching path is `setPropBatch(records)`, an optional
+   `HostOps` method outside the numbered op table: `records` is a little-endian
+   `Float64Array` of `[nodeId, propId, value]` triples with the semantics of
+   repeated `setProp` calls. `framework/src/anim.ts` commits jump batches
+   through it and falls back to a `setProp` loop on hosts without it.
 3. **The reconciler never reads tree structure across FFI.** The renderer keeps
    a **JS mirror tree**. Parent/child/sibling and node-kind reads are plain JS
    object walks; structural writes update both mirrors.
@@ -30,32 +32,38 @@ Signatures are authoritative from `framework/src/host.ts` (`HostOps`) and `contr
 Node ids are generation-tagged positive `i32` values and reserve `0` for
 "none"; texture handles use their own 0-based or generation-tagged contracts.
 
-| # | op | signature | notes |
-|---|---|---|---|
-| 1 | `createNode` | `(type: i32) → id` | `type` is a `NODE_TYPE`: `0` view, `1` text, `2` image. Returns a fresh node id. |
-| 2 | `destroyNode` | `(id) → void` | Destroys the **whole subtree**; frees its anim tracks; clears focus if the focused node was inside. |
-| 3 | `insertBefore` | `(parent, child, anchorOr0) → void` | DOM move semantics: if `child` is already attached anywhere it is unlinked first (core tree + taffy + mirror). `anchor = 0` appends. Silently no-ops past `MAX_TREE_DEPTH` (64). |
-| 4 | `removeChild` | `(parent, child) → void` | Detaches but **keeps the node alive** — Solid may re-insert it this frame. The renderer sweep destroys it at frame end if still detached. |
-| 5 | `setStyle` | `(id, styleId) → void` | `styleId` indexes the compiled style table. `STYLE_ID_NONE` (`-1`) clears back to default. Triggers transitions (old→new animatable diff). |
-| 6 | `setProp` | `(id, propId: i32, value: f64) → void` | One dynamic prop. `propId` is a `PROP` id; colors/enums pass their `u32` bits as the number. |
-| 7 | `setText` | `(id, str) → void` | UTF-8; text nodes only. Used at node creation. |
-| 8 | `replaceText` | `(id, str) → void` | UTF-8; text nodes only. Solid universal calls this on reactive text updates. |
-| 9 | `uploadTexture` | `(buf, w, h, psm) → handle` | Dimensions power-of-two and `≤ 512`; `psm` is a `PSM` code. Bytes are copied and 16-byte aligned. Returns a **0-based** texture handle. |
-| 10 | `setImage` | `(id, texHandle) → void` | Binds a texture to an image node. `texHandle < 0` clears (handles are 0-based, so `0` is a real handle). |
-| 11 | `animate` | `(id, propId, to: f64, durMs, easing, delayMs) → animId` | `from` is the current value. `easing` is an `ENUMS.Easing` ordinal. Returns an anim id. |
-| 12 | `cancelAnim` | `(animId) → void` | Stops the track. |
-| 13 | `setFocus` | `(idOr0) → void` | Applies the `focus:` style variant natively. `0` clears focus. |
-| 14 | `loadStyles` | `(buf) → void` | **web/test hosts only.** Optional. Feeds the compiled `styles.bin`. On PSP the native binary feeds core from the pak. |
-| 15 | `loadFontAtlas` | `(buf) → void` | **web/test hosts only.** Optional. One call per baked font atlas blob. |
-| 16 | `measureText` | `(str, fontSlot) → width` | JS-side convenience returning width in px. Layout still measures natively. |
-| 17 | `setSprite` | `(id, atlas, frames, cols, step) → void` | Binds a native-ticked sprite atlas; non-positive `frames` clears it. |
-| 18–22 | `debugInspect`, `debugRectXY`, `debugRectWH`, `debugPause`, `debugStep` | debug-only | Optional DevTools inspection and pause/step surface. Hosts may omit it. |
-| 23 | `loadTileTexture` | `(pakKey, tileIndex) → handle \| -1` | Optional host extension: decode and upload one TILESET tile without moving its bytes through JS. |
-| 24 | `freeTexture` | `(handle) → void` | Optional host extension: release a generation-tagged texture handle; stale handles draw nothing. |
-| 25 | `uploadImgEntry` | `(blob) → handle \| -1` | Optional host extension: upload a complete IMG entry, including CLUT8 palette/RLE metadata. |
-| 26 | `setActive` | `(id, activeInt) → void` | Applies or clears the native `active:` style variant. Optional for legacy hosts. |
-| 45 | `hitTestAuxiliary` | `(x, y) → id` | Optional `display.auxiliary` query. Searches only painted nodes in auxiliary logical coordinates. |
-| 46 | `hitTestBoundsAuxiliary` | `(x, y) → id` | Bounds-only auxiliary query used to derive `input.touch.auxiliary` hit facts. |
+Codes 1–46 are shipped. A host installs the required core first; every other
+family is optional, gated on a capability, and feature-detected by the
+framework (`ops.hitTest?.(…)`) rather than assumed. `contracts/spec/spec.ts`
+carries a comment per op and is the only authority on argument order and edge
+cases.
+
+### Required core
+
+| codes | ops | contract |
+|---|---|---|
+| 1–4 | `createNode`, `destroyNode`, `insertBefore`, `removeChild` | `createNode(type)` takes a `NODE_TYPE`: `0` view, `1` text, `2` image, `3` surface. `destroyNode` takes the whole subtree, frees its anim tracks, and clears focus if the focused node was inside. `insertBefore` has DOM move semantics (an attached child is unlinked first; anchor `0` appends) and no-ops past `MAX_TREE_DEPTH` (64). `removeChild` detaches but **keeps the node alive** for the end-of-frame sweep. |
+| 5–8 | `setStyle`, `setProp`, `setText`, `replaceText` | `styleId` indexes the compiled style table and `STYLE_ID_NONE` (`-1`) clears to default; a swap diffs old against new to start transitions. `setProp` writes one `PROP` id as an `f64`. The two text ops are UTF-8, text nodes only; Solid universal calls `replaceText` on reactive text updates. |
+| 9–10 | `uploadTexture`, `setImage` | Dimensions power-of-two and `≤ 512`, `psm` a `PSM` code, bytes copied 16-byte aligned. Texture handles are **0-based**, so `setImage` clears on `texHandle < 0`. |
+| 11–13 | `animate`, `cancelAnim`, `setFocus` | `animate(id, propId, to, durMs, easing, delayMs)` tweens from the current value and returns an anim id; `easing` is an `ENUMS.Easing` ordinal. `setFocus(0)` clears focus, a live id applies the `focus:` variant natively. |
+| 16–17 | `measureText`, `setSprite` | `measureText(str, fontSlot)` is the JS-side width query — layout measures natively. `setSprite` binds a native-ticked sprite atlas to an image node; non-positive `frames` clears it. |
+
+### Optional families
+
+| codes | family | condition |
+|---|---|---|
+| 14–15 | `loadStyles`, `loadFontAtlas` — feed the compiled `styles.bin` and one baked atlas blob per call | Installed by the QuickJS hosts (`hosts/psp/src/ffi.rs`, `hosts/vita/src/ffi.rs`, `hosts/3ds/src/qjs.c`, `hosts/nokia-e7/runtime/main.cpp`, `engine/quickjs-c/pocket_runtime.c`) and by web/test hosts. `render()` calls them only when the host publishes no native texture table, so a console host that parses the pak natively never receives the call. |
+| 18–22 | `debugInspect`, `debugRectXY`, `debugRectWH`, `debugPause`, `debugStep` — inspect one node's world AABB, freeze the world, arm one tick | Debug-only and default-off. See [DevTools](/docs/devtools/). |
+| 23–25 | `loadTileTexture`, `freeTexture`, `uploadImgEntry` — decode one TILESET tile host-side, release a generation-tagged texture, upload a self-contained IMG entry with its CLUT8 palette and RLE flags | Native hosts implement these so tile bytes never transit the JS heap; without them `framework/src/tiles.ts` falls back to `__pak` + `uploadTexture`. |
+| 26 | `setActive` — apply or clear the native `active:` pressed variant | Hosts that predate the op lack it and pressed visuals degrade. |
+| 27–29, 42 | `hitTest`, `setCursor`, `setCursorPos`, `hitTestBounds` — hit testing plus the cursor sprite | `input.cursor` and `input.touch`. `hitTest` claims painted nodes in paint order, so pure layout containers pass through; `hitTestBounds` claims layout boxes, so a finger in a list's row gap hits the list. A host with `input.touch` resolves the bounds hit once per contact at the down edge and delivers it as `frame()` argument 4 — the guest calls the op only when that fact channel is absent. |
+| 30–33 | `svcOpen`, `svcPoll`, `svcSend`, `loadImgFile` — the companion channel: JSON lines through a tethered mailbox directory, plus side-file IMG entries read into textures without JS-heap transit | Native hosts with a tethered companion process. Apps feature-detect: a missing `svcOpen`, or one returning false, means "not tethered". |
+| 34–37 | `videoOpen`, `videoTick`, `videoTexture`, `videoClose` — a host-decoded `.pkst` pixel + PCM feed presented as one core texture and one audio channel | The same tethered hosts. `videoTick` is a bounded per-frame IO pump returning the presented source frame index. |
+| 38 | `debugStats` — one JSON snapshot of the device's diagnostic counters plus build identity: the app output name and the FNV-1a64 hash of the embedded js+pak | Hosts without counters omit it and the DevTools `stats` reply carries `null`. |
+| 39–41 | `appTable`, `appLaunch`, `appShot` — the embedded bundle table, a whole-guest switch after the current frame presents, and the texture of the frame the SELECT summon froze | Multi-app hosts only; `@pocketjs/framework/launcher` feature-detects. |
+| 43 | `wrapText` — greedy soft-wrap break columns for one line under `maxW`, as ascending UTF-16 code-unit indices | Breaks come from the same provider that measures and paints the slot; a native-text backend may install the host wrapper (gpui's `LineWrapper`) and its positions win. Without the op, apps run matching greedy rules over `measureText`. |
+| 44 | `setCompositorSurface` — bind a Pocket System package surface to a `NODE_TYPE.surface` node; the core emits `SURFACE_QUAD` in paint order with both full and clipped bounds | `ui.compositor-surfaces`. No image or texture semantics are involved; `handle < 0` clears. |
+| 45–46 | `hitTestAuxiliary`, `hitTestBoundsAuxiliary` — the twins of 27 and 42 in the auxiliary output's logical coordinates, never searching primary | `display.auxiliary`. |
 
 For the meaning of `PROP` ids, `ENUMS`, and how a `class` string becomes a `styleId`, see [Styling](/docs/styling/) and the [API reference](/docs/api/). For `animate`/`easing` semantics see [Animation](/docs/animation/).
 
@@ -80,7 +88,7 @@ id = (generation << ID_SLOT_BITS) | slot; // ID_SLOT_BITS = 20, mask 0xFFFFF
 - **slot** — index into the core's node arena (`Vec<Node>` + free list).
 - **generation** — a counter that increments every time a slot is reused.
 
-When a node is destroyed its slot returns to the free list and its generation bumps. A stale id held by JS — say a handler that fires after its node was swept — decodes to a slot whose live generation no longer matches, so the core recognizes it and the op becomes a **safe no-op** instead of corrupting a reused node. This is the same class of guard as a generational index in an ECS.
+When a node is destroyed its slot returns to the free list and its generation bumps. A stale id held by JS — say a handler that fires after its node was swept — decodes to a slot whose live generation no longer matches, so the core recognizes it and the op becomes a **safe no-op** instead of corrupting a reused node.
 
 Fixed invariants:
 
@@ -91,7 +99,7 @@ Fixed invariants:
 
 ## The JS mirror tree
 
-The renderer (`framework/src/renderer.ts`) implements Solid's universal `createRenderer` over a `NodeMirror`:
+`framework/src/renderer.ts` re-exports `renderer-solid.ts`, which implements Solid's universal `createRenderer`. The mirror tree itself — the `NodeMirror` shape, the structural mutations, and the sweep set — lives in `framework/src/native-tree.ts` and is shared with the Vue Vapor and Octane renderers:
 
 ```ts
 interface NodeMirror {
@@ -104,6 +112,9 @@ interface NodeMirror {
   onPress?: (() => void) | undefined;
 }
 ```
+
+Vue Vapor's DOM-shaped helpers add `domNodeType` / `domTag` / `domAttrs` /
+`domData` to the same object, and DevTools adds `debugName`.
 
 Every reconciler *read* resolves against this object graph:
 
@@ -133,12 +144,21 @@ misses (`missCounters.unknownClass` / `unknownTexture`) and render on. Web,
 wasm, and headless-Bun hosts are development and CI surfaces, where a silent
 wrong-color pixel is worse than a stack trace.
 
-Resolution order: an injected `HostOps` wins; otherwise `globalThis.ui`; if
-neither exists, `render()` throws. Native namespaces identify themselves with
-`__host` and `__hostAbi`. A manifest-built bundle embeds its expected target
-and ABI and refuses to mount on a mismatched or pre-contract native host.
-`__textures` remains a legacy native marker so old, non-manifest bundles keep
-working, but it cannot satisfy an embedded target contract.
+Resolution order: an injected `HostOps` wins — unless it is the same object as
+`globalThis.ui` and that namespace marks itself native, in which case the host
+stays native and non-strict. Otherwise `globalThis.ui` is taken; one that
+carries neither marker, as the web and wasm adapters publish, resolves as
+strict-injected. If neither exists, `render()` throws.
+
+A namespace marks itself native with `__host` plus `__hostAbi`, or, for hosts
+built before platform contracts, with `__textures` alone. A manifest-built
+bundle embeds its expected target and ABI and refuses to mount on a mismatch;
+`assertNativeHostContract` also compares the bundle's baked tick rate against
+the host's `ui.__tickHz` on every native mount.
+
+On ESP-IDF the namespace is installed by `pocketjs_ui_qjs` into a caller-owned
+guest and forwards each op to a caller-owned core; see
+[ESP-IDF](/docs/esp-idf/).
 
 Every host drives frames through
 `globalThis.frame(buttons, analog?, touches?, hits?, touchSurfaces?)`. Buttons use the shared PSP
@@ -160,14 +180,16 @@ hosts perform the same logical steps under a fixed-step
 read host input                     buttons + optional analog/touch snapshot
   ↓
 frame(buttons, analog?, touches?, hits?, touchSurfaces?)
-                 ── JS ──►          advance virtual time, latch input, deliver
-                                    queued effects, run app hooks + focus,
+                 ── JS ──►          advance virtual time, latch input, run
+                                    service pumps, deliver queued effects,
+                                    resolve contact lifecycles (gestures),
+                                    run app hooks + focus,
                                     then runSweep() (node reclamation) last
   ↓
 drain jobs                          while JS_ExecutePendingJob(rt, &ctx) > 0
                                     (promise microtasks — polyfilled queueMicrotask)
   ↓
-core.tick(N × 1/60)                 advance exact ticks for this virtual frame
+core.tick(N × 1/hz)                 advance exact ticks for this virtual frame
   ↓
 layout (if dirty)                   taffy re-run + text re-measure, only if a
                                     layout-dirtying prop changed
@@ -178,23 +200,29 @@ DrawList(s)                         one tree walk per resolved UI output →
 backend acquire/render/present      DrawList → GE, GXM, WGPU, or software
 ```
 
-That final backend phase is intentionally schematic. PSP pipelines the GE: it
-presents the previous list, starts the next list, and lets the GPU overlap the
-following frame's JS/core work. Vita and software hosts own different acquire
-and presentation order without changing the logical frame transaction above.
+The final phase is schematic. PSP pipelines the GE — it presents the previous
+list, starts the next, and lets the GPU overlap the following frame's JS/core
+work — while Vita and software hosts order acquire and presentation their own
+way, without changing the frame transaction above.
 
 Key properties:
 
 - **The sweep runs inside `frame()`**, as the last thing user code does — so a remove-then-reinsert within one frame (a `<For>` reorder, a `<Show>` toggle) never destroys a live node.
-- **Virtual time, fixed core ticks.** `core.tick` advances an exact number of
-  `1/60 s` ticks selected by the host simulation rate, never wall-clock time.
-  Commands from the outside world are delivered only at frame boundaries.
+- **Virtual time, fixed core ticks.** A realm declares its rate before the
+  first tick (`Ui::set_tick_rate`; `DEFAULT_TICK_HZ` is 60, `MAX_TICK_HZ` is
+  240) and keeps it for the whole run, so one tick is `1/hz s` and never
+  wall-clock time. A bundle bakes the same rate (`--hz=N`, 1 through 240) and
+  refuses to mount on a host that declares another. `core.tick` advances an
+  exact number of those ticks per virtual frame; commands from the outside
+  world are delivered only at frame boundaries.
 - **Layout is conditional.** Only a change to a layout-dirtying prop (`LAYOUT_DIRTYING` in the spec — sizes, padding, flex props, `fontSlot`/`tracking`/`lineHeight`) re-runs taffy. Transform and color changes are paint-only. Prefer transforms in animation for this reason.
-- **Backends never define UI semantics.** The Rust core produces one DrawList
-  for each resolved UI output in that output's logical coordinates. Single-screen
-  hosts consume the primary list. A host with an auxiliary display consumes a
-  second list after both roots have shared the same state update and resource
-  generation.
+- **Backends consume DrawLists.** The Rust core produces one DrawList per
+  resolved UI output, in that output's logical coordinates. Single-screen hosts
+  consume the primary list; a host with an auxiliary display consumes a second
+  after both roots have shared the same state update and resource generation.
+  The one semantic a backend can change is text: an app that enhances with
+  `text.layout.native` gets a host measurer installed before mount, and taffy
+  leaf sizes come from it ([Render backends](https://github.com/pocket-stack/pocketjs/blob/main/docs/BACKENDS.md)).
 
 In steady state — no reactive values changed — `frame()` emits **no** mutation
 ops, the sweep set is empty, and the only JS boundary crossing is the single
@@ -203,14 +231,16 @@ Everything downstream (tick, layout, draw) is Rust.
 
 ## Node reclamation
 
-Solid's reconciler calls `removeChild` for nodes that might be re-inserted the same frame (rows moving across a `<For>`, arms swapping in a `<Show>`). So `removeChild` deliberately does **not** destroy — it detaches and remembers the node in a sweep set:
+Solid's reconciler calls `removeChild` for nodes that might be re-inserted the same frame (rows moving across a `<For>`, arms swapping in a `<Show>`). So `removeChild` does **not** destroy — `removeNode` in `framework/src/native-tree.ts` detaches and remembers the node in a sweep set:
 
 ```ts
-function removeNodeImpl(parent, node) {
+export function removeNode(parent: NodeMirror, node: NodeMirror): void {
+  if (!node) return;
   notifyDetached(node);              // focus repair, before the unlink
   getOps().removeChild(parent.id, node.id);
-  unlink(node);                      // drop from mirror parent
+  unlink(node);                      // drop from the mirror parent
   sweepSet.add(node);                // reclaim at frame end unless re-attached
+  treeMutated();                     // DevTools hook + the cursor hover cache
 }
 ```
 
@@ -248,12 +278,10 @@ The fix, at a high level:
 
 Other inherited hard rules worth knowing when you touch the native side:
 
-- JS runs on the 2 MB `USER | VFPU` worker; the main stack is 256 KB. `MAX_TREE_DEPTH = 64` exists to keep recursive walks inside it.
+- JS runs on a **1 MB `USER | VFPU` worker** created in `hosts/psp/src/host.rs`; the `psp::module!` main thread has only a 256 KB stack, which QuickJS overflows while compiling a bundle. `MAX_TREE_DEPTH = 64` keeps recursive walks inside the worker stack.
 - GE buffers are 16-byte aligned with a dcache writeback per batch.
 - 2D vertex coords are `i16`; the core's CPU clip stage guarantees in-range values so the GE never wraps a coordinate.
 - Textures are power-of-two, `≤ 512` per side, sampled from main RAM.
-
-None of this is visible from app code — it is the cost of making a JSX runtime fit on the device.
 
 ## Perf budget
 

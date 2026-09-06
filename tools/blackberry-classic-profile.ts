@@ -10,8 +10,9 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
  * Private exact-device profiles for the BlackBerry Classic (SQC100).
  *
  * The Classic has two PocketJS hosts that differ only below the QuickJS
- * bridge: `hosts/blackberry-qnx` is a BlackBerry 10 Core Native application,
- * `hosts/blackberry-android` runs inside the BlackBerry 10 Android Runtime.
+ * bridge: `hosts/blackberry-classic-qnx` is a BlackBerry 10 Core Native
+ * application, while `hosts/blackberry-classic-android` runs inside the
+ * BlackBerry 10 Android Runtime.
  * Both present the same 720×720 panel, take the same keyboard, trackpad, and
  * touch input through the portable button and touch contracts, and mount the
  * same guest bundle shape, so they share one display and capability contract

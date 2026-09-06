@@ -1,21 +1,25 @@
 # Architecture
 
-PocketJS is a portable application runtime that turns modern component code
-into native pixels across radically different hardware: real Sony PSP and PS
-Vita units, PPSSPP and Vita3K, desktop and browser hosts, and headless Bun. It
-gets there with one principle:
-**one Rust core, framework-specific JS adapters, one layout engine everywhere.**
+PocketJS turns component code into native pixels through
+**one Rust core, framework-specific JS adapters, and one layout engine on every
+host.**
+
+`hosts/` holds one directory per host implementation — consoles, phones,
+e-readers, a microcontroller, desktop, browser and a headless sim. A smaller
+set of those ship as stock build targets, registered in
+`contracts/spec/platforms.ts` (`POCKET_TARGETS`); the others build through
+their own profile module or a supplied build plan. That registry is the only
+record of what a target implements, so read it rather than any list
+on this page — see [Platform contracts](/docs/platform-contracts/).
 
 The JavaScript side can be Solid, Vue Vapor, or Octane. Solid uses its
-universal renderer;
-Vue Vapor uses a Vapor renderer adapter and a tiny DOM-shaped facade for Vue's
-helpers; Octane compiles JSX and hooks to static host plans plus dynamic slots
-whose driver (`renderer-octane.ts`) targets the native tree directly, with no
-DOM shim. The rendering, layout, styling, animation, and text engine is a single
-`no_std` Rust crate (`pocketjs-core`) compiled for each host: MIPS for PSP, ARM
-for Vita, `wasm32` for browser/tests, and the desktop target for wgpu. Styling is a build-time
-[Tailwind subset](/docs/tailwind/); fonts are baked into atlases at build time.
-This page explains how the pieces fit together and why each choice was made.
+universal renderer; Vue Vapor uses a Vapor renderer adapter and a DOM-shaped
+facade for Vue's helpers; Octane compiles JSX and hooks to static host plans
+plus dynamic slots whose driver (`renderer-octane.ts`) targets the native tree
+with no DOM shim. The rendering, layout, styling, animation, and text engine is
+one `no_std` Rust crate (`pocketjs-core`) compiled for each host's target
+triple. Styling is a build-time [Tailwind subset](/docs/styling/); fonts are
+baked into atlases at build time.
 
 ## The pipeline
 
@@ -31,7 +35,7 @@ This page explains how the pieces fit together and why each choice was made.
    └──────┼──────────────────────────────────────────┘
           │
    ┌──────┴──────────────────┐   ┌──────────────────────────┐
-   │ QuickJS (PSP / Vita)    │   │ browser / desktop / Bun   │
+   │ QuickJS device hosts    │   │ browser / desktop / Bun   │
    │    framework runtime    │   │    framework runtime      │
    │      │ ui.* ops         │   │      │ same ui.* ops      │
    │      ▼                  │   │      ▼                    │
@@ -58,18 +62,24 @@ Reading it top to bottom:
    `bun tools/build.ts <app>` path remains for framework development. See
    [Build pipeline](/docs/build-pipeline/) for the two-pass details.
 3. At **runtime**, the selected framework runtime executes on whichever JS
-   engine the host provides — QuickJS on PSP/Vita, the host engine in the browser
-   or Bun — and emits mutation ops (`ui.*`) into `pocketjs-core`.
+   engine the host provides — QuickJS on the device hosts, the host engine in
+   the browser or Bun — and emits mutation ops (`ui.*`) into `pocketjs-core`.
 4. **`pocketjs-core`** owns the retained UI tree: it runs flexbox layout,
    ticks animations, measures and lays out text, and produces a flat
    **DrawList** each frame.
 5. A thin **backend** turns the DrawList into pixels: sceGu/GE on PSP,
-   vita2d/GXM on Vita, wgpu on desktop, or a deterministic software rasterizer
-   for the browser canvas and byte-exact PNG goldens.
+   vita2d/GXM on Vita, gpui on `hosts/desktop`, wgpu in the debug uihosts, and
+   the deterministic software rasterizer in `engine/core/src/raster.rs` behind
+   the browser canvas and the byte-exact PNG goldens.
 
 Everything *above* the backend follows the same contract across targets. The
 layout you see in the browser [playground](/playground/) is the same layout,
 computed by the same code, that runs on the handheld.
+
+ESP-IDF exposes the same stages as separate libraries — `pocketjs_guest`,
+`pocketjs_ui_core`, `pocketjs_ui_qjs`, `pocketjs_render_rgb565`. **Only the
+optional runner creates a task; the product BSP owns input, physical buffers,
+and presentation.** See [ESP-IDF](/docs/esp-idf/).
 
 ## Why these choices
 
@@ -86,9 +96,10 @@ animation system, `.pak` format, and native targets do not fork by framework.
 The universal renderer means Solid never touches the DOM. Instead it calls a
 small set of node operations (`createNode`, `insertBefore`, `setProperty`,
 `replaceText`, …) that PocketJS maps onto the native `ui.*` contract. Solid's
-distributed runtime references no `window`, `document`, `setTimeout`, or
-`WeakRef`; it needs only `Proxy`, `WeakMap`, and `Promise`, all of which the
-target engines provide.
+distributed runtime references no `window`, `document`, `setTimeout`,
+`WeakRef`, or `FinalizationRegistry`; it needs `Proxy`, `WeakMap`, `Promise`,
+and `queueMicrotask`, and the last of those is polyfilled onto the promise job
+queue.
 
 ### QuickJS reality: ES2023, minus timers
 
@@ -103,17 +114,22 @@ What is *not* there shapes the API surface:
 
 | Missing on QuickJS | Consequence |
 |---|---|
-| `queueMicrotask` | Polyfilled via `Promise.resolve().then(...)`. |
-| `setTimeout` / `MessageChannel` | No wall-clock scheduling; use [`onFrame`](/docs/animation/) / native animation instead. |
-| `performance` | No high-res timer in JS; timing is frame-index based. |
+| `queueMicrotask` | Polyfilled via `Promise.resolve().then(...)`; the host drains the promise job queue once per frame. |
+| `setTimeout` / `clearTimeout` | `framework/src/scheduler-polyfill.ts` installs both where absent — `setTimeout` **lowers to a microtask and ignores its delay**, `clearTimeout` is a no-op. There is no wall-clock scheduling; use [`onFrame`](/docs/animation/) or `after()`. |
+| `MessageChannel`, `performance` | Absent. Timing is frame-index based. |
 
-Because there is no timer or microtask *scheduler*, Solid's
-`createResource`, transitions, and `enableScheduling` are **off-limits on the
-PSP**. The compiler lints on importing them so you find out at build time, not
-on-device. Browser and Bun development builds stay inside the same syntax and
-scheduler subset. Target compatibility is checked separately from the
-manifest's required APIs and viewport contract, so (for example) a
-touch-required Vita app is rejected for PSP before compilation.
+That polyfill is the prelude for Vue Vapor (`framework/src/prelude.ts`) and is
+itself Octane's prelude, because both runtimes' scheduler modules read the
+globals at module evaluation time.
+
+Because there is no timer or microtask *scheduler*, three Solid imports are
+rejected by the compiler — `createResource`, `useTransition`, and
+`startTransition` (`BANNED_SOLID_IMPORTS` in
+`framework/compiler/jsx-plugin.ts`) — so a build fails rather than a device.
+Browser and Bun development builds stay inside the same syntax and scheduler
+subset. Target compatibility is checked separately from the manifest's required
+APIs and viewport contract, so a touch-required Vita app is rejected for PSP
+before compilation.
 
 ### taffy 0.11 for layout
 
@@ -128,29 +144,27 @@ subset — is why layout is identical on every host.
 
 `engine/core/` is a platform-agnostic `#![no_std]` + `alloc` library,
 **`pocketjs-core`**. It contains no I/O, no graphics API, and no timing — just
-the tree, layout, styling, animation, text, and DrawList generation. Thin
-wrappers give it a body:
-
-- **`pocketjs-psp`** (`hosts/psp/`) — the PSP EBOOT. It embeds QuickJS, feeds JS
-  the `ui.*` ops, and renders the DrawList through `sceGu`.
-- **`pocketjs-vita`** (`hosts/vita/`) — the PS Vita VPK host. It embeds the
-  same guest/core contract and renders native-density output through vita2d/GXM.
-- **`pocketjs-wasm`** (`engine/wasm/`) — a `wasm32-unknown-unknown` `cdylib` that wraps
-  the *same* core with a deterministic software rasterizer. This one binary
-  serves **both** the browser dev host and the headless Bun golden tests.
-- **Desktop uihosts** — native debug/custom-host crates consume the same
-  DrawList through wgpu and the stable `HostBuildInputs` projection.
-
-One layout engine, one animation clock, one text layouter — reused, never
-reimplemented per platform.
+the tree, layout, styling, animation, text, and DrawList generation. Each
+directory under `hosts/` gives it a body: it compiles the same crate for its
+target triple and supplies I/O, a JS engine, and a backend. `hosts/psp` embeds
+QuickJS and renders through `sceGu`; `engine/wasm` wraps the identical core
+with the software rasterizer in one `wasm32-unknown-unknown` cdylib that serves
+both the browser dev host and the headless Bun goldens; `hosts/desktop` drives
+gpui behind the `macos-app` and `linux-app` targets. Native hosts consume the
+same stable `HostBuildInputs` projection.
 
 ### Native animation on a fixed core clock
 
-Tweens and springs tick inside Rust in exact **`dt = 1/60 s`** steps. A 60 Hz
-host advances one core tick per virtual frame; a deliberately slower simulation
-can advance multiple ticks for that frame. JavaScript only *declares* motion (via
-[`@pocketjs/framework/animation`](/docs/animation/) or `transition-*` classes); it
-never drives it frame by frame.
+Tweens and springs tick inside Rust in exact **`dt = 1/hz s`** steps. `hz` is a
+per-realm declaration, not a constant: `engine/core/src/lib.rs` defaults to
+`DEFAULT_TICK_HZ` 60 and caps at `MAX_TICK_HZ` 240, and `Ui::set_tick_rate`
+is refused once the first `tick()` has run, so the rate is fixed for the whole
+run. A bundle bakes its rate at build time (`--hz=N`, 1 through 240) and
+refuses to mount on a host whose `ui.__tickHz` disagrees. One core tick per
+virtual frame is the common case; a slower simulation rate advances several.
+JavaScript only *declares* motion (through
+[`@pocketjs/framework/animation`](/docs/animation/) or `transition-*` classes);
+it never drives it frame by frame.
 
 Given the same build, simulation-rate policy, input tape, and frame-boundary
 effect deliveries, those discrete ticks follow the same trajectory. That is
@@ -159,16 +173,23 @@ rasterizer and the goldens agree down to the pixel.
 
 ### Baked text
 
-There are no runtime font files. At build time an `opentype.js`-based baker
-turns each glyph the app actually uses into a horizontally-supersampled, 8-bit
-coverage cell, plus proportional advances and a cmap. On device, drawing text
-means run-length-extracting the alpha coverage and batching it into GE sprites —
-no glyph rasterization at runtime. The bundled typeface is **Inter** (OFL),
-vendored under `assets/fonts/`.
-
+The portable path carries no runtime font files. At build time an
+`opentype.js`-based baker turns each glyph the app uses into a
+horizontally-supersampled 8-bit coverage cell, plus proportional advances and a
+cmap. On device, drawing text means run-length-extracting the alpha coverage
+and batching it into GE sprites, with no glyph rasterization at runtime.
 Because only the used glyphs are baked, the compiler scans your source for text
-codepoints during the build. See [Styling](/docs/styling/) and
-[Build pipeline](/docs/build-pipeline/) for how that scan works.
+codepoints during the build — see [Styling](/docs/styling/) and
+[Build pipeline](/docs/build-pipeline/).
+
+The defaults in `framework/compiler/bake-font.ts` are **Inter** for regular and
+bold and **JetBrains Mono** for the `font-mono` slots, chosen per slot at bake
+time; `assets/fonts/` also vendors InterDisplay and W95FA, and each face can be
+overridden per build. Two capabilities lift the baked-charset limit: a host
+with `text.glyphs.runtime` extends the atlases at runtime for codepoints
+outside the baked set, and one with `text.layout.native` measures and shapes
+through the host text system instead, covering whatever the OS font fallback
+chain covers.
 
 ## The three layers
 
@@ -194,131 +215,57 @@ a backend — axis-aligned quads are clipped with UV/color re-interpolation,
 rotated quads are Sutherland–Hodgman-clipped or culled.
 
 **3. The backend.** Consumes the DrawList and nothing else. PSP uses `sceGu`,
-Vita uses vita2d/GXM, desktop uses wgpu, and `wasm32` uses a scanline rasterizer
-that handles blending, gradients, and glyph coverage deterministically.
-Backends do not redefine layout, input, or styling semantics.
+Vita uses vita2d/GXM, `hosts/desktop` uses the gpui backend
+(`engine/backends/gpui`), the debug uihosts use wgpu, and `wasm32` uses a
+scanline rasterizer that handles blending, gradients, and glyph coverage
+deterministically. Backends do not redefine input or styling semantics, and
+they differ from each other in one capability alone: **who measures and
+shapes text**. An app that enhances with `text.layout.native` gets a core text
+measurer installed before the guest mounts, so taffy leaf sizes, `measureText`
+and painted glyphs all come from the host text system — layout changes with the
+backend in that one case, and only for apps that asked for it. The rest are
+byte-identical, which is what the PNG goldens pin. See
+[Render backends](https://github.com/pocket-stack/pocketjs/blob/main/docs/BACKENDS.md).
 
 The exact op signatures, node lifecycle, and per-frame ordering live on the
 [Native contract](/docs/native-contract/) page.
 
+### Modules beyond the UI
+
+The UI is one module in that shape and the other domains reuse it unchanged. A
+module is an SDK subpath, a spec, and a native core. Its capability id is the
+same string as the spec namespace and the pak prefix: `audio.pcm` means
+`globalThis.audio` is mounted and `audio:wav.` pak entries have meaning, so one
+name covers the manifest, the runtime namespace, and the asset key.
+`contracts/spec/` holds the shipped specs — `audio`, `db`, `fs`, `net`,
+`platforms`, `spec`, plus the manifest, package, system and runtime-wire files.
+They are plain TypeScript data: `gen-rust.ts` generates
+`engine/core/src/spec.rs`, `gen-c.ts` generates
+`contracts/generated/pocket_spec.h`, and `tests/contract.ts` regenerates both
+in memory and byte-compares them against the committed files, so the three
+languages cannot drift.
+
+The guest has one clock, the tick. A module whose domain cannot wait for a
+frame — real-time audio output is the shipped case — declares a native-side
+clock in its frame contract: it never calls the guest, never blocks on it, and
+batches its facts to tick boundaries for delivery. On virtual-clock hosts the
+same module consumes by a pinned per-tick formula instead of a device callback,
+so a two-clock module keeps a byte-reproducible headless test path.
+
 ## Repository layout
 
-```
-pocketjs/
-  docs/DESIGN.md, README.md
-  package.json          pinned: solid-js@^1.9, babel-preset-solid@^1.9,
-                        @babel/core@^7, @babel/preset-typescript@^7,
-                        opentype.js, typescript
-  tsconfig.json         jsx: 'preserve' (Babel owns the transform)
-  assets/fonts/         Inter-Regular.ttf, Inter-Bold.ttf (+ OFL LICENSE)
-
-  contracts/spec/
-    spec.ts             SINGLE SOURCE OF TRUTH: op codes, prop ids, enums,
-                        style-table / atlas / DrawList / pak formats
-    gen-rust.ts         codegen → engine/core/src/spec.rs (committed)
-
-  engine/core/                 Rust lib `pocketjs-core` — #![no_std] + alloc
-    framework/src/lib.rs          Ui: apply ops, tick(1/60), draw() → &DrawList
-    framework/src/spec.rs         GENERATED — drift-guarded against contracts/spec/
-    framework/src/tree.rs         node arena + free list + generation counter
-    framework/src/style.rs        style-table parse/resolve; base/focus/active variants
-    framework/src/layout.rs       taffy sync + text-measure closures + dirty tracking
-    framework/src/text.rs         atlas registry, cmap, measurement, inline-run layout
-    framework/src/anim.rs         tween/spring tracks; transitions on style swap; fixed dt
-    framework/src/draw.rs         tree walk → DrawList + CPU clip stage
-    framework/src/raster.rs       shared deterministic software rasterizer
-
-  hosts/psp/               Rust bin `pocketjs-psp` — the PSP EBOOT
-    Cargo.toml          psp, libquickjs-sys, pocketjs-core (path)
-    build.rs            embeds the app JS + app.pak
-    framework/src/main.rs         boot, vblank loop, job pump
-    framework/src/alloc.rs        #[global_allocator] backed by the arena
-    framework/src/arena.rs        single-kernel-block allocator (see Memory)
-    framework/src/ffi.rs          QuickJS ui.* bindings → core ops
-    framework/src/ge.rs           DrawList → sceGu; per-frame bump vertex arena
-    framework/src/pak.rs        native read-only .pak walker (styles/atlases/images)
-
-  hosts/vita/          Rust bin `pocketjs-vita` — the Vita VPK host
-    build.rs            consumes the same HostBuildInputs environment
-    framework/src/                QuickJS bindings + vita2d/GXM DrawList backend
-
-  engine/wasm/                 Rust cdylib `pocketjs-wasm` — core + rasterizer
-    framework/src/lib.rs          extern "C" op mirror + render() → RGBA8 480×272
-
-  framework/src/                  TS/JS runtime shared by all hosts
-    renderer.ts         Solid universal renderer; JS mirror tree; dispatch table
-    host.ts             HostOps interface + hosts/psp/injected target handshake
-    pak.ts            QuickJS-safe reader (web/test hosts)
-    input.ts            edge-detect + focus manager
-    anim.ts             animate() / spring() implementation
-    primitives.ts       lower-case host tags → View/Text/Image primitives
-    components.ts        ┐
-    animation.ts         ├ the public @pocketjs/framework/* subpath modules
-    lifecycle.ts         │   (Solid primitives are imported from solid-js)
-    input-api.ts, overlay.ts, index.ts  ┘
-    renderer-octane.ts  Octane pocket driver: host command batches → mirror tree + ui.* ops
-    components-octane.tsx, frame-octane.tsx, lifecycle-octane.ts
-                        the Octane adapter (useFrame / useButtonPress / useSpriteAnimation)
-    index-octane.ts     Octane runtime entry: render/mount; flushes Octane's
-                        microtask re-renders synchronously inside each frame
-    scheduler-polyfill.ts  microtask scheduler shim for QuickJS hosts
-
-  framework/compiler/
-    jsx-plugin.ts       babel transform (Solid, Vue Vapor or Octane) + per-file class/codepoint collection
-    vue-sfc-compile.ts  .vue → inline Vapor render function (@vue/compiler-sfc)
-    tailwind.ts         token parser → styles.bin + styles.generated.ts
-    bake-font.ts        atlas baker (charset from AST scan + ASCII)
-    pak.ts            container writer
-
-  hosts/web/             480×272 canvas playground + Bun dev server
-  apps/                hero, cards, stats, library, settings, notifications, music, gallery
-                        (each ships app.tsx plus app.vue-vapor.tsx / app.octane.tsx siblings)
-  tests/                 contract drift guard, wasm goldens, PPSSPP e2e
-  tools/              build.ts, psp.ts, dev.ts, wasm.ts
-  site/                 this documentation
-```
-
-The `contracts/spec/` directory is the seam that keeps JS and Rust honest: `spec.ts` is
-the single source of truth for every op code, property id, enum, and binary
-format, and `gen-rust.ts` generates `engine/core/src/spec.rs` from it. A contract test
-regenerates that file in memory and byte-compares it, so the two sides can never
-drift apart silently.
+One axis per top-level directory. The tree and the rule that governs it live in
+[`docs/STRUCTURE.md`](https://github.com/pocket-stack/pocketjs/blob/main/docs/STRUCTURE.md).
 
 ## Memory (PSP)
 
-The PSP build carries one hard constraint worth knowing about here. `rust-psp`'s
-default `#[global_allocator]` makes **one kernel object per allocation**, which
-caps out and crashes long before a real UI tree is built (taffy slotmaps,
-children `Vec`s, per-pass collections, the DrawList). PocketJS installs its own
-global allocator (`hosts/psp/src/alloc.rs`) backed by a single arena
-(`arena.rs`) — the *same* kernel block that QuickJS allocates from. Textures and
-retained core buffers live in that arena too. JS runs on the 2 MB `USER|VFPU`
-worker; a 2 MB margin is kept for the GE display list and stack safety.
-
-Clarification: the public "8MB RAM" line is shorthand for this PocketJS
-application arena with safety headroom, not the PSP's whole main-memory budget.
-Code and embedded `.pak`/JS bytes live in the EBOOT image, the worker stack is
-separate, and PSP display framebuffers are allocated from VRAM. On a unified
-memory machine you would add those pieces back to estimate total process memory.
-
-The full allocator setup, the per-frame vertex bump pool, and the exact PSP
-frame order are covered on the [Native contract](/docs/native-contract/) page.
-
-## Where to go next
-
-- [Platform contracts](/docs/platform-contracts/) — how an app manifest and a
-  truthful target profile become one small, checksummed build plan consumed by
-  JS and native packaging.
-- [Build pipeline](/docs/build-pipeline/) — the two-pass build, style
-  compilation, and font baking in detail.
-- [Native contract](/docs/native-contract/) — the `ui.*` ops, node lifecycle,
-  generation-tagged handles, and per-frame ordering.
-- [Frameworks](/docs/frameworks/) — Solid, Vue Vapor, and Octane selection,
-  imports, and
-  output naming.
-- [Reactivity](/docs/reactivity/) — how Solid signals and effects behave on the
-  default runtime.
-- [Styling](/docs/styling/) and [Tailwind subset](/docs/tailwind/) — the
-  supported utilities and how classes become the binary style table.
-- [Getting started](/docs/getting-started/) — build and run your first app in
-  the browser, on PSP/PPSSPP, or in Vita3K.
+The PSP build replaces `rust-psp`'s default `#[global_allocator]`, which makes
+one kernel object per allocation and caps out long before a real UI tree is
+built, with one backed by a single arena (`hosts/psp/src/alloc.rs` over
+`arena.rs`) — the same kernel block QuickJS, newlib and the core's textures and
+retained buffers all draw from. The public **8 MB** figure names that
+application arena with its safety headroom, not the PSP's whole main memory:
+code and embedded `.pak`/JS bytes live in the EBOOT image, the worker stack is
+separate, and display framebuffers come from VRAM. The allocator setup, the
+per-frame vertex bump pool, and the exact PSP frame order are on the
+[Native contract](/docs/native-contract/) page.

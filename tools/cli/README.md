@@ -16,6 +16,8 @@ pocket check --target psp --manifest apps/my-app/pocket.json
 pocket compile --target psp --manifest apps/my-app/pocket.json
 pocket build --target psp --manifest apps/my-app/pocket.json -- --release
 pocket build --target vita --manifest apps/my-app/pocket.json -- --release
+pocket build --host-profile firmware/pocket.host.json \
+  --manifest app/pocket.json --project-root app --output dist/app.pocket
 pocket play vita hero    # build, install and launch a stock demo in Vita3K
 pocket dev my-app-main   # build + serve in the browser
 pocket psp my-app        # build the PSP EBOOT
@@ -37,8 +39,8 @@ pocket devtools my-app   # DevTools panel + USB debug bridge, one command
 pocket tape replay …     # record / replay / inspect input tapes headlessly
 ```
 
-Commands run inside a PocketJS checkout (the CLI finds it by walking up from
-the current directory):
+Host-development commands run inside a PocketJS checkout (the CLI finds it by
+walking up from the current directory):
 
 ```sh
 git clone https://github.com/pocket-stack/pocketjs
@@ -52,6 +54,10 @@ requirements; the target backend consumes the resulting build plan. Arguments
 after `--` go to the selected PSP or Vita backend. The low-level `dev`, `psp`,
 `vita`, `hw`, `psplink`, `devtools`, and `tape` commands remain available for
 framework demos and host development.
+
+Manifest commands also run from an external application project that installs
+`@pocketjs/framework`. The CLI resolves the compiler from the nearest project
+`node_modules`. `POCKETJS_FRAMEWORK_ROOT` is an explicit development override.
 
 Only Node ≥ 18 is required for the CLI itself; everything it diagnoses or
 installs is for building PocketJS apps. See the

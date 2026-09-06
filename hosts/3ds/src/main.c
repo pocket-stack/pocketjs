@@ -32,6 +32,7 @@
 #include "input.h"
 #include "pocket_core.h"
 #include "qjs.h"
+#include "offload.h"
 #include "devserver.h"
 #include "devmenu.h"
 #include "runtime.h"
@@ -671,9 +672,6 @@ int main(void) {
   /* No-op on an Old 3DS; on a New 3DS it unlocks the faster clock and the
    * extra cache, which the QuickJS guest feels directly. */
   osSetSpeedupEnable(true);
-  /* ZL/ZR ride ir:rst, not the HID pad. Absent on an Old 3DS, where the
-   * buttons do not exist either. */
-  input_init();
   C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 #ifndef POCKETJS_CAPTURE
   /* Debug UI must never make an otherwise admissible guest unbootable. */
@@ -711,7 +709,7 @@ int main(void) {
   snprintf(embedded->origin, sizeof embedded->origin, "romfs:/app.pocket (recovery)");
 
   PocketRuntimeState runtime_state = {0};
-#ifndef POCKETJS_CAPTURE
+#if !defined(POCKETJS_CAPTURE) && !defined(POCKETJS_OFFLOAD)
   if (!runtime_storage_init(&runtime_state, runtime_error, sizeof runtime_error)) {
     fail(runtime_error);
   }
@@ -729,6 +727,13 @@ int main(void) {
   }
 #endif
   PocketRuntimeFailureLineage failures = {0};
+  input_init();
+#ifdef POCKETJS_OFFLOAD
+  GuestChoice guest = package_choice(embedded, 0, &runtime_state);
+  guest.commit_on_accept = false;
+  offload_start();
+  if (!boot_guest(embedded, runtime_error, sizeof runtime_error)) fail(runtime_error);
+#else
   GuestChoice guest = startup_choice(&runtime_state, embedded, &failures);
   if (!boot_with_recovery(
         &guest,
@@ -748,6 +753,7 @@ int main(void) {
     0
   );
 #endif
+#endif /* ordinary recovery boot */
 
 #ifdef POCKETJS_CAPTURE
   mkdir(CAPTURE_DIR, 0777);
@@ -762,14 +768,21 @@ int main(void) {
 
   while (aptMainLoop()) {
     hidScanInput();
-    input_scan();
 #ifdef POCKETJS_CAPTURE
     /* The tapes have no analog track: pin the stick to centre so scripted
      * runs stay deterministic. */
     int32_t buttons = scripted_buttons(frame);
     int32_t analog = ANALOG_CENTER;
+    int32_t right_analog = ANALOG_CENTER;
     uint32_t touch = 0;
     size_t touch_count = scripted_touch(frame, &touch);
+#elif defined(POCKETJS_OFFLOAD)
+    if (input_offload_exit_requested()) break;
+    int32_t buttons = input_buttons();
+    int32_t analog = input_analog();
+    int32_t right_analog = input_right_analog();
+    uint32_t touch = 0;
+    size_t touch_count = input_touch(&touch);
 #else
     if (devserver_result == DEVSERVER_ERROR && run_frame % 300 == 299) {
       /* One retry every ~5 s until the transient boot-time failure clears. */
@@ -853,10 +866,12 @@ int main(void) {
     }
     int32_t buttons = devmenu_blocks_guest ? 0 : input_buttons();
     int32_t analog = devmenu_blocks_guest ? ANALOG_CENTER : input_analog();
+    int32_t right_analog = devmenu_blocks_guest ? ANALOG_CENTER : input_right_analog();
     uint32_t touch = 0;
     size_t touch_count = devmenu_blocks_guest ? 0 : input_touch(&touch);
 #endif
 
+    u64 offload_cpu_start = svcGetSystemTick();
     int32_t touch_hit = 0;
     size_t hit_count = ui_touch_hits_auxiliary(
       touch_count > 0 ? &touch : NULL,
@@ -865,8 +880,8 @@ int main(void) {
       1
     );
     if (hit_count != touch_count) fail("auxiliary touch hit resolution failed");
-    if (!qjs_frame(buttons, analog, &touch, &touch_hit, touch_count)) {
-#ifdef POCKETJS_CAPTURE
+    if (!qjs_frame(buttons, analog, &touch, &touch_hit, touch_count, right_analog)) {
+#if defined(POCKETJS_CAPTURE) || defined(POCKETJS_OFFLOAD)
       fail(qjs_last_error());
 #else
       snprintf(runtime_error, sizeof runtime_error, "%s", qjs_last_error());
@@ -895,6 +910,7 @@ int main(void) {
     }
 #endif
 
+    u64 offload_ui_ticks = svcGetSystemTick() - offload_cpu_start;
     begin_frame_wait(
 #ifdef POCKETJS_CAPTURE
       frame
@@ -902,12 +918,13 @@ int main(void) {
       run_frame
 #endif
     );
-#ifndef POCKETJS_CAPTURE
+#if !defined(POCKETJS_CAPTURE) && !defined(POCKETJS_OFFLOAD)
     /* Reaching the next FrameBegin proves the candidate's first submitted list
      * retired without tripping the GPU watchdog. Only now does it become the
      * active generation on SD. */
     accept_guest(&guest, &runtime_state, &failures, run_frame);
 #endif
+    offload_cpu_start = svcGetSystemTick();
     gfx_begin_frame();
     if (!gfx_prepare_surface(0, ui_draw_list_ptr(), words, VIEW_W, VIEW_H) ||
         !gfx_prepare_surface(
@@ -917,7 +934,7 @@ int main(void) {
           AUX_VIEW_W,
           AUX_VIEW_H
         )) {
-#ifdef POCKETJS_CAPTURE
+#if defined(POCKETJS_CAPTURE) || defined(POCKETJS_OFFLOAD)
       fail("PICA200 surface preparation failed");
 #else
       C3D_FrameEnd(0);
@@ -947,7 +964,8 @@ int main(void) {
     C3D_SetViewport(0, 0, AUX_VIEW_H, AUX_VIEW_W);
     gfx_draw_surface(1);
     C3D_FrameEnd(0);
-#ifndef POCKETJS_CAPTURE
+    offload_measure((unsigned)((offload_ui_ticks + svcGetSystemTick() - offload_cpu_start) * 1000000 / SYSCLOCK_ARM11));
+#if !defined(POCKETJS_CAPTURE) && !defined(POCKETJS_OFFLOAD)
     guest.submitted_frames += 1;
     devserver_set_frame_stats(
       run_frame,
@@ -984,6 +1002,9 @@ int main(void) {
     }
     run_frame += 1;
 #endif
+#if defined(POCKETJS_OFFLOAD) && !defined(POCKETJS_CAPTURE)
+    run_frame += 1;
+#endif
 
 #ifdef POCKETJS_CAPTURE
     if (capture_wants(frame)) {
@@ -1018,6 +1039,8 @@ int main(void) {
     run_frame
 #endif
   );
+  offload_stop();
+  input_shutdown();
   teardown_guest();
   C3D_FrameEnd(0);
   release_choice(&guest, embedded);
@@ -1028,7 +1051,6 @@ int main(void) {
   soc_shutdown();
   devmenu_shutdown();
 #endif
-  input_shutdown();
   gfx_shutdown();
   romfsExit();
   C3D_Fini();

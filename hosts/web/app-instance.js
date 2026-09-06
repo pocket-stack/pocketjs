@@ -50,9 +50,23 @@ export async function create(options) {
   return {
     packageId: options.packageId,
     viewport,
-    step(buttons = 0) {
-      globalThis.frame(buttons, 0x8080);
+    // The guest frame signature is positional (framework/src/index.ts):
+    // frame(buttons, analog, touches?, hits?, touchSurfaces?). A parent that
+    // passes only buttons keeps the button-only contract — `undefined`
+    // touches clear the contact snapshot, exactly as a host with no panel.
+    step(buttons = 0, touches, hits, touchSurfaces) {
+      globalThis.frame(buttons, 0x8080, touches, hits, touchSurfaces);
       wasm.tick();
+    },
+    /**
+     * Bounds hit query (spec op 42) against the committed frame, so the parent
+     * can resolve a contact's DOWN-edge hit fact before the next step().
+     * Falls back to the ink query (op 27) and finally to 0 on a pocketjs.wasm
+     * predating either, which leaves the gesture layer on its rect fallback.
+     */
+    hitTestBounds(x, y) {
+      const query = wasm.ops.hitTestBounds ?? wasm.ops.hitTest;
+      return query ? query(x, y) : 0;
     },
     render() {
       return wasm.render();

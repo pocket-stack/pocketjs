@@ -55,6 +55,7 @@ describe("published npm artifacts", () => {
       "framework/compiler",
       "contracts/schema",
       "contracts/spec",
+      "contracts/generated",
       "tools",
       // The desktop benchmark's Electron/Tauri comparison apps are git-only
       // fixtures under the wholesale tools entry: their cargo target/ would
@@ -68,13 +69,15 @@ describe("published npm artifacts", () => {
       "apps/meizu-m8-demo",
       "apps/blackberry-classic-demo",
       "apps/nsengine",
-      "hosts/apple",
+      "hosts/ios-nativescript",
+      "hosts/ios-legacy",
       "hosts/iphone2g",
       "hosts/iphone4s",
-      "hosts/ipodtouch",
+      "hosts/ipodtouch6",
       "hosts/meizu-m8",
-      "hosts/blackberry-android",
-      "hosts/blackberry-qnx",
+      "hosts/blackberry-classic",
+      "hosts/blackberry-classic-android",
+      "hosts/blackberry-classic-qnx",
       "hosts/web",
       "docs/APPLE.md",
       "docs/IPHONE2G.md",
@@ -95,10 +98,11 @@ describe("published npm artifacts", () => {
       "assets/images/spinner-07.svg",
       "engine/Cargo.toml",
       "engine/Cargo.lock",
-      "engine/apple/apple",
-      "engine/apple/include",
-      "engine/apple/src",
-      "engine/apple/Cargo.toml",
+      "engine/ios/uikit",
+      "engine/ios/include",
+      "engine/ios/src",
+      "engine/ios/Cargo.toml",
+      "engine/quickjs-c",
       "engine/crates/pocket-db/src",
       "engine/crates/pocket-db/Cargo.toml",
       "engine/crates/pocket-fs/src",
@@ -119,11 +123,11 @@ describe("published npm artifacts", () => {
       "engine/core/Cargo.toml",
       "engine/wasm/src",
       "engine/wasm/Cargo.toml",
-      "engine/symbian/src",
-      "engine/symbian/targets",
-      "engine/symbian/Cargo.toml",
-      "engine/symbian/Cargo.lock",
-      "engine/symbian/rust-toolchain.toml",
+      "engine/ui-cabi/src",
+      "engine/ui-cabi/include",
+      "engine/ui-cabi/Cargo.toml",
+      "engine/ui-cabi/Cargo.lock",
+      "engine/ui-cabi/rust-toolchain.toml",
       "hosts/psp/src",
       "hosts/psp/targets",
       "hosts/psp/build.rs",
@@ -137,8 +141,9 @@ describe("published npm artifacts", () => {
       "hosts/vita/Cargo.lock",
       "hosts/vita/README.md",
       "hosts/vita/rust-toolchain.toml",
-      "hosts/symbian/probe",
-      "hosts/symbian/runtime",
+      "hosts/nokia-e7/probe",
+      "hosts/nokia-e7/runtime",
+      "hosts/nokia-e7/targets",
       "engine/pocket3d/crates/pocket3d-vita/src",
       "engine/pocket3d/crates/pocket3d-vita/examples",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.toml",
@@ -178,11 +183,11 @@ describe("published npm artifacts", () => {
       "hosts/iphone2g/device_tool.c",
       "hosts/iphone2g/armv6-apple-ios.json",
       "hosts/iphone4s/armv7-apple-ios.json",
-      "hosts/blackberry-android/app/AndroidManifest.xml",
-      "hosts/blackberry-android/app/jni/runtime.c",
-      "hosts/blackberry-qnx/main.c",
-      "hosts/blackberry-qnx/bar-descriptor.xml",
-      "hosts/blackberry-qnx/armv7-qnx-eabi.json",
+      "hosts/blackberry-classic-android/app/AndroidManifest.xml",
+      "hosts/blackberry-classic-android/app/jni/runtime.c",
+      "hosts/blackberry-classic-qnx/main.c",
+      "hosts/blackberry-classic-qnx/bar-descriptor.xml",
+      "hosts/blackberry-classic-qnx/armv7-qnx-eabi.json",
       "docs/IPHONE2G.md",
       "docs/IPHONE4S.md",
       "docs/BLACKBERRY_CLASSIC.md",
@@ -203,20 +208,25 @@ describe("published npm artifacts", () => {
       "hosts/vita/assets/sce_sys/livearea/contents/bg.png",
       "hosts/vita/assets/sce_sys/livearea/contents/startup.png",
       "hosts/vita/assets/sce_sys/livearea/contents/template.xml",
-      "hosts/symbian/probe/main.cpp",
-      "hosts/symbian/probe/pocketjs-e7-probe.pro",
-      "hosts/symbian/runtime/main.cpp",
-      "hosts/symbian/runtime/pocketjs-e7-runtime.pro",
-      "hosts/symbian/runtime/pocketjs_symbian_keys.h",
-      "engine/symbian/Cargo.toml",
-      "engine/symbian/rust-toolchain.toml",
-      "engine/symbian/src/lib.rs",
+      "hosts/nokia-e7/probe/main.cpp",
+      "hosts/nokia-e7/probe/pocketjs-e7-probe.pro",
+      "hosts/nokia-e7/runtime/main.cpp",
+      "hosts/nokia-e7/runtime/pocketjs-e7-runtime.pro",
+      "hosts/nokia-e7/runtime/pocketjs_symbian_keys.h",
+      "hosts/nokia-e7/targets/armv6-symbian-eabi.json",
+      "engine/ui-cabi/Cargo.toml",
+      "engine/ui-cabi/rust-toolchain.toml",
+      "engine/ui-cabi/src/lib.rs",
       "engine/Cargo.toml",
       "engine/Cargo.lock",
-      "engine/apple/Cargo.toml",
-      "engine/apple/apple/PocketSurfaceView.m",
-      "engine/apple/include/pocket_apple.h",
-      "engine/apple/src/lib.rs",
+      "engine/ios/Cargo.toml",
+      "engine/ios/uikit/PocketSurfaceView.m",
+      "engine/ios/include/pocket_apple.h",
+      "engine/ios/src/lib.rs",
+      "engine/quickjs-c/pocket_runtime.c",
+      "hosts/blackberry-classic/pocket_input.c",
+      "hosts/blackberry-classic/pocket_input.h",
+      "contracts/generated/pocket_spec.h",
       "engine/crates/pocket-mod/Cargo.toml",
       "engine/crates/pocket-mod/src/lib.rs",
       "engine/crates/pocket-ui-surface/Cargo.toml",
@@ -247,9 +257,9 @@ describe("published npm artifacts", () => {
       files.some((file) => /(^|\/)target\//.test(file) || file.includes(".fingerprint")),
     ).toBe(false);
     // Git-only platform integrations must not leak into the tarball.
-    expect(files).not.toContain("engine/backends/esp32p4-ppa/src/lib.rs");
+    expect(files).not.toContain("engine/backends/rgb565/src/lib.rs");
     expect(files.some((file) => file.startsWith("engine/backends/"))).toBe(false);
-    expect(files.some((file) => file.startsWith("hosts/esp32p4/"))).toBe(false);
+    expect(files.some((file) => file.startsWith("hosts/esp-idf/"))).toBe(false);
     expect(files).not.toContain("docs/SYMBIAN_E7.md");
     // The CLI toolchain pin still ships via the wholesale "tools" entry.
     expect(files).toContain("tools/cli/psp-toolchain.json");
@@ -271,7 +281,7 @@ describe("published npm artifacts", () => {
     ]);
   });
 
-  test("framework tarball resolves the Apple native workspace", () => {
+  test("framework tarball resolves the iOS native workspace", () => {
     const scratch = mkdtempSync(join(tmpdir(), "pocketjs-npm-apple-"));
     try {
       const archive = packArchive(root, scratch);

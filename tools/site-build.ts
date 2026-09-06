@@ -1,6 +1,7 @@
 // Reproducible pocketjs.dev build from a fresh checkout. Keep local preview,
 // main deploys, and tag releases on the same prerequisite chain.
 import { existsSync, writeFileSync } from "node:fs";
+import { docDemoAppsIn, resolveDocDemo } from "../site/doc-demos.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const generatedStyles = ROOT + "framework/src/styles.generated.ts";
@@ -35,6 +36,16 @@ await run("tools/wasm.ts");
 // bundles, deterministic sim-rendered covers, the launcher bundle, then
 // the packages the stage serves.
 await run("tools/launcher.ts", "pack");
+// Live docs demos: every app a `:::demo <app>` directive names under
+// site/content/docs/. site/build.ts throws when one of these is missing, so
+// the artifact chain and the directive stay in step from a fresh checkout.
+// These run BEFORE the hero build: every app build rewrites
+// framework/src/styles.generated.ts, and the last one standing is the table
+// the playground runtime bundle below is compiled against.
+for (const app of docDemoAppsIn(ROOT + "site/content/docs/")) {
+  const demo = resolveDocDemo(app);
+  await run("tools/build.ts", demo.output, `--framework=${demo.framework}`);
+}
 // Restore the site's canonical hero table for the generic browser runtime.
 await run("tools/build.ts", "hero");
 await run("site/build.ts");

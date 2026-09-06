@@ -1,7 +1,7 @@
 # Modern iOS via NativeScript
 
 `pocket ios` runs PocketJS guests on the iOS simulator inside a NativeScript
-shell app. The native core is `engine/apple` ([PR #255](https://github.com/pocket-stack/pocketjs/pull/255)):
+shell app. The native core is `engine/ios` ([PR #255](https://github.com/pocket-stack/pocketjs/pull/255)):
 the `pocket-apple` crate behind a C ABI, and `PocketSurfaceView`, a UIKit view
 driving one guest realm and one software-rastered surface per instance. The
 NativeScript side is the published
@@ -30,7 +30,7 @@ pocket ios setup     # adds the two Rust iOS targets (only needed for --rebuild-
 **An Apple Silicon Mac is required.** `PocketApple.xcframework` and the
 `@nativescript/ios-quickjs` runtime ship `ios-arm64`/`ios-arm64-simulator`
 slices only, so the shell excludes `x86_64` for simulator builds
-(`hosts/apple/ns-shell/App_Resources/iOS/build.xcconfig`). CocoaPods is not
+(`hosts/ios-nativescript/App_Resources/iOS/build.xcconfig`). CocoaPods is not
 required: neither the shell nor the plugin carries a Podfile.
 
 ## Build and run a demo
@@ -85,7 +85,7 @@ external-guest `ui` mount. `tests/ios-profile.test.ts` guards the first two.
 
 Both modes run the identical bundle; `current.json` selects the view class.
 
-## The shell (hosts/apple/ns-shell)
+## The shell (`hosts/ios-nativescript`)
 
 Authored and committed: `package.json`, `nativescript.config.ts`,
 `webpack.config.js`, `tsconfig.json`, `references.d.ts`, `src/app.ts`,
@@ -105,13 +105,13 @@ local `@nativescript/pocketjs` checkout and a local
 `@nativescript/ios-quickjs` tarball. The committed `package.json` names the
 published packages; overrides are applied for the `npm install` and the
 template is restored afterwards. With `--plugin-path`, a present
-`engine/apple/dist/PocketApple.xcframework` is copied into the local plugin
+`engine/ios/dist/PocketApple.xcframework` is copied into the local plugin
 (`--rebuild-native` rebuilds it first).
 
 ## Sources
 
-- `engine/apple/` — pocket-apple crate, `PocketSurfaceView`, `build-xcframework.sh`
+- `engine/ios/` — pocket-apple crate, `PocketSurfaceView`, `build-xcframework.sh`
 - `tools/ios.ts`, `tools/ios-profile.ts` — the CLI flow and the profile
-- `hosts/apple/ns-shell/` — the committed shell
+- `hosts/ios-nativescript/` — the committed shell
 - `apps/nsengine/` — the reference guest (service channel + platform probe)
 - [`@nativescript/pocketjs`](https://github.com/NativeScript/pocketjs) — the plugin repo

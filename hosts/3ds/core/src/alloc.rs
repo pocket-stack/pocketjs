@@ -3,7 +3,7 @@
 //!
 //! devkitARM's newlib `malloc` returns 8-byte aligned blocks, so an over-
 //! aligned Rust layout has no legal answer here and gets a null pointer
-//! (the same contract engine/symbian/src/lib.rs states for Symbian's malloc).
+//! (the same contract engine/ui-cabi/src/lib.rs states for host malloc).
 //! Nothing in pocketjs-core asks for more than 16-byte alignment through the
 //! allocator — its 16-byte-aligned texture stores are `Vec<u128>`, whose
 //! element alignment newlib does satisfy on ARM.

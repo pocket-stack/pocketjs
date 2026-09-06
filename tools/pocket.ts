@@ -4,12 +4,21 @@
 //   bun pocket compile --target psp
 //   bun pocket build --target psp -- --release
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { checkAppTypes } from "../framework/compiler/app-check.ts";
+import { depfile } from "../framework/compiler/build-inputs.ts";
 import type { PocketTargetId } from "../contracts/spec/platforms.ts";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
-import type { ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
+import { canonicalJson, type ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
+import {
+  hashPocketIdfHostProfile,
+  pocketIdfHostExtension,
+  pocketIdfHostRegistry,
+  validatePocketIdfHostProfile,
+} from "../framework/src/manifest/idf-host.ts";
+import { encodePocketPackage } from "../contracts/spec/pocket-package.ts";
+import { makeVariant } from "./pocket-pack.ts";
 
 import { fileURLToPath } from "node:url";
 
@@ -20,7 +29,9 @@ const command = argv.shift();
 function usage(message?: string): never {
   if (message) console.error(`PocketJS: ${message}`);
   console.error(
-    "usage: bun pocket <check|compile|build> --target <target> [--manifest pocket.json] [--project-root .] [--outdir dist] [-- backend args]",
+    "usage: bun pocket <check|compile|build> (--target <target> | --host-profile <pocket.host.json>) " +
+      "[--manifest pocket.json] [--project-root .] [--outdir dist] [--plan-dir .pocket] " +
+      "[--output app.pocket] [-- backend args]",
   );
   process.exit(1);
 }
@@ -39,11 +50,23 @@ function takeOption(name: string): string | undefined {
 if (command !== "check" && command !== "compile" && command !== "build") {
   usage(`unknown command ${command ?? "<missing>"}`);
 }
-const target = takeOption("target");
-if (!target) usage("--target is required");
+const targetOption = takeOption("target");
+const hostProfileOption = takeOption("host-profile");
+if (Boolean(targetOption) === Boolean(hostProfileOption)) {
+  usage("give exactly one of --target or --host-profile");
+}
 const manifestPath = resolve(takeOption("manifest") ?? "pocket.json");
 const projectRoot = resolve(takeOption("project-root") ?? dirname(manifestPath));
 const outdir = resolve(projectRoot, takeOption("outdir") ?? "dist");
+const planRoot = resolve(projectRoot, takeOption("plan-dir") ?? ".pocket");
+const outputOption = takeOption("output");
+const depfileOption = takeOption("depfile");
+const compilerReceipt = takeOption("compiler-receipt");
+if (depfileOption && (!hostProfileOption || command !== "build")) usage("--depfile requires build --host-profile");
+if (compilerReceipt && !existsSync(resolve(compilerReceipt))) usage("compiler receipt does not exist");
+if (outputOption && (!hostProfileOption || command !== "build")) {
+  usage("--output is only valid with build --host-profile");
+}
 // Backend args live strictly AFTER `--`; anything else left over is a typo.
 // (Without the separator check-first split, `argv.splice(0)` would swallow
 // unknown options into backendArgs and the guard below could never fire.)
@@ -54,7 +77,33 @@ if (argv.length > 0) usage(`unknown option ${argv[0]}`);
 
 if (!existsSync(manifestPath)) usage(`manifest not found: ${manifestPath}`);
 const manifestInput: unknown = await Bun.file(manifestPath).json();
-const resolution = validateAndResolveBuildPlan(manifestInput, { target });
+let target = targetOption ?? "";
+let tickHz = 60;
+let profileHash: string | undefined;
+let registry = undefined;
+if (hostProfileOption) {
+  const hostProfilePath = resolve(hostProfileOption);
+  if (!existsSync(hostProfilePath)) usage(`host profile not found: ${hostProfilePath}`);
+  const validated = validatePocketIdfHostProfile(await Bun.file(hostProfilePath).json());
+  if (!validated.ok) {
+    for (const diagnostic of validated.diagnostics) {
+      console.error(`${diagnostic.code} ${diagnostic.path || "/"}: ${diagnostic.message}`);
+    }
+    process.exit(1);
+  }
+  target = validated.value.id;
+  tickHz = validated.value.tickHz;
+  profileHash = hashPocketIdfHostProfile(validated.value);
+  registry = pocketIdfHostRegistry(validated.value);
+}
+const resolution = validateAndResolveBuildPlan(
+  manifestInput,
+  {
+    target,
+    ...(profileHash ? { hostExtension: pocketIdfHostExtension(profileHash, tickHz) } : {}),
+  },
+  registry,
+);
 if (!resolution.ok) {
   for (const diagnostic of resolution.diagnostics) {
     console.error(`${diagnostic.code} ${diagnostic.path || "/"}: ${diagnostic.message}`);
@@ -94,7 +143,7 @@ console.log(`✓ ResolvedBuildPlan ${plan.planHash}`);
 // compile/build pipelines that consume it.
 if (command === "check") process.exit(0);
 
-const planDirectory = resolve(projectRoot, ".pocket", target);
+const planDirectory = resolve(planRoot, target);
 const planPath = resolve(planDirectory, "plan.json");
 mkdirSync(planDirectory, { recursive: true });
 await Bun.write(planPath, JSON.stringify(plan, null, 2) + "\n");
@@ -112,11 +161,43 @@ await run(
     `--plan=${planPath}`,
     `--project-root=${projectRoot}`,
     `--outdir=${outdir}`,
+    `--hz=${tickHz}`,
+    ...(depfileOption ? [`--inputs-file=${resolve(outdir, `${plan.app.output}.inputs.json`)}`] : []),
   ],
   "PocketJS compiler",
 );
 
 if (command === "compile") process.exit(0);
+
+if (hostProfileOption) {
+  const js = new Uint8Array(readFileSync(resolve(outdir, `${plan.app.output}.js`)));
+  const pakPath = resolve(outdir, `${plan.app.output}.pak`);
+  const pak = existsSync(pakPath) ? new Uint8Array(readFileSync(pakPath)) : new Uint8Array(0);
+  const variant = makeVariant({
+    target,
+    hostAbi: plan.target.hostAbi,
+    planJson: canonicalJson(plan),
+    identity: { output: plan.app.output, id: plan.app.id, title: plan.app.title },
+    js,
+    pak,
+  });
+  const output = outputOption
+    ? resolve(projectRoot, outputOption)
+    : resolve(outdir, `${plan.app.output}.pocket`);
+  if (depfileOption) {
+    const inputs = await Bun.file(resolve(outdir, `${plan.app.output}.inputs.json`)).json() as string[];
+    await Bun.write(resolve(projectRoot, depfileOption), depfile(output, [
+      ...inputs, ...typeResult.checkedFiles.filter(file => !file.endsWith("/styles.generated.ts")),
+      manifestPath, resolve(hostProfileOption), ...(compilerReceipt ? [resolve(compilerReceipt)] : []),
+    ]));
+  }
+  await Bun.write(output, encodePocketPackage({
+    manifest: new Uint8Array(readFileSync(manifestPath)),
+    variants: [variant],
+  }));
+  console.log(`✓ ESP-IDF package ${output}`);
+  process.exit(0);
+}
 
 interface TargetBackendContext {
   readonly plan: ResolvedBuildPlan;

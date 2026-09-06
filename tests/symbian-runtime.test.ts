@@ -386,35 +386,35 @@ describe("experimental Nokia E7 runtime profile", () => {
 
   test("binds the strict target contract, live viewport, and E7 input", () => {
     const runtime = readFileSync(
-      join(repository, "hosts/symbian/runtime/main.cpp"),
+      join(repository, "hosts/nokia-e7/runtime/main.cpp"),
       "utf8",
     );
     const project = readFileSync(
-      join(repository, "hosts/symbian/runtime/pocketjs-e7-runtime.pro"),
+      join(repository, "hosts/nokia-e7/runtime/pocketjs-e7-runtime.pro"),
       "utf8",
     );
     const resources = readFileSync(
-      join(repository, "hosts/symbian/runtime/pocketjs-runtime.qrc"),
+      join(repository, "hosts/nokia-e7/runtime/pocketjs-runtime.qrc"),
       "utf8",
     );
     const coreHeader = readFileSync(
-      join(repository, "hosts/symbian/runtime/pocketjs_symbian_core.h"),
+      join(repository, "hosts/nokia-e7/runtime/pocketjs_symbian_core.h"),
       "utf8",
     );
     const coreCargo = readFileSync(
-      join(repository, "engine/symbian/Cargo.toml"),
+      join(repository, "engine/ui-cabi/Cargo.toml"),
       "utf8",
     );
     const coreSource = readFileSync(
-      join(repository, "engine/symbian/src/lib.rs"),
+      join(repository, "engine/ui-cabi/src/lib.rs"),
       "utf8",
     );
     const extensionHeader = readFileSync(
-      join(repository, "hosts/symbian/runtime/pocketjs_symbian_extension.h"),
+      join(repository, "hosts/nokia-e7/runtime/pocketjs_symbian_extension.h"),
       "utf8",
     );
     const keyHeader = readFileSync(
-      join(repository, "hosts/symbian/runtime/pocketjs_symbian_keys.h"),
+      join(repository, "hosts/nokia-e7/runtime/pocketjs_symbian_keys.h"),
       "utf8",
     );
     const orchestrator = readFileSync(
@@ -629,7 +629,7 @@ describe("experimental Nokia E7 runtime profile", () => {
       "pub extern \"C\" fn pocketjs_symbian_extension_v1()",
     );
     const extensionRust = readFileSync(
-      join(repository, "engine/symbian/src/extension.rs"),
+      join(repository, "engine/ui-cabi/src/extension.rs"),
       "utf8",
     );
     for (const [cName, rustName, bit] of [
@@ -701,7 +701,7 @@ describe("experimental Nokia E7 runtime profile", () => {
 
   test("embeds validated .pocket guests and cold-switches after presentation", () => {
     const runtime = readFileSync(
-      join(repository, "hosts/symbian/runtime/main.cpp"),
+      join(repository, "hosts/nokia-e7/runtime/main.cpp"),
       "utf8",
     );
 

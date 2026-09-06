@@ -45,7 +45,7 @@ export const ICON_LINKS = [
   `<link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152.png?v=${ICON_V}">`,
   `<link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120.png?v=${ICON_V}">`,
   '<meta name="apple-mobile-web-app-title" content="PocketJS">',
-  '<link rel="mask-icon" href="/safari-pinned-tab.svg" color="#4ef08a">',
+  '<link rel="mask-icon" href="/safari-pinned-tab.svg" color="#ffd23f">',
   '<link rel="manifest" href="/site.webmanifest">',
 ].join("\n");
 
@@ -69,16 +69,13 @@ export interface PageOpts {
   robots?: string;
 }
 
+// The nav mark, drawn inline so the shared shell needs no extra request.
+// Same geometry as site/assets/favicon.svg, which is the source of record.
 export const LOGO = `<svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-  <defs>
-    <linearGradient id="pj-shell-edge" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#eef6ff"/><stop offset="0.38" stop-color="#b7c8e2"/><stop offset="0.58" stop-color="#7487a0"/><stop offset="0.78" stop-color="#aec0d6"/><stop offset="1" stop-color="#dbe8f6"/></linearGradient>
-    <linearGradient id="pj-shell-lens" x1="7" y1="13" x2="13" y2="19" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#e4edf8"/><stop offset="0.55" stop-color="#a7b8cf"/><stop offset="1" stop-color="#53677f"/></linearGradient>
-    <linearGradient id="pj-shell-bar" x1="16" y1="12" x2="24" y2="20" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#d7e3f1"/><stop offset="1" stop-color="#71849d"/></linearGradient>
-  </defs>
-  <rect x="2" y="6" width="28" height="20" rx="6" fill="none" stroke="url(#pj-shell-edge)" stroke-width="2.6" stroke-linejoin="round"/>
-  <circle cx="10" cy="16" r="3.1" fill="url(#pj-shell-lens)"/>
-  <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="url(#pj-shell-bar)"/>
-  <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="url(#pj-shell-bar)"/>
+  <rect x="2" y="6" width="28" height="20" rx="6" fill="none" stroke="#ffd23f" stroke-width="2.6" stroke-linejoin="round"/>
+  <circle cx="10" cy="16" r="3.1" fill="#ff5f9e"/>
+  <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="#3fd0e8"/>
+  <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="#ff5f9e"/>
 </svg>`;
 
 function header(active: string): string {
@@ -174,7 +171,7 @@ export function renderPage(o: PageOpts): string {
 <meta name="twitter:title" content="${fullTitle}">
 <meta name="twitter:description" content="${desc}">
 <meta name="twitter:image" content="${OG_IMAGE_URL}">
-<meta name="theme-color" content="#05070d">
+<meta name="theme-color" content="#171226">
 ${ICON_LINKS}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

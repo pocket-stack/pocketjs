@@ -1,5 +1,13 @@
 /** Stable API for Pocket manifests and custom native hosts. */
 export {
+  POCKET_IDF_HOST_ABI,
+  POCKET_IDF_HOST_SCHEMA_ID,
+  POCKET_IDF_HOST_VERSION,
+  POCKET_IDF_UI_CAPABILITIES,
+  pocketIdfHostSchema,
+  type PocketIdfHostProfile,
+} from "../../../contracts/spec/idf-host.ts";
+export {
   POCKET_MANIFEST_SCHEMA_ID,
   POCKET_MANIFEST_VERSION,
   pocketManifestV2Schema,
@@ -50,3 +58,4 @@ export {
   type SystemResolutionResult,
 } from "./system.ts";
 export { vitaTitleId } from "./vita-package.ts";
+export { createHostExtension, isHostExtension, type HostExtension } from "./host-extension.ts";

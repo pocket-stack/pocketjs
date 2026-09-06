@@ -101,7 +101,9 @@ describe("private Nintendo 3DS build profile", () => {
         },
       },
       capabilities: [
+        "io.offload",
         "input.analog.left",
+        "input.analog.right",
         "input.buttons",
         "input.cursor",
         "input.touch.auxiliary",

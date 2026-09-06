@@ -21,7 +21,7 @@ const deviceSource = readFileSync(
   "utf8",
 );
 const pocketRuntimeSource = readFileSync(
-  join(repository, "hosts/iphone2g/pocket_runtime.c"),
+  join(repository, "engine/quickjs-c/pocket_runtime.c"),
   "utf8",
 );
 

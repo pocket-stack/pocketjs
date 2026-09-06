@@ -42,7 +42,9 @@ export const THREE_DS_DEV_CONTRACTS = definePlatformContractRegistry(
         },
       },
       capabilities: [
+        "io.offload",
         "input.analog.left",
+        "input.analog.right",
         "input.buttons",
         "input.cursor",
         "input.touch.auxiliary",

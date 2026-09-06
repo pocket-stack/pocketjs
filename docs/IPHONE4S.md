@@ -80,15 +80,16 @@ renderer, density 2, and a 640×960 drawable for the 320×480 logical viewport.*
 It fails instead of silently presenting the software rasterizer through a
 `CAEAGLLayer` when that contract cannot be established.
 
-SpringBoard artwork uses `hosts/iphone2g/Icon.png` as its single source.
-The 1× `PocketClassic-v3.png` is copied byte-for-byte. The Retina
-`PocketClassic-v3@2x.png` is independently rasterized from
-`hosts/iphone4s/Icon.svg` with 8× supersampling, retaining the original icon's
-transparent rounded corners, chrome bevel, enamel face, Pocket mark, and curved
-glass highlight without duplicating each 1× source pixel into a 2×2 block. The
-versioned basename prevents SpringBoard from reusing artwork cached under an
-older bundle resource name. `UIPrerenderedIcon` keeps iOS from adding a second
-gloss treatment.
+SpringBoard artwork is rasterized from `hosts/iphone4s/Icon.svg`. **The
+versioned `PocketClassic-v6.png` and `PocketClassic-v6@2x.png` are pre-masked
+57×57 and 114×114 images with transparent corners.** Both use 4× supersampling with alpha-weighted area
+averaging to prevent dark fringes. The selected D artwork uses a plum surface, muted yellow/pink/cyan
+mark, and continuous radial light. `UIPrerenderedIcon` prevents an additional
+system gloss layer; on the iOS 6 device it does not remove opaque pixels
+outside the baked rounded shape. The versioned basename invalidates the old icon cache.
+The same vector produces the launch-screen mark. `bun tools/device-icons.ts`
+also regenerates the separately masked iPhone 2G icon and the independent
+48×48 / 24×24 3DS icons; `--check` verifies their committed PNG bytes.
 
 `deploy` verifies the exact device identity before opening a fresh UDID-scoped
 USB tunnel. It acquires and renews a device-side lease, uses

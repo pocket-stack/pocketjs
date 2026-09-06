@@ -49,7 +49,7 @@ fi
 
 toolchain=/toolchain/current
 payload="/out/build/$app_output"
-runtime_source=/workspace/hosts/symbian/runtime
+runtime_source=/workspace/hosts/nokia-e7/runtime
 rust_library="$payload/libpocketjs_symbian_core.a"
 package_json="$payload/package.json"
 quickjs_asset="/downloads/$(jq -r .quickjs.asset "$manifest")"

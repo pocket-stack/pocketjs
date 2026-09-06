@@ -1,3 +1,5 @@
+import { isHostExtension, type HostExtension } from "./host-extension.ts";
+import { canonicalJson } from "./plan.ts";
 import {
   PRESENTATION_MODES,
   type PresentationMode,
@@ -31,6 +33,7 @@ export interface HostBuildInputs {
       readonly rasterDensity: number;
     };
   };
+  readonly hostExtension?: HostExtension;
 }
 
 export interface ExtractHostBuildInputsOptions {
@@ -82,6 +85,7 @@ function hasHostInputShape(input: unknown): input is ResolvedBuildPlan {
     (input.viewport.rasterDensity as number) > 255
   ) return false;
   if (typeof input.planHash !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.planHash)) return false;
+  if (input.hostExtension !== undefined && !isHostExtension(input.hostExtension)) return false;
   return Object.values(input.features).every((available) => typeof available === "boolean");
 }
 
@@ -132,6 +136,7 @@ export function extractHostBuildInputs(
       rasterDensity: plan.viewport.rasterDensity,
     },
     ...(plan.surfaces ? { surfaces: plan.surfaces } : {}),
+    ...(plan.hostExtension ? { hostExtension: plan.hostExtension } : {}),
   };
 }
 
@@ -161,5 +166,6 @@ export function hostBuildEnvironment(
     POCKETJS_AUX_PHYSICAL_HEIGHT: inputs.surfaces ? String(inputs.surfaces.auxiliary.physical[1]) : "",
     POCKETJS_AUX_PRESENTATION: inputs.surfaces ? inputs.surfaces.auxiliary.presentation : "",
     POCKETJS_AUX_RASTER_DENSITY: inputs.surfaces ? String(inputs.surfaces.auxiliary.rasterDensity) : "",
+    ...(inputs.hostExtension ? { POCKETJS_HOST_EXTENSION: canonicalJson(inputs.hostExtension) } : {}),
   };
 }

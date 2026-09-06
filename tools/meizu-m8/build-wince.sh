@@ -18,14 +18,15 @@ done
   -DPOCKET_BUILD_ID=\"$POCKET_BUILD_ID\" \
   -DPOCKET_LOGICAL_WIDTH=$POCKET_LOGICAL_WIDTH \
   -DPOCKET_LOGICAL_HEIGHT=$POCKET_LOGICAL_HEIGHT \
-  -I/src/hosts/iphone2g \
+  -I/src/engine/quickjs-c \
   -c /src/hosts/meizu-m8/runtime.c -o /build/objects/runtime.o
 "$CC" $COMMON -Wall -Wextra -Werror -Wno-unused-parameter \
   -DPOCKET_RUNTIME_REPORT_BOOT_STAGE=1 \
   -DPOCKETJS_TARGET_ID=\"$POCKETJS_TARGET_ID\" \
   -DPOCKETJS_HOST_ABI=$POCKETJS_HOST_ABI \
-  -I/src/hosts/iphone2g -I/build/qjs \
-  -c /src/hosts/iphone2g/pocket_runtime.c -o /build/objects/pocket_runtime.o
+  -I/src/engine/quickjs-c -I/src/engine/ui-cabi/include \
+  -I/src/contracts/generated -I/build/qjs \
+  -c /src/engine/quickjs-c/pocket_runtime.c -o /build/objects/pocket_runtime.o
 "$CC" $COMMON -Wall -Wextra -Werror \
   -c /src/hosts/meizu-m8/compat.c -o /build/objects/compat.o
 "$CC" $COMMON -Wall -Wextra -Werror \
