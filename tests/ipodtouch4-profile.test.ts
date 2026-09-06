@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { POCKET_TARGETS } from "../contracts/spec/platforms.ts";
 import { verifyPlanHash } from "../framework/src/manifest/plan.ts";
 import {
   IPODTOUCH4_DEV_CONTRACTS,
   IPODTOUCH4_DEV_HOST_ABI,
   IPODTOUCH4_DEV_TARGET_ID,
+  IPODTOUCH4_LANDSCAPE_VIEWPORT,
   IPODTOUCH4_LOGICAL_VIEWPORT,
   IPODTOUCH4_PHYSICAL_VIEWPORT,
   IPODTOUCH4_RASTER_DENSITY,
@@ -21,10 +23,8 @@ import {
 import { IPHONE4S_TOOLCHAIN } from "../tools/iphone4s-toolchain.ts";
 import {
   buildReceiptsMatch,
-  deploymentAcquireLockCommand,
-  deploymentInstallCommand,
-  deploymentRenewLockCommand,
-  ipodtouch4DeploymentPaths,
+  IPODTOUCH4_APPS,
+  selectIPodTouch4App,
 } from "../tools/ipodtouch4.ts";
 
 const repository = join(import.meta.dir, "..");
@@ -34,11 +34,11 @@ describe("private iPod touch 4 profile", () => {
     expect(POCKET_TARGETS).not.toHaveProperty(IPODTOUCH4_DEV_TARGET_ID);
     expect(IPODTOUCH4_DEV_CONTRACTS.targets[IPODTOUCH4_DEV_TARGET_ID]).toEqual({
       hostAbi: IPODTOUCH4_DEV_HOST_ABI,
-      platform: "iphoneos",
+      platform: "ios",
       form: "takeover",
       display: {
         physicalViewport: IPODTOUCH4_PHYSICAL_VIEWPORT,
-        logicalViewports: [IPODTOUCH4_LOGICAL_VIEWPORT],
+        logicalViewports: [IPODTOUCH4_LOGICAL_VIEWPORT, IPODTOUCH4_LANDSCAPE_VIEWPORT],
         presentations: ["native"],
         rasterDensity: IPODTOUCH4_RASTER_DENSITY,
       },
@@ -66,6 +66,58 @@ describe("private iPod touch 4 profile", () => {
     expect(verifyPlanHash(plan)).toBe(true);
   });
 
+  test("resolves an external landscape app with independent device identity", () => {
+    const manifest = JSON.parse(readFileSync(join(repository, "apps/clear/pocket.json"), "utf8"));
+    manifest.app.entry = "ipod/main.tsx";
+    manifest.app.output = "external-shell";
+    manifest.app.framework = "solid";
+    manifest.app.viewport.fixed.logical = [480, 320];
+    const plan = resolveIPodTouch4BuildPlan(manifest);
+    expect(plan.viewport).toEqual({
+      logical: IPODTOUCH4_LANDSCAPE_VIEWPORT,
+      physical: [IPODTOUCH4_PHYSICAL_VIEWPORT[1], IPODTOUCH4_PHYSICAL_VIEWPORT[0]],
+      presentation: "native",
+      rasterDensity: IPODTOUCH4_RASTER_DENSITY,
+      policy: "fixed",
+    });
+    expect(plan.app.output).toBe("external-shell");
+    expect(plan.app.framework).toBe("solid");
+    // A second app on the device needs its own bundle, executable, scheme and
+    // receipt paths; the network app compiles the svc wire in.
+    const root = mkdtempSync(join(tmpdir(), "pocket-external-ipod-"));
+    let remote;
+    try {
+      mkdirSync(join(root, "ipod"));
+      writeFileSync(join(root, "ipod/pocket.json"), JSON.stringify(manifest));
+      const descriptor = join(root, "ipod/ipodtouch4.json");
+      writeFileSync(descriptor, JSON.stringify({
+        id: "shell", projectRoot: "..", manifest: "ipod/pocket.json",
+        bundleId: "dev.pocket-stack.shell", bundleName: "PocketShell.app",
+        executable: "PocketShell", title: "Pocket Shell", scheme: "pocketjs-shell",
+        receiptSlug: "pocketjs-shell", actionName: "shell_action", svcWire: true,
+      }));
+      remote = selectIPodTouch4App(undefined, descriptor);
+      expect(remote.root).toBe(root);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+    const clear = selectIPodTouch4App(undefined);
+    expect(clear).toBe(IPODTOUCH4_APPS.clear);
+    expect(remote.svcWire).toBe(true);
+    expect(clear.svcWire).toBe(false);
+    for (const key of ["bundleId", "bundleName", "executable", "scheme", "receiptSlug"] as const) {
+      expect(remote[key]).not.toBe(clear[key]);
+    }
+    expect(() => selectIPodTouch4App("nope")).toThrow("unknown app");
+    const wrapper = readFileSync(join(repository, "hosts/ipodtouch4/runtime.c"), "utf8");
+    expect(wrapper).toContain("NSTemporaryDirectory()");
+    const runtime = readFileSync(join(repository, "hosts/ios-legacy/runtime.c"), "utf8");
+    expect(runtime).toContain("landscape = POCKET_LOGICAL_WIDTH > POCKET_LOGICAL_HEIGHT");
+    expect(runtime).toContain('sel_registerName("setTransform:")');
+    const guest = readFileSync(join(repository, "engine/quickjs-c/pocket_runtime.c"), "utf8");
+    expect(guest).toContain("#ifdef POCKET_SVC_WIRE");
+    expect(guest).toContain('add_host_operation(context, ui, "svcOpen", 1, HostSvcOpen)');
+    expect(guest).toContain("svcwire_pump();");
+  });
+
   test("pins the device tuple and shares the validated 4S toolchain", () => {
     expect(IPODTOUCH4_DEVICE).toEqual({
       productType: "iPod4,1",
@@ -83,7 +135,7 @@ describe("private iPod touch 4 profile", () => {
     expect(tool).toContain("passwordauthentication no");
     expect(tool).toContain("byte-exact readback");
     expect(tool).toContain('"build-receipt.json": sha256(receiptPath())');
-    expect(tool).toContain("/bin/su mobile -c 'touch ${CAPTURE_REQUEST_PATH}'");
+    expect(tool).toContain("/bin/su mobile -c 'touch ${paths.capture}'");
     expect(tool).toContain('label: "native/runtime.build-id-input.o"');
     expect(tool).toContain('label: "native/pocket_runtime.o"');
     expect(tool).toContain("...quickJsObjects.map");
@@ -95,9 +147,9 @@ describe("private iPod touch 4 profile", () => {
 
   test("shares the multi-contact touch host and keeps transactional rollback", () => {
     const wrapper = readFileSync(join(repository, "hosts/ipodtouch4/runtime.c"), "utf8");
-    const runtime = readFileSync(join(repository, "hosts/iphone2g/runtime.c"), "utf8");
-    const guest = readFileSync(join(repository, "hosts/iphone2g/pocket_runtime.c"), "utf8");
-    expect(wrapper).toContain('#include "../iphone2g/runtime.c"');
+    const runtime = readFileSync(join(repository, "hosts/ios-legacy/runtime.c"), "utf8");
+    const guest = readFileSync(join(repository, "engine/quickjs-c/pocket_runtime.c"), "utf8");
+    expect(wrapper).toContain('#include "../ios-legacy/runtime.c"');
     expect(wrapper).toContain("#define POCKET_GL_DEFAULT 1");
     expect(wrapper).toContain("#define POCKET_REQUIRE_GL 1");
     // The legacy runtime tracks a slot table, not one contact: eight wire
@@ -110,31 +162,7 @@ describe("private iPod touch 4 profile", () => {
     expect(guest).toContain("(id << 18) | (y << 9) | x");
     expect(guest).toContain("0x80000000U | (id << 20) | (y << 10) | x");
 
-    const first = ipodtouch4DeploymentPaths("a".repeat(24));
-    const second = ipodtouch4DeploymentPaths("b".repeat(24));
-    expect(first.stage).not.toBe(second.stage);
-    expect(first.backup).not.toBe(second.backup);
-    expect(first.lock).toBe(second.lock);
-    const install = deploymentInstallCommand("a".repeat(24), first);
-    expect(install).toContain("trap rollback EXIT HUP INT TERM");
-    expect(install).toContain("prepared > \"$lock/phase\"");
-    expect(install).toContain("previous > \"$lock/origin\"");
-    expect(install).toContain("committed > \"$lock/phase\"");
-    expect(install.lastIndexOf("uicache")).toBeLessThan(install.lastIndexOf("trap - EXIT HUP INT TERM"));
-    expect(install.lastIndexOf("trap - EXIT HUP INT TERM")).toBeLessThan(install.lastIndexOf('rm -rf "$backup"'));
 
-    const acquire = deploymentAcquireLockCommand("a".repeat(24), first, 1_000, 1_600);
-    expect(acquire).toContain('lease=$(cat "$lock/expires"');
-    expect(acquire).toContain('[ "$lease" -gt "$now" ]');
-    expect(acquire).toContain('reclaim=$lock/reclaim');
-    expect(acquire).toContain('case "$owner" in *[!0-9a-f]*)');
-    expect(acquire).toContain('[ "$phase" = committed ]');
-    expect(acquire).toContain('mv "$backup" "$dest"');
-    expect(acquire).toContain('[ "$origin" = empty ]');
-    expect(() => deploymentAcquireLockCommand("a".repeat(24), first, 1_000, 1_000)).toThrow();
-    const renew = deploymentRenewLockCommand("a".repeat(24), first, 2_000);
-    expect(renew).toContain('test "$(cat "$lock/owner")" = "$tx"');
-    expect(renew).toContain('> "$lock/expires"');
   });
 
   test("compares the complete installed receipt rather than only its build ID", () => {

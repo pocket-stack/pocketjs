@@ -5,7 +5,7 @@
 # layout, damage and DrawList emission, and hosts/3ds/src/gfx.c walks the
 # emitted word stream. That is why `ui_draw_list_ptr`/`ui_draw_list_len` and
 # the texture/font registry accessors exist here and not in
-# engine/symbian/src/lib.rs, whose GLES backends consume the list internally.
+# engine/ui-cabi/src/lib.rs, whose GLES backends consume the list internally.
 #
 # Standalone workspace: the armv6k-nintendo-3ds target needs nightly
 # build-std (see .cargo/config.toml) while the desktop engine workspace stays

@@ -15,7 +15,7 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
  * NativeScript layout today), so the form is "embedded": the 480x272 logical
  * viewport is fixed and the view letterboxes it with aspect-fit. The native
  * host publishes this identity via pocket_apple_set_identity
- * (engine/apple/apple/PocketSurfaceView.m), and external-guest hosts publish
+ * (engine/ios/uikit/PocketSurfaceView.m), and external-guest hosts publish
  * the same pair on the ui namespace they mount — all three must agree.
  *
  * Raster density is the surface's raster scale (PocketSurfaceView clamps

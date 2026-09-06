@@ -13,8 +13,9 @@
 //        [--tagline STR] [--brand STR] [--url STR] [--outro SECS] [--xfade SECS]
 //        [--crf N] [--preset P] [--x]
 //
-// Defaults: brand "PocketJS", tagline "Bare Metal Modern Web", url "pocketjs.dev",
-// outro 5.5s, xfade 0.8s, crf 18, preset medium. Pass --url "" to hide the url.
+// Defaults: brand "PocketJS", tagline "UI for / every kind of / computer",
+// url "pocketjs.dev", outro 5.5s, xfade 0.8s, crf 18, preset medium. Pass
+// --url "" to hide the url.
 
 import { $ } from "bun";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -24,6 +25,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HTML = resolve(HERE, "..", "assets", "outro.html");
+const FONT = resolve(HERE, "..", "assets", "VT323-Regular.ttf");
+export const DEFAULT_TAGLINE = "UI for\nevery kind of\ncomputer";
 
 type Args = {
   input: string;
@@ -46,7 +49,7 @@ function usage(): never {
       "",
       "options:",
       "  -o, --output <path>   output file (default: <input>_outro[_x].mp4 next to input)",
-      '  --tagline <str>       hero line (default: "Bare Metal Modern Web")',
+      '  --tagline <str>       hero line (default: "UI for / every kind of / computer")',
       '  --brand <str>         wordmark (default: "PocketJS")',
       '  --url <str>           footer line (default: "pocketjs.dev"; "" hides it)',
       "  --outro <secs>        end-card length (default: 5.5)",
@@ -69,7 +72,7 @@ export function parseArgs(argv: string[]): Args {
   let input: string | undefined;
   let output: string | undefined;
   let brand = "PocketJS";
-  let tagline = "Bare Metal Modern Web";
+  let tagline = DEFAULT_TAGLINE;
   let url = "pocketjs.dev";
   let outro = 5.5;
   let xfade = 0.8;
@@ -251,6 +254,7 @@ function hdrColorValue(value: string, supported: readonly string[], fallback: st
 async function main() {
   const a = parseArgs(process.argv.slice(2));
   if (!existsSync(HTML)) throw new Error(`template missing: ${HTML}`);
+  if (!existsSync(FONT)) throw new Error(`font missing: ${FONT}`);
   await $`command -v ffmpeg`.quiet().then(undefined, () => { throw new Error("ffmpeg not found on PATH"); });
   await $`command -v ffprobe`.quiet().then(undefined, () => { throw new Error("ffprobe not found on PATH"); });
 

@@ -473,6 +473,8 @@ pub mod btn {
     pub const LEFT: u32 = 0x0080;
     pub const LTRIGGER: u32 = 0x0100;
     pub const RTRIGGER: u32 = 0x0200;
+    pub const ZL: u32 = 0x0400;
+    pub const ZR: u32 = 0x0800;
     pub const TRIANGLE: u32 = 0x1000;
     pub const CIRCLE: u32 = 0x2000;
     pub const CROSS: u32 = 0x4000;

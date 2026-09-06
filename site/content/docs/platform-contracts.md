@@ -3,9 +3,7 @@
 PocketJS keeps application intent separate from host facts. An app writes
 `pocket.json`; PocketJS owns a profile for each stock target. The resolver
 combines them once, writes a small target-specific `ResolvedBuildPlan`, and all
-later build stages consume that answer. A product that runs several installed
-Pocket packages also writes `pocket.system.json`; its resolver retains one
-complete package plan per installed app in a `ResolvedSystemPlan`.
+later build stages consume that answer.
 
 ```text
   pocket.json           target profile
@@ -26,20 +24,13 @@ Cargo, packagers, and custom hosts.
 
 ## Ownership
 
-| Data                 | Owner                     | Meaning                                                                        |
-| -------------------- | ------------------------- | ------------------------------------------------------------------------------ |
-| `pocket.json`        | App                       | Entry, framework, logical viewport, required and optional APIs                 |
-| Capability registry  | PocketJS                  | Names of framework APIs that can be requested                                  |
-| Target profile       | Stock host                | Host ABI, display facts, and APIs actually implemented and tested              |
-| `ResolvedBuildPlan`  | Resolver                  | One build's target-specific inputs                                             |
-| `pocket.system.json` | Pocket System             | System manifest plus the current installation state                            |
-| `ResolvedSystemPlan` | System resolver           | Installation snapshot, System UI plan and complete installed application plans |
-| AppSupervisor        | Stock host implementation | AppInstance lifecycle and scheduling for resolved installed packages           |
-| Backend              | PocketJS or custom host   | How those inputs become an EBOOT, VPK, or another package                      |
-
-Apps never claim what a device provides. Profiles never advertise raw hardware
-specifications that the PocketJS host does not expose. Generic build stages do
-not branch on a target name after resolution.
+| Data                 | Owner                     | Meaning                                                           |
+| -------------------- | ------------------------- | ----------------------------------------------------------------- |
+| `pocket.json`        | App                       | Entry, framework, logical viewport, required and optional APIs    |
+| Capability registry  | PocketJS                  | Names of framework APIs that can be requested                     |
+| Target profile       | Stock host                | Host ABI, display facts, and APIs implemented and tested          |
+| `ResolvedBuildPlan`  | Resolver                  | One build's target-specific inputs                                |
+| Backend              | PocketJS or custom host   | How those inputs become an EBOOT, VPK, or another package         |
 
 ## Application manifest
 
@@ -128,6 +119,53 @@ facts are rejected before an application is resolved. The current package
 format uses one raster asset density for both surfaces, so both display facts
 must declare the same `rasterDensity`.
 
+## Viewport policy and companion adapters
+
+A target profile carries a `form` (`takeover`, `window`, `widget`, `kiosk`,
+`embedded`). **`window` and `widget` are the dynamic forms: their logical
+viewport is a runtime variable, and their profile must carry
+`display.dynamicViewport` with a `min`/`max` range; every other form must not.**
+An app declares viewport intent per policy rather than per target:
+
+```json
+{
+  "app": {
+    "viewport": {
+      "fixed": { "logical": [480, 272], "presentation": "integer-fit" },
+      "dynamic": { "default": [720, 480] }
+    },
+    "companions": ["note"]
+  }
+}
+```
+
+The bare `{logical, presentation}` spelling remains valid as shorthand for
+`fixed`. `resolveViewport` in `framework/src/manifest/resolve.ts` then picks
+one variant:
+
+- On a dynamic-form target it takes `dynamic.default`, which must fall inside
+  the profile's range; presentation resolves to `native` and physical size to
+  logical × `rasterDensity`. The app's own `dynamic.min`/`dynamic.max` are
+  schema-valid and unread — the admitted range belongs to the target.
+- A fixed-only app resolves on a dynamic-form target when that profile sets
+  `dynamicViewport.acceptsFixed` (`macos-app`, `linux-app`, `web-app` do;
+  `macos-widget` does not), and runs size-locked in the window.
+- A fixed-screen target rejects a dynamic-only app, and a dynamic-form target
+  without `acceptsFixed` rejects a fixed-only app, both before compilation.
+
+The plan records which one won as `viewport.policy` (`"fixed"` or `"dynamic"`),
+so a host derives size-locking from the plan and never re-reads the manifest.
+An app that must relayout on resize declares `display.viewport.live` and takes
+new sizes through the framework's `resizeViewport` hook.
+
+`app.companions` lists the exact strings the app passes to `svcOpen` — the
+service names its adapters speak. The resolver copies the list into
+`plan.companions` unchanged, and a host builds its svc allowlist from that copy
+instead of an app-name convention: `hosts/desktop` calls
+`set_svc_allowlist(plan.companions)`, and `svcOpen` denies everything else.
+**A host with no adapter for those services rejects a plan whose `companions`
+list is non-empty** rather than starting an app whose services answer false.
+
 ## What a capability means
 
 A capability means:
@@ -135,7 +173,7 @@ A capability means:
 > This stock host implements and tests this PocketJS framework API.
 
 It does not mean that hardware merely contains a component. Vita advertises
-touch only because the stock host now samples the front panel, maps contacts to
+touch because the stock host samples the front panel, maps contacts to
 logical viewport coordinates, and delivers the public `touches()` API.
 
 It also does not model mobile permissions or live device state. Those are
@@ -160,24 +198,57 @@ keep the d-pad focus walk unchanged.
 
 ## Target profiles
 
-Profiles are small, truthful records:
+`POCKET_TARGETS` in `contracts/spec/platforms.ts` registers the stock targets —
+an inventory of hosts whose profile is golden-tested, not a row for every
+directory in `hosts/`:
+
+| Target         | hostAbi | platform / form   | Logical viewport                         | Density | Capabilities |
+| -------------- | ------- | ----------------- | ---------------------------------------- | ------- | ------------ |
+| `psp`          | 1       | psp / takeover    | 480×272 (`native`, `integer-fit`)        | 1       | `input.analog.left`, `input.buttons`, `input.cursor`, `audio.pcm`, `text.glyphs.baked` |
+| `vita`         | 2       | vita / takeover   | 480×272 (`integer-fit`)                  | 2       | `input.analog.left`, `input.buttons`, `input.cursor`, `input.touch`, `text.glyphs.baked` |
+| `pocketbook`   | 5       | pocketbook / takeover | 480×272 (`integer-fit`)              | 2       | `input.buttons`, `input.touch`, `text.glyphs.baked` |
+| `macos-widget` | 3       | macos / widget    | 420×560 default, 240×180…4096×4096       | 2       | `input.buttons`, `input.ime`, `input.pointer`, `input.text`, `host.clipboard`, `display.viewport.live`, `text.glyphs.baked`, `text.glyphs.runtime` |
+| `macos-app`    | 4       | macos / window    | 720×480 default, 240×180…4096×4096, accepts fixed | 2 | `input.buttons`, `display.viewport.live`, `text.glyphs.baked`, `text.layout.native`; systemUI role adds `ui.compositor-surfaces` |
+| `linux-app`    | 4       | linux / window    | 800×600 default, 240×180…4096×4096, accepts fixed | 1 | same as `macos-app` |
+| `web-app`      | 4       | web / window      | 800×600 default, 320×240…4096×4096, accepts fixed | 1 | `input.buttons`, `display.viewport.live`, `text.glyphs.baked`; systemUI role adds `ui.compositor-surfaces` |
+
+`roleCapabilities.systemUI` is the one conditional column: those APIs reach a
+package only when it resolves in the System-UI role. `ui.compositor-surfaces`
+is the API a shell uses to place other installed packages into native
+compositor surfaces, so an ordinary application requiring it against the same
+target fails resolution.
+
+Read those facts from the registry rather than from a copy of this table: a
+target id is a label, and `platform`, `form`, and the display facts are the
+queryable fields no tooling may reconstruct by parsing an id. One profile is a
+small record:
 
 ```ts
-vita: {
-  hostAbi: 2,
+pocketbook: {
+  hostAbi: 5,
+  platform: "pocketbook",
+  form: "takeover",
   display: {
     physicalViewport: [960, 544],
     logicalViewports: [[480, 272]],
     presentations: ["integer-fit"],
     rasterDensity: 2,
   },
-  capabilities: ["input.analog.left", "input.buttons", "input.cursor", "input.touch", "text.glyphs.baked"],
+  capabilities: ["input.buttons", "input.touch", "text.glyphs.baked"],
 }
 ```
 
-DrawList is intentionally absent. It is PocketJS's internal core-to-backend IR,
-not behavior an application can observe or request. GE, GXM, WGPU, and software
-raster hosts may consume that IR while offering the same public UI semantics.
+An ESP-IDF library cannot enumerate every product board. Its firmware project
+therefore supplies a schema-validated `pocket.host.json` containing the same
+display and capability fields plus the exact tick rate. The resolver treats
+that single record as the selected target and embeds its canonical SHA-256 in
+the build plan. **The device rejects a package when the compiled host contract
+and package profile hash differ.** See [ESP-IDF](/docs/esp-idf/#host-profile).
+
+DrawList is absent from the registry. It is PocketJS's internal core-to-backend
+IR, not behavior an application can observe or request. GE, GXM, WGPU, and
+software raster hosts may consume that IR while offering the same public UI
+semantics.
 
 `rasterDensity` is also not a capability. It is a target-owned rendering fact:
 layout and DrawList coordinates remain logical, while font coverage, SVGs,
@@ -185,89 +256,30 @@ core masks, and target-selected image variants use that many raster samples per
 logical pixel. Dynamic texture producers receive the same resolved value as
 `platform.pixelRatio`; neither compiler nor application needs a Vita branch.
 
-There is no capability-parameter comparison DSL. If PocketJS later exposes a
-meaningfully different API, it can receive a new identifier once that API is
-real. The registry remains data; specialized compatibility rules should live
-with the feature that needs them, not in a universal constraint language.
+### Transitional dev targets
 
-## Pocket Systems and application instances
+`hosts/` holds more host directories than the registry holds targets. A host
+still working toward its acceptance receipt keeps its profile in its own module
+under `tools/`, builds through its own command, and stays out of
+`POCKET_TARGETS`:
 
-**A Pocket System is a product-level application and installation model.**
-Its manifest declares identity, a managed app catalog, install policy, roles
-and lifecycle policy. Each catalog entry uses `required` only as install
-policy. The separate `installation.installedPackages` snapshot records what is
-actually installed; catalog packages absent from that snapshot are available
-but do not produce plans or AppInstances. `roles.systemUI` selects the package
-whose shell is shown to users as SystemUI.
-`applications.backgroundExecution` controls whether hidden application
-instances `suspend` or `continue`; it does not describe memory residency.
+| Target id                | Command                      | What holds it out |
+| ------------------------ | ---------------------------- | ----------------- |
+| `3ds-dev`                | `bun run 3ds`                | the host suite leaves the cursor, sprite, streamed-texture and large-atlas paths uncovered |
+| `ios-dev`                | `bun run ios`                | the Apple host has no device acceptance suite yet |
+| `iphone2g-dev`           | `bun run iphone2g`           | the iPhone OS 3.1.3 host has not passed the hardware suite |
+| `iphone4s-dev`           | `bun run iphone4s`           | a private exact-device profile (iOS 6.1.3) |
+| `ipodtouch-dev`          | `bun run ipodtouch`          | no repeatable build, deploy, launch, frame and touch receipt yet |
+| `ipodtouch4-dev`         | `bun run ipodtouch4`         | a private exact-device profile (iOS 6.1.6; the 4S display tuple and ABI) |
+| `symbian-e7-dev`         | `bun run symbian`            | the E7 host has not passed the hardware acceptance suite |
+| `meizu-m8-dev`           | `bun run meizu-m8`           | the Windows CE 6 acceptance receipt has not passed |
+| `blackberry-qnx-dev`     | `bun run blackberry-qnx`     | a private exact-device profile (Classic SQC100, Core Native) |
+| `blackberry-android-dev` | `bun run blackberry-android` | the same Classic profile through the BlackBerry 10 Android Runtime |
 
-**AppSupervisor is a native-host implementation detail.** It receives the
-resolved installation snapshot and creates, schedules, suspends and destroys
-AppInstances. The System manifest does not name this implementation. A host
-may later use actors, multiple threads or processes without changing the
-System contract.
-
-`ui.compositor-surfaces` describes the API the System UI uses. The System UI
-must require it. The target declares it under
-`roleCapabilities.systemUI`, not among APIs supplied to every application.
-Ordinary installed applications therefore fail a hard requirement and resolve
-an enhancement to `false`. Each AppInstance receives its complete
-`ResolvedBuildPlan`, including target identity, feature booleans, companion
-allowlist, viewport policy, raster density and package identity.
-
-```text
-   System manifest + state      pocket.json for each installed entry
-          └──────────── resolve for one target ────────────┘
-                                │
-                                ▼
-                      ResolvedSystemPlan
-                     ├─ installation snapshot
-                     ├─ System UI ResolvedBuildPlan
-                     └─ installed app ResolvedBuildPlan[]
-                                │
-                                ▼
-                       generic native host
-                     ├─ System UI AppInstance
-                     ├─ AppSupervisor
-                     └─ native compositor
-```
-
-The shell renders `<CompositorSurface package="…">`. The framework binds it
-through the compositor namespace, and the core emits `SURFACE_QUAD` with the
-full destination, clipped destination and focused state at the node's exact
-DrawList position. **Texture handles and `TEX_QUAD` remain image-only.** The
-native compositor reads live surface bindings for AppInstance lifecycle and
-reads visible surface instructions for focus, scheduling, clipping and painter
-order. Companion services remain package-specific cold/control protocols; they
-do not carry these per-frame facts. A child companion is rejected until the
-host provides a per-AppInstance adapter.
-
-The generic macOS host discovers no desktop product names or app catalog. It
-loads the resolved Pocket System, registers its installed package ids, and
-derives each AppInstance from the nested package plan. Pocket Desktop supplies
-the Windows-style shell and icon/window behavior through its System UI package.
-
-**Package state and AppInstance state are separate transitions:**
-
-```text
-package:      available ── install ──▶ installed ── remove ──▶ available
-AppInstance:  absent ── open ──▶ Running ⇄ Suspended ── close ──▶ absent
-                                      └──── error ────▶ Failed
-
-AppInstance
-├─ ResolvedBuildPlan
-├─ Guest
-│  ├─ QuickJS Runtime
-│  └─ QuickJS Context / Realm
-├─ UiSurface
-├─ Renderer
-└─ state
-```
-
-Removing a package changes installation state. Closing a window destroys an
-AppInstance but leaves the package installed. Suspending an AppInstance stops
-its guest ticks without claiming that its memory has been evicted.
+Each module builds its own `definePlatformContractRegistry` and passes it to
+`validateAndResolveBuildPlan`, so the resolver, compiler, and plan format are
+the same as for a stock target. **Nothing generic may assume these ids exist**:
+code that walks targets walks `POCKET_TARGETS`.
 
 ## Resolution and PSP-to-Vita compatibility
 
@@ -298,7 +310,8 @@ requirement, the PSP build fails during resolution.
 
 ## The small build plan
 
-The generated plan is cross-process build IR, not public app configuration:
+The generated plan is cross-process build IR, not public app configuration.
+This is what the manifest above resolves to for `vita`:
 
 ```json
 {
@@ -318,11 +331,20 @@ The generated plan is cross-process build IR, not public app configuration:
     "rasterDensity": 2,
     "policy": "fixed"
   },
-  "features": { "input.analog.left": true },
+  "features": {
+    "input.analog.left": true,
+    "input.buttons": true,
+    "text.glyphs.baked": true
+  },
   "companions": [],
   "planHash": "sha256:…"
 }
 ```
+
+**`features` carries every declared capability, requirements included** — a
+requirement is true by construction, an enhancement reflects target
+availability — and the keys are sorted by codepoint so the pretty plan matches
+the canonical JSON the hash is taken over.
 
 Serialization matters because PocketJS crosses Bun, the JS compiler, Cargo,
 stock native crates, and downstream custom hosts. `.pocket/<target>/plan.json`
@@ -333,33 +355,38 @@ or partially copied plan and can support build caching. It is not a runtime
 compatibility hash, a signature, an attestation, or a trust chain. Application
 identity and title are present because package backends consume them; icons,
 toolchain provenance, and other fields without a real consumer do not belong
-in the plan merely to make its hash look comprehensive. The Vita backend maps
-the portable reverse-DNS app id deterministically to a nine-character title id
-instead of keeping a per-demo target table.
+in the plan merely to make its hash look comprehensive. The Vita backend
+derives a nine-character title id from the portable reverse-DNS app id instead
+of keeping a per-demo target table.
 
 ## Consumers and backend dispatch
 
-Target selection happens once at a typed backend boundary:
+`bun pocket build` reads the plan and indexes one table of native backends:
 
 ```ts
-const targetBackends = { psp: pspBackend, vita: vitaBackend }
-  satisfies Record<PocketTargetId, TargetBackend>;
+// tools/pocket.ts
+const targetBackends = {
+  psp: async ({ planPath, projectRoot, outdir, args }) => { /* tools/psp.ts */ },
+  vita: async ({ planPath, projectRoot, outdir, args }) => { /* tools/vita.ts */ },
+  pocketbook: async ({ outdir }) => { /* bundle only; the host ELF is cross-compiled */ },
+};
 
-function dispatchTarget(target: PocketTargetId, context: TargetBackendContext) {
-  return targetBackends[target](context);
-}
-
-await dispatchTarget(validatedTarget, context);
+await targetBackends[target as PocketTargetId](context);
 ```
 
-PSP and Vita still have different native commands and packages. The registry
-makes that difference explicit and exhaustive while keeping the resolver and
-compiler target-neutral. After dispatch, a backend reads resolved fields; it
-does not recalculate physical dimensions or output names from the target id.
-`validatedTarget` is the request target accepted by the registry-backed
-resolver; the serialized plan deliberately keeps its cross-process id as a
-string rather than pretending arbitrary custom-host plans share the stock
-target union.
+**That table holds three of the seven registered targets.** The desktop targets
+build through their own tools instead — `macos-app` through `tools/macos.ts`,
+`macos-widget` through `tools/note.ts` and `tools/widget.ts` — and `linux-app`
+and `web-app` have no `pocket build` path today: the plan resolves and then the
+index throws a TypeError on an undefined backend. The table carries a
+`satisfies Record<PocketTargetId, TargetBackend>` annotation it does not meet,
+and `tools/` sits outside the `tsconfig.json` include list, so no typecheck
+reports the gap.
+
+After dispatch, a backend reads resolved fields; it does not recalculate
+physical dimensions or output names from the target id. The serialized plan
+keeps its cross-process target id as a string rather than pretending arbitrary
+custom-host plans share the stock target union.
 
 The complete `ResolvedBuildPlan` is internal and may evolve. Custom hosts use
 the smaller stable boundary instead:
@@ -382,10 +409,15 @@ the shared Cargo environment without downstream code duplicating Plan parsing.
 
 ## Runtime and TypeScript checks
 
-At startup, a manifest-driven bundle verifies only the native target id and
-HostOps ABI. Those are the runtime compatibility facts. Stock builds embed the
-JS and native host together, so repeating the whole build plan as a runtime
-hash would make unrelated build metadata part of the wire contract.
+At startup, `assertNativeHostContract` compares the baked tick rate against the
+rate the host declares in `ui.__tickHz`, then the native target id, then the
+HostOps ABI. **The tick-rate check runs for every native mount, plan or no
+plan**: a bundle without an explicit `--hz` bakes 60, and a host that declares
+no `__tickHz` is read as 60, so a mismatch means the bundle's virtual time and
+the host's frame loop disagree. The target and ABI checks run only for a bundle
+that embedded a build contract. Stock builds embed the JS and native host
+together, so repeating the whole build plan as a runtime hash would make
+unrelated build metadata part of the wire contract.
 
 `bun pocket check`, `compile`, and `build` type-check the app entry and its
 reachable imports with the app's ordinary TypeScript configuration. There is
@@ -395,20 +427,3 @@ checks; the manifest provides the build-time compatibility guarantee.
 `platform.pixelRatio` is an ordinary build-defined number for code that must
 produce raster data at runtime; it does not change layout units or API
 availability.
-
-## Deliberate non-goals
-
-This contract does not currently include:
-
-- a capability-token programming model;
-- capability versions or a generic parameter constraint DSL;
-- a full-plan runtime hash, signing, or supply-chain attestation;
-- package fields whose backends do not consume them;
-- dynamic-text APIs before their host implementations exist;
-- a claim that fixed PSP/Vita profiles model dynamic mobile device conditions.
-
-Those concerns can gain separate contracts when PocketJS has concrete APIs and
-consumers for them. They do not need to complicate today's PSP/Vita build IR.
-
-Schema/resolver tests, byte-exact plan fixtures, ordinary TypeScript checks,
-native target/ABI checks, and PSP/Vita golden E2E tests cover this contract.

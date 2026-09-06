@@ -60,6 +60,24 @@ function findCheckout(from = process.cwd()) {
   }
 }
 
+/** Resolve a project-local published framework when no source checkout owns cwd. */
+function findFrameworkInstallation(from = process.cwd()) {
+  if (process.env.POCKETJS_FRAMEWORK_ROOT?.trim()) {
+    const explicit = resolve(process.env.POCKETJS_FRAMEWORK_ROOT.trim());
+    return existsSync(join(explicit, "tools", "pocket.ts")) ? explicit : null;
+  }
+  let dir = resolve(from);
+  for (;;) {
+    const candidate = join(dir, "node_modules", "@pocketjs", "framework");
+    if (existsSync(join(candidate, "package.json")) && existsSync(join(candidate, "tools", "pocket.ts"))) {
+      return candidate;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Canonical cache + doctor
 // ---------------------------------------------------------------------------
@@ -379,7 +397,24 @@ const SCRIPTS = {
 };
 
 function manifestCommand(cmd, args) {
-  passthroughScript(cmd, "tools/pocket.ts", [cmd, ...args]);
+  const root = process.env.POCKETJS_FRAMEWORK_ROOT?.trim()
+    ? findFrameworkInstallation()
+    : findCheckout() ?? findFrameworkInstallation();
+  if (!root) {
+    console.error(C.bad(
+      "PocketJS framework not found — install @pocketjs/framework in this project or set POCKETJS_FRAMEWORK_ROOT",
+    ));
+    process.exit(1);
+  }
+  if (!which("bun")) {
+    console.error(C.bad("bun not found — install Bun to compile an application package"));
+    process.exit(1);
+  }
+  const r = spawnSync("bun", [join(root, "tools/pocket.ts"), cmd, ...args], {
+    stdio: "inherit",
+    cwd: process.cwd(),
+  });
+  process.exit(r.status ?? 1);
 }
 
 function passthrough(cmd, args) {
@@ -411,9 +446,13 @@ const HELP = `${C.bold("pocket")} — the PocketJS toolchain CLI
   pocket setup [--yes]     install what doctor found missing
   pocket create <name>     scaffold a pocket.json v2 app under apps/<name>
   pocket check --target T  validate pocket.json, target APIs and app types
+  pocket check --host-profile FILE
+                           validate against an ESP-IDF product host
   pocket compile --target T
                            check + emit JS/pak from one resolved build plan
   pocket build --target T  check + compile + package PSP or Vita artifacts
+  pocket build --host-profile FILE
+                           build a .pocket for an ESP-IDF product host
   pocket play vita <app>   build, install and launch a demo in Vita3K
   pocket play ios <app>    build, stage and launch a demo on the iOS simulator
   pocket dev <app>-main    build + serve an app in the browser

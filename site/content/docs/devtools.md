@@ -4,11 +4,12 @@ Pocket DevTools is built into every bundle: a component inspector that
 highlights nodes **on the device screen** (real PSP included), pause and
 single-step for the whole world, a REPL and `console.log` from hardware, an
 always-on input-tape flight recorder, and on-demand screenshots. The design
-rests on one property: PocketJS is fixed-dt deterministic and its entire
-per-frame input is one button bitmask — so a recorded input tape replays any
-session byte-for-byte. Architecture deep-dive:
+rests on one property: the core advances virtual time in whole ticks at the
+rate the bundle was built for, and the recorder captures every input track it
+has — buttons, analog, touch — so a recorded input tape replays any session
+byte-for-byte. Architecture deep-dive:
 [the blog post](/blog/time-travel-devtools/) and
-[`docs/DEVTOOLS.md`](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md).
+[`docs/DEVTOOLS.md`](https://github.com/pocket-stack/pocketjs/blob/main/docs/DEVTOOLS.md).
 
 ## One command
 
@@ -24,14 +25,15 @@ detected and bridged into instead. Shortcuts: `o` open panel, `r` rebuild +
 relaunch, `q` quit. Also available from the CLI as `pocket devtools`.
 
 Browser-host debugging needs nothing extra — any demo loaded from the dev
-server connects to the panel automatically.
+server connects to the panel on load.
 
 ## The component tree
 
 The left panel is the live component tree. Hover a node and the region lights
-up on the device screen — the highlight is drawn by the renderer itself (four
-rectangles appended to the DrawList), so it works identically on PSP hardware,
-in the browser, and headless, and it glides between nodes as you move. Click
+up on the device screen — the highlight is drawn by the renderer itself (five
+rectangles appended to the DrawList: a `#4bb0f5` fill at ~30% alpha plus four
+solid 2 px edges), so it works the same on PSP hardware, in the browser, and
+headless, and it glides between nodes as you move. Click
 pins a node and shows its details: type, classes, text, and the world-space
 rect.
 
@@ -45,20 +47,23 @@ Name your components so the tree reads like your source:
 <Named name="MessageCard"><Card {...props} /></Named>
 ```
 
-Both are mirror-only — provably zero pixel and zero native cost (goldens are
+Both are mirror-only — zero pixel and zero native cost (goldens are
 byte-identical with and without them).
 
 ## Time travel
 
-Every bundle runs a flight recorder unconditionally: one `u16` button mask per
-frame in a 36 000-frame ring (10 minutes ≈ 72 KB). Because the runtime is
-deterministic, that tape **is** the session.
+Every bundle runs a flight recorder: two 36 000-entry
+`Uint16Array` rings, one for the button mask and one for the packed analog
+position, so **144 KB buys 36 000 frames — 10 minutes at 60 Hz**. The touch
+track is a third ring allocated on the first frame that carries contacts, so
+touch-free sessions never pay for it. Because the runtime is deterministic,
+that tape **is** the session.
 
 In the panel: **⏸ pause** freezes the entire world in the core — every
 animation, timeline and sprite clock holds, and stepping advances everything by
-exactly 1/60 s. **Load tape** renders the input activity per frame; clicking a
-frame seeks there (the browser host reloads and deterministically
-fast-forwards). **Export** downloads the tape as JSON; **Replay file…** plays
+one core tick. **Load tape** renders the input activity per frame; clicking a
+frame seeks there (the browser host reloads and replays the tape up to that
+frame). **Export** downloads the tape as JSON; **Replay file…** plays
 one back from boot.
 
 Headless, the same tape answers debugging questions from the terminal:
@@ -73,6 +78,17 @@ bun run tape tree   <app> session.tape.json --at 4120         # tree JSON at a f
 `--assert` turns a recorded session into a regression test: replay it against a
 new build and it names the exact frame where behavior changed. The repo ships
 one as a *session golden* (`bun run tape:check`).
+
+Tapes carry touch as well as buttons. `tape record` takes a `--touch` script
+alongside `--input`:
+
+```sh
+bun run tape record <app> --frames 60 --touch "12:0,240,136;20:-" --out t.json
+```
+
+Each entry is `frame:id,x,y`, `+` joins contacts that are down on the same
+frame, and `frame:-` releases. Entries are level-triggered: a contact stays
+down every frame until the next entry replaces it.
 
 ## REPL, console, errors
 
@@ -96,8 +112,9 @@ The debug channel to hardware is a file mailbox on the PSPLINK usbhostfs share
 (`host0:/pocketjs-dbg/`). The app probes for it **once at boot** — so start
 `bun run devtools` first, then (re)launch the app; without PSPLINK the probe is
 two failed file-opens and the app never touches IO again. On PSP the shim polls
-every 10 frames (~166 ms hover latency); other hosts poll every frame.
+every 10 frames (166 ms of hover latency at 60 Hz); other hosts poll every
+frame.
 
 The same mailbox works under the PPSSPP emulator: PPSSPP maps the EBOOT's own
-directory as `host0:`, which is exactly where `bun run devtools <app>` puts the
+directory as `host0:`, which is where `bun run devtools <app>` puts the
 mailbox.

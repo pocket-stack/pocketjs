@@ -228,3 +228,10 @@ scrubbing; tape frames are the P-frames) · seek-on-PSP (multiple tick-only
 steps per vblank ≈ 10× fast-forward) · tape-in-URL for the playground
 (replays as shareable content) · causality index (pixel → DrawList op → node →
 signal → input edge) · cross-device state teleport (PSP heap → browser wasm).
+
+
+The optional `rightAnalog` tape track uses the same packed coordinates and RLE
+pairs as `analog`. **Absent right-stick samples replay as centered**, including
+when live hardware moves during replay. The recorder allocates this track only
+after the first noncenter sample. The sixth frame argument carries the raw right
+stick; the touch, hit and surface arguments keep their existing positions.

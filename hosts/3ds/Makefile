@@ -50,6 +50,9 @@ OUT := $(POCKETJS_OUT_3DSX)
 # 3dsxtool reads the recovery guest out of a RomFS directory.
 ROMFS := $(BUILD)/romfs
 ICON ?= $(CURDIR)/icon.png
+# Custom large icons keep smdhtool's automatic reduction unless their caller
+# also supplies SMALL_ICON. The host default has a separate optical drawing.
+SMALL_ICON ?= $(if $(filter $(CURDIR)/icon.png,$(ICON)),$(CURDIR)/icon-small.png,)
 CIA := $(POCKETJS_OUT_CIA)
 RSF := $(CURDIR)/app.rsf
 
@@ -83,6 +86,10 @@ CFLAGS := -Wall -Wextra -O2 -g -std=gnu11 -mword-relocations -ffunction-sections
   -I$(INCLUDE_DIR) -I$(BUILD) -I$(POCKETJS_QUICKJS_DIR) \
   -I$(DEVKITPRO)/libctru/include
 
+ifeq ($(POCKETJS_OFFLOAD),1)
+CFLAGS += -DPOCKETJS_OFFLOAD -DPOCKETJS_OFFLOAD_KEY='"sdmc:/pocketjs/offload/$(POCKETJS_OFFLOAD_SLOT).key"'
+endif
+
 ifeq ($(POCKETJS_CAPTURE),1)
 CFLAGS += -DPOCKETJS_CAPTURE \
   -DPOCKETJS_CAPTURE_INPUT='"$(POCKETJS_CAPTURE_INPUT)"' \
@@ -95,7 +102,7 @@ LDFLAGS := -specs=3dsx.specs $(ARCH) -Wl,--gc-sections -Wl,-Map,$(BUILD)/pocketj
 LIBPATHS := -L$(DEVKITPRO)/libctru/lib
 LIBS := -lcitro3d -lctru -lm
 
-OBJECTS := $(BUILD)/main.o $(BUILD)/runtime.o $(BUILD)/dev_protocol.o $(BUILD)/devserver.o $(BUILD)/devmenu.o $(BUILD)/gfx.o $(BUILD)/qjs.o $(BUILD)/input.o $(BUILD)/vshader_shbin.o
+OBJECTS := $(BUILD)/main.o $(BUILD)/offload.o $(BUILD)/runtime.o $(BUILD)/dev_protocol.o $(BUILD)/devserver.o $(BUILD)/devmenu.o $(BUILD)/gfx.o $(BUILD)/qjs.o $(BUILD)/input.o $(BUILD)/vshader_shbin.o
 ELF := $(BUILD)/pocketjs-3ds.elf
 SMDH := $(BUILD)/pocketjs-3ds.smdh
 
@@ -139,6 +146,9 @@ $(FLAGS_STAMP): $(FLAGS_STAMP).probe ;
 $(BUILD)/%.o: $(SOURCE)/%.c $(BUILD)/vshader_shbin.h $(FLAGS_STAMP) | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILD)/offload.o: $(SOURCE)/offload.h $(SOURCE)/offload_queue.h
+$(BUILD)/qjs.o: $(SOURCE)/offload.h $(SOURCE)/offload_coverage.h
+
 $(ELF): $(OBJECTS)
 	$(CC) $(LDFLAGS) $(OBJECTS) $(POCKETJS_CORE_LIB) $(POCKETJS_QUICKJS_DIR)/libquickjs.a \
 	  $(LIBPATHS) $(LIBS) -o $@
@@ -179,9 +189,9 @@ $(SMDH_STAMP).probe: | $(BUILD)
 	@rm -f $(SMDH_STAMP).new
 $(SMDH_STAMP): $(SMDH_STAMP).probe ;
 
-$(SMDH): $(ICON) $(SMDH_STAMP) | $(BUILD)
+$(SMDH): $(ICON) $(SMALL_ICON) $(SMDH_STAMP) | $(BUILD)
 	$(SMDHTOOL) --create "$$POCKETJS_SMDH_TITLE" "$$POCKETJS_SMDH_DESC" \
-	  "$$POCKETJS_SMDH_AUTHOR" $(ICON) $@
+	  "$$POCKETJS_SMDH_AUTHOR" $(ICON) $@ $(SMALL_ICON)
 
 $(OUT): $(ELF) $(SMDH) $(ROMFS)/app.pocket $(ROMFS_LAYOUT_STAMP)
 	mkdir -p $(dir $(OUT))

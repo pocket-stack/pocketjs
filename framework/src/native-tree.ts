@@ -520,12 +520,22 @@ function unlink(node: NodeMirror): void {
 
 export function insertNode(parent: NodeMirror, node: NodeMirror, anchor?: NodeMirror | null): void {
   const ops = getOps();
+  if (anchor && (anchor.parent !== parent || !parent.children.includes(anchor))) {
+    throw new Error("PocketJS: insert anchor is not a child of parent");
+  }
+  if (anchor === node) {
+    // DOM pre-insertion re-anchors on the node's next sibling, so inserting a
+    // child before itself is a positional no-op. Solid's keyed reconciler can
+    // emit this during an adjacent swap; neither the mirror nor the native
+    // host should see a detach followed by a now-invalid anchor.
+    sweepSet.delete(node);
+    return;
+  }
   unlink(node);
   sweepSet.delete(node);
   ops.insertBefore(parent.id, node.id, anchor ? anchor.id : 0);
   if (anchor) {
     const i = parent.children.indexOf(anchor);
-    if (i < 0) throw new Error("PocketJS: insert anchor is not a child of parent");
     parent.children.splice(i, 0, node);
   } else {
     parent.children.push(node);

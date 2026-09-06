@@ -1498,6 +1498,8 @@ export const BTN = {
   LEFT: 0x0080,
   LTRIGGER: 0x0100,
   RTRIGGER: 0x0200,
+  ZL: 0x0400,
+  ZR: 0x0800,
   TRIANGLE: 0x1000,
   CIRCLE: 0x2000,
   CROSS: 0x4000,
@@ -1514,6 +1516,8 @@ export const BTN = {
 // is unchanged. Deadzone/normalization is runtime policy (framework/src/frame.ts), not
 // host policy — hosts pass the raw value through.
 
+// Optional sixth frame argument carries the right stick with identical packing.
+// Omission reads as center; touch/hit/surface arguments retain their positions.
 export const ANALOG_CENTER = 0x8080;
 
 // ---------------------------------------------------------------------------

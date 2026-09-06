@@ -15,11 +15,13 @@ import {
   resolveIPhone4SBuildPlan,
 } from "../tools/iphone4s-profile.ts";
 import { IPHONE4S_TOOLCHAIN } from "../tools/iphone4s-toolchain.ts";
+import { rasterizeIconSvg } from "../tools/icon-raster.ts";
 import {
   bakeClassicIPhoneArtwork,
   IPHONE_CLASSIC_ICON_FILE,
-  IPHONE_CLASSIC_ICON_SOURCE,
   IPHONE_CLASSIC_RETINA_ICON_FILE,
+  IPHONE_USER_ICON_FILE,
+  IPHONE_USER_RETINA_ICON_FILE,
 } from "../tools/iphone-classic-icon.ts";
 import {
   buildReceiptsMatch,
@@ -36,7 +38,7 @@ describe("private iPhone 4S profile", () => {
     expect(POCKET_TARGETS).not.toHaveProperty(IPHONE4S_DEV_TARGET_ID);
     expect(IPHONE4S_DEV_CONTRACTS.targets[IPHONE4S_DEV_TARGET_ID]).toEqual({
       hostAbi: IPHONE4S_DEV_HOST_ABI,
-      platform: "iphoneos",
+      platform: "ios",
       form: "takeover",
       display: {
         physicalViewport: IPHONE4S_PHYSICAL_VIEWPORT,
@@ -91,9 +93,9 @@ describe("private iPhone 4S profile", () => {
 
   test("shares the current touch-hit host and keeps transactional rollback", () => {
     const wrapper = readFileSync(join(repository, "hosts/iphone4s/runtime.c"), "utf8");
-    const runtime = readFileSync(join(repository, "hosts/iphone2g/runtime.c"), "utf8");
-    const guest = readFileSync(join(repository, "hosts/iphone2g/pocket_runtime.c"), "utf8");
-    expect(wrapper).toContain('#include "../iphone2g/runtime.c"');
+    const runtime = readFileSync(join(repository, "hosts/ios-legacy/runtime.c"), "utf8");
+    const guest = readFileSync(join(repository, "engine/quickjs-c/pocket_runtime.c"), "utf8");
+    expect(wrapper).toContain('#include "../ios-legacy/runtime.c"');
     expect(wrapper).toContain("#define POCKET_GL_DEFAULT 1");
     expect(wrapper).toContain("#define POCKET_REQUIRE_GL 1");
     expect(runtime).toContain("pocket_runtime_hit_test_bounds");
@@ -196,16 +198,23 @@ describe("private iPhone 4S profile", () => {
     }
   });
 
-  test("keeps the iPhone 2G icon byte-exact and independently rasterizes its Retina reconstruction", async () => {
+  test("keeps the mask edge color when averaging transparent samples", async () => {
+    const canvas = await rasterizeIconSvg('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4" viewBox="0 0 4 4"><rect x=".5" width="3.5" height="4" fill="#efce77"/></svg>', 4, 4, false);
+    const pixel = canvas.getContext("2d").getImageData(0, 1, 1, 1).data;
+    // Canvas stores premultiplied 8-bit channels, so readback can round by 1.
+    for (const [i, color] of [239, 206, 119].entries()) expect(Math.abs(pixel[i] - color)).toBeLessThanOrEqual(1);
+    expect(pixel[3]).toBe(128);
+  });
+
+  test("bakes pre-masked iOS icons at native sizes without pixel duplication", async () => {
     const output = mkdtempSync(join(tmpdir(), "pocket-iphone4s-artwork-"));
     try {
       await bakeClassicIPhoneArtwork(output);
-      expect(readFileSync(join(output, IPHONE_CLASSIC_ICON_FILE))).toEqual(readFileSync(IPHONE_CLASSIC_ICON_SOURCE));
 
       const one = await loadImage(join(output, IPHONE_CLASSIC_ICON_FILE));
       const two = await loadImage(join(output, IPHONE_CLASSIC_RETINA_ICON_FILE));
-      expect([one.width, one.height]).toEqual([59, 60]);
-      expect([two.width, two.height]).toEqual([118, 120]);
+      expect([one.width, one.height]).toEqual([57, 57]);
+      expect([two.width, two.height]).toEqual([114, 114]);
       const oneCanvas = createCanvas(one.width, one.height);
       const twoCanvas = createCanvas(two.width, two.height);
       oneCanvas.getContext("2d").drawImage(one, 0, 0);
@@ -221,11 +230,40 @@ describe("private iPhone 4S profile", () => {
         }
       }
       expect(twoPixels).not.toEqual(expected);
-      let antialiasedAlphaPixels = 0;
-      for (let index = 3; index < twoPixels.length; index += 4) {
-        if (twoPixels[index] > 0 && twoPixels[index] < 255) antialiasedAlphaPixels += 1;
+      // System applications on the physical iOS 6 host retain opaque corners;
+      // the source must supply the mask, with an opaque face and soft edges.
+      const alpha = (x: number, y: number) => twoPixels[(y * two.width + x) * 4 + 3];
+      for (const [x, y] of [[0, 0], [113, 0], [0, 113], [113, 113]]) expect(alpha(x, y)).toBe(0);
+      expect(alpha(57, 57)).toBe(255);
+      expect(twoPixels.some((v, i) => i % 4 === 3 && v > 0 && v < 255)).toBe(true);
+      for (const filename of ["Default@2x.png", "Default-568h@2x.png"]) {
+        const launch = await loadImage(join(output, filename));
+        expect(launch.width).toBe(640);
+        expect(launch.height).toBe(filename === "Default@2x.png" ? 960 : 1136);
       }
-      expect(antialiasedAlphaPixels).toBeGreaterThan(100);
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+    }
+  });
+
+  test("gives User applications an opaque face for the native SpringBoard mask", async () => {
+    const output = mkdtempSync(join(tmpdir(), "pocket-user-artwork-"));
+    try {
+      await bakeClassicIPhoneArtwork(output, "User");
+      for (const [file, size] of [[IPHONE_USER_ICON_FILE, 57], [IPHONE_USER_RETINA_ICON_FILE, 114]] as const) {
+        const image = await loadImage(join(output, file));
+        expect([image.width, image.height]).toEqual([size, size]);
+        const ctx = createCanvas(size, size).getContext("2d");
+        ctx.drawImage(image, 0, 0);
+        const pixels = ctx.getImageData(0, 0, size, size).data;
+        expect(pixels.every((value, index) => index % 4 !== 3 || value === 255)).toBe(true);
+        // The top face reaches the edge: no transparent inset or bright rim.
+        const pixel = (x: number, y: number) => Array.from(ctx.getImageData(x, y, 1, 1).data);
+        const edge = pixel(Math.floor(size / 2), 0);
+        const inside = pixel(Math.floor(size / 2), 3);
+        expect(edge[0]).toBeGreaterThan(30);
+        for (let channel = 0; channel < 3; channel++) expect(Math.abs(edge[channel] - inside[channel])).toBeLessThan(10);
+      }
     } finally {
       rmSync(output, { recursive: true, force: true });
     }

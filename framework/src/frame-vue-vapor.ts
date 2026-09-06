@@ -3,7 +3,7 @@
 import { computed, onScopeDispose, shallowRef, type ComputedRef } from "vue";
 import { __resetAnalog } from "./analog.ts";
 
-export { __setAnalog, analogRaw, analogX, analogY } from "./analog.ts";
+export { __setAnalog, analogRaw, analogX, analogY, rightAnalogRaw, rightAnalogX, rightAnalogY } from "./analog.ts";
 
 type FrameCallback = (buttons: number) => void;
 

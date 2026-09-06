@@ -35,10 +35,10 @@ neither advertises a production capability from a build alone.
   and the channel updates guests only: a new `.3dsx` or CIA still requires
   deployment and a restart.
 - **The BlackBerry Classic runs two hosts over one shared contract.**
-  `hosts/blackberry-qnx` is a BB10 Core Native host (libscreen, BPS,
+  `hosts/blackberry-classic-qnx` is a BB10 Core Native host (libscreen, BPS,
   EGL/GLES2) built and packaged as an unsigned development BAR inside the
   digest-pinned BBNDK image and installed on a rooted Classic;
-  `hosts/blackberry-android` is an Android Runtime (API 18) host whose
+  `hosts/blackberry-classic-android` is an Android Runtime (API 18) host whose
   v1-signed APK drives the same QuickJS bridge and Rust core through a JNI
   `armeabi-v7a` library. Both register at 720×720 physical, 360×360 logical at
   density 2, host ABI 9. First device run recorded on an SQC100-4 at
@@ -283,7 +283,7 @@ and exposes the damage statistics that made the diagnosis possible. The
   handed. The composite costs **0.26 ms**, and the frame **7.63 ms** of a
   16.67 ms budget. No preservation guarantee is relied on: when UIKit discards
   the backing store it passes full bounds and the full frame is drawn.
-- **Damage is observable.** `engine/symbian` was discarding the `DamagePlan` the
+- **Damage is observable.** `engine/ui-cabi` was discarding the `DamagePlan` the
   incremental rasterizer returns. Six new C ABI accessors expose attempts,
   failures, policy-chosen full redraws, region count, pixel area and union
   bounds, and four of them ride in the device record. **`damage_failures` is the
@@ -367,7 +367,7 @@ corrected in 0.9.1 above.
   and deployment is a signed transaction with byte-exact readback and
   rollback over key-only USB SSH. The target stays deliberately outside
   the production registry, with a test asserting it.
-- **The GL backend now serves two GPU generations.** `engine/symbian`'s
+- **The GL backend now serves two GPU generations.** `engine/ui-cabi`'s
   renderer split into a generation-independent DrawList walker plus two
   pipelines: the existing ES 2 shader program, and a new fixed-function ES
   1.1 path for GPUs that predate shaders. The two shader lines turned out
@@ -421,7 +421,7 @@ JavaScript where no browser fits.
   `TextField`, the editable activation semantic. DevTools tapes add a
   sparse touch track, e2e gains scripted touch input and the first touch
   goldens, and
-  [docs/TOUCH.md](https://github.com/pocket-stack/pocketjs/blob/main/docs/TOUCH.md)
+  [Touch & gestures](/docs/touch-gestures/)
   writes down the measured cost model.
 - **Audio, credit-based and deterministic.** `globalThis.audio` is a
   spec-first PCM streaming interface: apps push samples against a credit

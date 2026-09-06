@@ -245,6 +245,14 @@ impl Default for Fonts {
 }
 
 impl Fonts {
+    pub(crate) fn merge_atlases(&mut self, staged: &mut Fonts) {
+        for (destination, source) in self.slots.iter_mut().zip(staged.slots.iter_mut()) {
+            if source.is_some() {
+                *destination = source.take();
+            }
+        }
+    }
+
     pub fn new() -> Fonts {
         Fonts {
             slots: Default::default(),
@@ -305,7 +313,13 @@ impl Fonts {
     /// installed, tracking-0 runs route to it — the auto-gate the JS-facing
     /// `measureText` op uses. Layout does NOT call this: it picks a provider
     /// per node and records it (`measure_run_provider`; layout.rs build()).
-    pub fn measure_run(&self, text: &str, slot: u8, tracking: f32, line_h_override: f32) -> (f32, f32) {
+    pub fn measure_run(
+        &self,
+        text: &str,
+        slot: u8,
+        tracking: f32,
+        line_h_override: f32,
+    ) -> (f32, f32) {
         self.measure_run_provider(
             self.native.is_some() && tracking == 0.0,
             text,
@@ -335,7 +349,9 @@ impl Fonts {
                 return f(text, slot, tracking, line_h_override);
             }
         }
-        let Some(atlas) = self.atlas(slot) else { return (0.0, 0.0) };
+        let Some(atlas) = self.atlas(slot) else {
+            return (0.0, 0.0);
+        };
         let lh = if line_h_override.is_nan() {
             atlas.line_height as f32
         } else {
@@ -457,7 +473,9 @@ impl Fonts {
         box_w: f32,
         out: &mut Vec<GlyphPos>,
     ) {
-        let Some(atlas) = self.atlas(slot) else { return };
+        let Some(atlas) = self.atlas(slot) else {
+            return;
+        };
         if text.is_empty() {
             return;
         }
@@ -478,7 +496,11 @@ impl Fonts {
                 let (gid, adv, xoff) = self.glyph(atlas, ch as u32);
                 // The cell holds the outline shifted right by xoff (negative
                 // LSB accents) — place it at pen - xoff so ink lands at pen.
-                out.push(GlyphPos { gid, x: pen - xoff, y });
+                out.push(GlyphPos {
+                    gid,
+                    x: pen - xoff,
+                    y,
+                });
                 pen += adv + tracking;
             }
             let offset = match align {

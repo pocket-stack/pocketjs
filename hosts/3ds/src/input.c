@@ -25,6 +25,8 @@
 #define BTN_LEFT 0x0080
 #define BTN_LTRIGGER 0x0100
 #define BTN_RTRIGGER 0x0200
+#define BTN_ZL 0x0400
+#define BTN_ZR 0x0800
 #define BTN_TRIANGLE 0x1000
 #define BTN_CIRCLE 0x2000
 #define BTN_CROSS 0x4000
@@ -37,6 +39,20 @@
 #define RUNTIME_EXIT_KEYS (KEY_L | KEY_R | KEY_START)
 
 static bool devmenu_input_latched;
+static bool extra_input;
+
+void input_init(void) {
+#ifndef POCKETJS_CAPTURE
+  bool supported = false;
+  if (R_SUCCEEDED(APT_CheckNew3DS(&supported)) && supported)
+    extra_input = R_SUCCEEDED(irrstInit());
+#endif
+}
+
+void input_shutdown(void) {
+  if (extra_input) irrstExit();
+  extra_input = false;
+}
 
 static const struct {
   uint32_t key;
@@ -48,6 +64,8 @@ static const struct {
   { KEY_Y, BTN_SQUARE },
   { KEY_L, BTN_LTRIGGER },
   { KEY_R, BTN_RTRIGGER },
+  { KEY_ZL, BTN_ZL },
+  { KEY_ZR, BTN_ZR },
   { KEY_START, BTN_START },
   { KEY_SELECT, BTN_SELECT },
   { KEY_DUP, BTN_UP },
@@ -58,6 +76,8 @@ static const struct {
 
 int32_t input_buttons(void) {
   uint32_t held = hidKeysHeld();
+  /* Shared-memory scan only; service initialization happens before UI boot. */
+  if (extra_input) { irrstScanInput(); held |= irrstKeysHeld(); }
   if ((held & RUNTIME_RELOAD_KEYS) == RUNTIME_RELOAD_KEYS) {
     held &= ~RUNTIME_RELOAD_KEYS;
   }
@@ -129,6 +149,12 @@ int32_t input_analog(void) {
   return (axis(pad.dx) << 8) | axis(-pad.dy);
 }
 
+int32_t input_right_analog(void) {
+  if (!extra_input) return 0x8080;
+  circlePosition stick; irrstCstickRead(&stick);
+  return (axis(stick.dx) << 8) | axis(-stick.dy);
+}
+
 size_t input_touch(uint32_t *packed) {
   if (packed == NULL || (hidKeysHeld() & KEY_TOUCH) == 0) return 0;
   touchPosition touch;
@@ -137,4 +163,9 @@ size_t input_touch(uint32_t *packed) {
    * contact, so id 0 remains stable until KEY_TOUCH lifts. */
   *packed = ((uint32_t)touch.py << 9) | (uint32_t)touch.px;
   return 1;
+}
+
+bool input_offload_exit_requested(void) {
+  const uint32_t keys = KEY_L | KEY_R | KEY_START;
+  return (hidKeysHeld() & keys) == keys;
 }

@@ -167,7 +167,7 @@ describe("canonical Symbian E7 toolchain", () => {
       "utf8",
     );
     const probeProject = readFileSync(
-      join(repository, "hosts/symbian/probe/pocketjs-e7-probe.pro"),
+      join(repository, "hosts/nokia-e7/probe/pocketjs-e7-probe.pro"),
       "utf8",
     );
     const dockerfile = readFileSync(
@@ -402,7 +402,7 @@ describe("canonical Symbian E7 toolchain", () => {
 
   test("keeps the Rust override synchronized with the manifest pin", () => {
     const override = Bun.TOML.parse(readFileSync(
-      join(repository, "engine/symbian/rust-toolchain.toml"),
+      join(repository, "engine/ui-cabi/rust-toolchain.toml"),
       "utf8",
     )) as {
       toolchain: {

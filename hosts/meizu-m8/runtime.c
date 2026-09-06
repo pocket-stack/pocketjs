@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../iphone2g/pocket_runtime.h"
+#include "pocket_runtime.h"
 
 #ifndef POCKET_BUILD_ID
 #define POCKET_BUILD_ID "unknown"

@@ -39,6 +39,12 @@ import {
   renderPage,
 } from "./templates.ts";
 import { BLOG_POSTS, DOC_NAV, type DocSection } from "./nav.ts";
+import {
+  assertDocDemoBuilt,
+  findDocDemoDirectives,
+  resolveDocDemo,
+  type DocDemo,
+} from "./doc-demos.ts";
 import { emitSingleLodStagePackage } from "./stage-package.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname; // repo root
@@ -265,6 +271,22 @@ function writeStaticHeaders(): void {
   );
 }
 
+// Docs slugs that were retired by merging their page into the one that already
+// owned the subject. The Worker serves site/dist with not_found_handling set to
+// the 404 page (site/wrangler.jsonc), so without these a bookmark to a retired
+// slug dies instead of landing on its successor.
+const RETIRED_DOC_SLUGS: [from: string, to: string][] = [
+  ["/docs/concepts/", "/docs/architecture/"],
+  ["/docs/tailwind/", "/docs/styling/"],
+  ["/docs/net/", "/docs/api/"],
+];
+
+function writeStaticRedirects(): void {
+  const lines = RETIRED_DOC_SLUGS.map(([from, to]) => `${from} ${to} 301`);
+  write("_redirects", lines.join("\n") + "\n");
+  console.log(`  _redirects  (${lines.length} retired docs slugs)`);
+}
+
 // --- editable demos (mostly single-file; gallery inlines generated tile data)
 type SpriteMeta = Record<string, { cols: number; rows: number; frames: number; step: number; psm?: number }>;
 type DemoVariant = { framework: "solid" | "vue-vapor" | "octane"; source: string; spriteMeta?: SpriteMeta };
@@ -482,6 +504,7 @@ async function main() {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
   writeStaticHeaders();
+  writeStaticRedirects();
 
   // 1. bundles
   await bundleSolid("pg/solid.js");
@@ -508,6 +531,9 @@ async function main() {
     plugins: [jsxPlugin("octane")],
   });
   await bundle("playground/playground.js", "pg/playground.bundle.js");
+  // Live docs demos (`:::demo <app>`). Bundled from source so it can import
+  // the framework's own touch packing helpers instead of restating them.
+  await bundle("playground/embed.js", "pg/embed.js");
   await bundle("assets/pocket-stage-web.js", "assets/pocket-stage-web.js");
 
   // 2. runtime assets
@@ -515,7 +541,13 @@ async function main() {
   // validator. The deployed path is POCKET_MANIFEST_SCHEMA_ID —
   // /schema/pocket-2.json, independent of where the repo keeps the file.
   copy(ROOT + "contracts/schema/pocket-2.json", "schema/pocket-2.json");
+  copy(ROOT + "contracts/schema/pocket-idf-host-1.json", "schema/pocket-idf-host-1.json");
   copy(ROOT + "hosts/web/pocketjs.wasm", "pg/pocketjs.wasm");
+  // The AppInstance realm a docs demo boots into: one hidden same-origin
+  // iframe per demo, so several demos on one page never share globals.
+  copy(ROOT + "hosts/web/app-instance.html", "pg/app-instance.html");
+  copy(ROOT + "hosts/web/app-instance.js", "pg/app-instance.js");
+  copy(ROOT + "hosts/web/wasm-ops.js", "pg/wasm-ops.js");
   copy(ROOT + "assets/fonts/Inter-Regular.ttf", "pg/fonts/Inter-Regular.ttf");
   copy(ROOT + "assets/fonts/Inter-Bold.ttf", "pg/fonts/Inter-Bold.ttf");
   for (const f of readdirSync(ROOT + "assets/images/")) copy(ROOT + "assets/images/" + f, "demo-assets/" + f);
@@ -916,8 +948,69 @@ async function setupMarkdown(): Promise<Highlight> {
   return highlight;
 }
 
+const DOC_DEMO_SCRIPT = '<script type="module" src="/pg/embed.js"></script>';
+
+// `:::demo <app>` -> a live PocketJS app on the page. The figure carries every
+// resolved fact site/playground/embed.js needs; the markdown carries only the
+// app name and an optional caption.
+//
+// The .pg-stage chrome is deliberately NOT reused: site/assets/chrome.css hides
+// .pg-stage__screen (that stage textures onto a Three.js model) and hardcodes a
+// 16/9 box, which is wrong for a 320x480 portrait app. .doc-demo is its own
+// component in site/assets/tailwind.css.
+function docDemoFigure(demo: DocDemo, caption: string): string {
+  // A caption is the directive's own body. A bare `:::demo <app>` gets none:
+  // the page's prose around it is the docs author's, not this generator's.
+  const captionHtml = caption ? (marked.parseInline(caption) as string) : "";
+  const attrs: Record<string, string> = {
+    "data-app": demo.app,
+    "data-package-id": demo.packageId,
+    "data-instance": "/pg/app-instance.html",
+    "data-wasm": "/pg/pocketjs.wasm",
+    "data-bundle": `/pg/demos/${demo.bundleFile}`,
+    "data-pak": `/pg/demos/${demo.pakFile}`,
+    "data-width": String(demo.width),
+    "data-height": String(demo.height),
+    "data-density": String(demo.rasterDensity),
+  };
+  const attrText = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(" ");
+  return (
+    `<figure class="doc-demo" data-doc-demo data-state="idle" ${attrText}>` +
+    `<div class="doc-demo__stage" style="--doc-demo-w:${demo.width}px;--doc-demo-ratio:${demo.width}/${demo.height}">` +
+    `<canvas class="doc-demo__screen" data-doc-demo-canvas width="${demo.width}" height="${demo.height}"` +
+    ` role="img" aria-label="${demo.title}, running live"></canvas>` +
+    `<p class="doc-demo__status" data-doc-demo-status>${demo.title} starts when you scroll it into view.</p>` +
+    `</div>` +
+    (captionHtml ? `<figcaption class="doc-demo__caption">${captionHtml}</figcaption>` : "") +
+    `</figure>`
+  );
+}
+
 async function buildDocs(highlight: Highlight) {
   let frameworkCodeId = 0;
+  // One copy per app however many pages embed it.
+  const copiedDemos = new Set<string>();
+  const renderDocDemos = (markdown: string, used: DocDemo[]) => {
+    const directives = findDocDemoDirectives(markdown);
+    if (directives.length === 0) return markdown;
+    const lines = markdown.split("\n");
+    for (const directive of directives) {
+      const demo = resolveDocDemo(directive.app);
+      // dist/ holds no demo artifact on a fresh clone, so this is the default
+      // state, not an edge case: name the command instead of shipping a page
+      // with a dead frame.
+      assertDocDemoBuilt(demo);
+      used.push(demo);
+      if (!copiedDemos.has(demo.app)) {
+        copiedDemos.add(demo.app);
+        copy(demo.distJs, `pg/demos/${demo.bundleFile}`);
+        copy(demo.distPak, `pg/demos/${demo.pakFile}`);
+      }
+      lines[directive.start] = `\n${docDemoFigure(demo, directive.caption)}\n`;
+      for (let i = directive.start + 1; i <= directive.end; i++) lines[i] = "";
+    }
+    return lines.join("\n");
+  };
   const renderFrameworkCode = (markdown: string) =>
     markdown.replace(/:::framework-code\n([\s\S]*?)\n:::/g, (_match, body: string) => {
       const FW_LABELS = { solid: "Solid", "vue-vapor": "Vue Vapor", octane: "Octane" } as const;
@@ -986,7 +1079,9 @@ async function buildDocs(highlight: Highlight) {
         continue;
       }
       const source = readFileSync(md, "utf8");
-      const html = await marked.parse(tree.transformFrameworkCode ? renderFrameworkCode(source) : source);
+      const pageDemos: DocDemo[] = [];
+      const withDemos = renderDocDemos(source, pageDemos);
+      const html = await marked.parse(tree.transformFrameworkCode ? renderFrameworkCode(withDemos) : withDemos);
       const prev = allSlugs[i - 1];
       const next = allSlugs[i + 1];
       const pager =
@@ -1003,7 +1098,8 @@ async function buildDocs(highlight: Highlight) {
         body,
         bodyClass: "doc-page",
         head: tree.head,
-        scripts: [],
+        // Only a page that carries a demo pays for the embed bundle.
+        scripts: pageDemos.length > 0 ? [DOC_DEMO_SCRIPT] : [],
         path: hrefFor(slug),
         robots: tree.robots,
       }));

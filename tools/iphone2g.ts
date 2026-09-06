@@ -488,34 +488,40 @@ function buildRuntime(): void {
     "-DCRT",
   ]);
   compile(
-    join(repository, "hosts/iphone2g/crt_globals.c"),
+    join(repository, "hosts/ios-legacy/crt_globals.c"),
     join(build, "crt_globals.o"),
     firstPartyWarnings,
   );
   compile(
-    join(repository, "hosts/iphone2g/runtime.c"),
+    join(repository, "hosts/ios-legacy/runtime.c"),
     join(build, "runtime.o"),
     [
       ...firstPartyWarnings,
       `-DPOCKET_BUILD_ID="${buildId}"`,
       `-DPOCKET_LOGICAL_WIDTH=${hostInputs.viewport.logical[0]}`,
       `-DPOCKET_LOGICAL_HEIGHT=${hostInputs.viewport.logical[1]}`,
+      "-I",
+      join(repository, "engine/quickjs-c"),
       "-Wno-cast-function-type-mismatch",
     ],
   );
   compile(
-    join(repository, "hosts/iphone2g/pocket_runtime.c"),
+    join(repository, "engine/quickjs-c/pocket_runtime.c"),
     join(build, "pocket_runtime.o"),
     [
       ...firstPartyWarnings,
       `-DPOCKETJS_TARGET_ID="${hostInputs.target}"`,
       `-DPOCKETJS_HOST_ABI=${hostInputs.hostAbi}`,
+      "-I",
+      join(repository, "engine/ui-cabi/include"),
+      "-I",
+      join(repository, "contracts/generated"),
       "-isystem",
       quickjs,
     ],
   );
   compile(
-    join(repository, "hosts/iphone2g/compat.c"),
+    join(repository, "hosts/ios-legacy/compat.c"),
     join(build, "compat.o"),
     firstPartyWarnings,
   );
@@ -551,7 +557,7 @@ function buildRuntime(): void {
     IPHONE2G_TOOLCHAIN.compiler.rustToolchain,
     "cargo",
   ]);
-  const coreDirectory = join(repository, "engine/symbian");
+  const coreDirectory = join(repository, "engine/ui-cabi");
   const rustTargetSpec = join(
     repository,
     "hosts/iphone2g/armv6-apple-ios.json",
@@ -861,7 +867,7 @@ function buildBootstrapDeviceTool(output: string, scratch: string): void {
     "-DCRT",
   ]);
   compile(
-    join(repository, "hosts/iphone2g/crt_globals.c"),
+    join(repository, "hosts/ios-legacy/crt_globals.c"),
     join(build, "crt-globals.o"),
     ["-Wall", "-Wextra", "-Werror", "-Wno-incompatible-sysroot"],
   );

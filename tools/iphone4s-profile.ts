@@ -18,7 +18,7 @@ export const IPHONE4S_DEV_CONTRACTS = definePlatformContractRegistry(
   defineTargetRegistry({
     [IPHONE4S_DEV_TARGET_ID]: {
       hostAbi: IPHONE4S_DEV_HOST_ABI,
-      platform: "iphoneos",
+      platform: "ios",
       form: "takeover",
       display: {
         physicalViewport: IPHONE4S_PHYSICAL_VIEWPORT,

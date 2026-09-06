@@ -1,3 +1,4 @@
+import { isHostExtension, type HostExtension } from "./host-extension.ts";
 import { DYNAMIC_FORMS, PACKAGE_ROLES, TARGET_FORMS } from "../../../contracts/spec/platforms.ts";
 import type { PocketManifestV2 } from "../../../contracts/spec/pocket-manifest.ts";
 import {
@@ -23,6 +24,8 @@ export interface ResolveBuildRequest {
   /** Defaults to an ordinary application. System resolution assigns the
    *  System UI role before capability admission. */
   readonly role?: "application" | "systemUI";
+  /** Versioned adapter input, interpreted only by its owner. */
+  readonly hostExtension?: HostExtension;
 }
 
 export type ResolutionResult =
@@ -35,6 +38,22 @@ function capabilityPath(kind: "enhances" | "requires", index: number): string {
 
 function sameViewport(left: Viewport, right: Viewport): boolean {
   return left[0] === right[0] && left[1] === right[1];
+}
+
+/**
+ * Native presentation fills the panel: one logical px = rasterDensity
+ * physical px, with no letterbox. A panel is the same panel turned a quarter
+ * turn, so a logical viewport that fills it in the transposed orientation
+ * fills it too — that is how a portrait handheld hosts a landscape app. The
+ * returned physical viewport is the panel as the app sees it (transposed
+ * when the fit was transposed); `logicalViewports` stays the gate that says
+ * which orientations a target's host can actually present.
+ */
+function nativeFill(logical: Viewport, rasterDensity: number, panel: Viewport): Viewport | null {
+  const scaled: Viewport = [logical[0] * rasterDensity, logical[1] * rasterDensity];
+  if (sameViewport(scaled, panel)) return [panel[0], panel[1]];
+  if (sameViewport(scaled, [panel[1], panel[0]])) return [panel[1], panel[0]];
+  return null;
 }
 
 function resolveFixedDisplay(
@@ -66,19 +85,19 @@ function resolveFixedDisplay(
     });
     ok = false;
   }
-  if (
-    presentation === "native" &&
-    !sameViewport(
-      [logical[0] * provided.rasterDensity, logical[1] * provided.rasterDensity],
-      provided.physicalViewport,
-    )
-  ) {
-    diagnostics?.push({
-      code: "surface.nativeMismatch",
-      path,
-      message: "native auxiliary presentation requires the logical viewport to fill the panel",
-    });
-    ok = false;
+  let physical: Viewport = [provided.physicalViewport[0], provided.physicalViewport[1]];
+  if (presentation === "native") {
+    const fill = nativeFill(logical, provided.rasterDensity, provided.physicalViewport);
+    if (fill === null) {
+      diagnostics?.push({
+        code: "surface.nativeMismatch",
+        path,
+        message: "native auxiliary presentation requires the logical viewport to fill the panel",
+      });
+      ok = false;
+    } else {
+      physical = fill;
+    }
   }
   if (presentation === "integer-fit") {
     const x = provided.physicalViewport[0] / logical[0];
@@ -95,7 +114,7 @@ function resolveFixedDisplay(
   return ok
     ? {
         logical: [logical[0], logical[1]],
-        physical: [provided.physicalViewport[0], provided.physicalViewport[1]],
+        physical,
         presentation,
         rasterDensity: provided.rasterDensity,
       }
@@ -223,17 +242,21 @@ function resolveViewport(
     });
     ok = false;
   }
-  // Native presentation: one logical px maps to rasterDensity physical px.
-  if (
-    presentation === "native" &&
-    !sameViewport([logical[0] * rasterDensity, logical[1] * rasterDensity], physicalViewport)
-  ) {
-    diagnostics.push({
-      code: "viewport.nativeMismatch",
-      path: fixedPath,
-      message: "native presentation requires the logical viewport to fill the panel",
-    });
-    ok = false;
+  // Native presentation: one logical px maps to rasterDensity physical px,
+  // in either orientation of the panel (nativeFill).
+  let physical: Viewport = [physicalViewport[0], physicalViewport[1]];
+  if (presentation === "native") {
+    const fill = nativeFill(logical, rasterDensity, physicalViewport);
+    if (fill === null) {
+      diagnostics.push({
+        code: "viewport.nativeMismatch",
+        path: fixedPath,
+        message: "native presentation requires the logical viewport to fill the panel",
+      });
+      ok = false;
+    } else {
+      physical = fill;
+    }
   }
   if (presentation === "integer-fit") {
     const x = physicalViewport[0] / logical[0];
@@ -251,7 +274,7 @@ function resolveViewport(
     ? {
         logical,
         presentation,
-        physical: [physicalViewport[0], physicalViewport[1]],
+        physical,
         policy: "fixed",
       }
     : null;
@@ -392,6 +415,10 @@ export function resolveBuildPlan(
   registry: PlatformContractRegistry = POCKET_PLATFORM_CONTRACTS,
 ): ResolutionResult {
   const diagnostics: ContractDiagnostic[] = [...validatePlatformContractRegistry(registry)];
+  if (request.hostExtension !== undefined && !isHostExtension(request.hostExtension)) {
+    diagnostics.push({ code: "hostExtension.invalid", path: "/hostExtension",
+      message: "host extension must carry a versioned, content-verified JSON payload" });
+  }
   const profile = registry.targets[request.target];
   if (!profile) {
     diagnostics.push({
@@ -558,6 +585,7 @@ export function resolveBuildPlan(
     ...(resolvedAuxiliary ? { surfaces: { auxiliary: resolvedAuxiliary } } : {}),
     features,
     companions: manifest.app.companions ?? [],
+    ...(request.hostExtension ? { hostExtension: request.hostExtension } : {}),
   };
   return { ok: true, plan: finalizeBuildPlan(content) };
 }

@@ -5,12 +5,12 @@
 //! instance. Strings and blobs are borrowed as `(ptr, len)` for the duration of
 //! a call and copied by the core whenever they must outlive it.
 //!
-//! Unlike engine/symbian, the graphics backend is NOT in this crate: citro3d is
+//! Unlike engine/ui-cabi, the graphics backend is NOT in this crate: citro3d is
 //! a C library of mostly `static inline` functions, so the DrawList word stream
 //! itself crosses the ABI (`ui_draw`, `ui_draw_list_ptr`, `ui_draw_list_len`)
 //! and hosts/3ds/src/gfx.c walks it. The same reason forces the texture and
 //! font-atlas registries out over the ABI: the C backend resolves a DrawList
-//! texture handle to pixels exactly the way engine/symbian/src/gl/mod.rs's
+//! texture handle to pixels exactly the way engine/ui-cabi/src/gl/mod.rs's
 //! `sync_resources`/`image_name` do, only from the other side of the boundary.
 //!
 //! All returned pointers borrow core-owned storage and stay valid until the

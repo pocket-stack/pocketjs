@@ -7,7 +7,7 @@ logical viewport at raster density 2.
 
 ## Execution path
 
-The application statically links `engine/apple`:
+The application statically links `engine/ios`:
 
 - `pocket-mod` owns the QuickJS guest realm.
 - `pocket-ui-surface` installs the synchronous `ui.*` operations and feeds the
@@ -75,7 +75,7 @@ observed brightness and idle-timer state.
 
 ## App icon
 
-`hosts/ipodtouch/Icon.svg` is the only authored icon source. It uses the Pocket
+`hosts/ipodtouch6/Icon.svg` is the only authored icon source. It uses the Pocket
 homepage's `#171226`, `#1a1430`, and `#231b3b` plum surfaces with restrained
 `#ffd23f` and `#ff5f9e` iOS 7-style ambient highlights. There is no baked outer
 frame; SpringBoard applies the installed rounded mask. The centered mark

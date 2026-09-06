@@ -110,7 +110,7 @@ float ui_measure_text(const uint8_t *text, size_t length, uint32_t font_slot);
 void ui_tick(void);
 
 /*
- * DrawList handoff. Unlike engine/symbian, whose GLES backends consume the
+ * DrawList handoff. Unlike engine/ui-cabi, whose GLES backends consume the
  * list inside the Rust crate, the PICA200 backend is C (citro3d is mostly
  * `static inline`), so the word stream itself crosses the ABI. Format:
  * contracts/spec/spec.ts "DRAWLIST op format".

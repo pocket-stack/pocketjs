@@ -75,7 +75,8 @@ variants TARGET VARIANTS — dist bundles are target-flavored (psp density 1,
          vita density 2, a desktop widget's live viewport…), so the app is
          manifest × variants. Each variant: target id + hostAbi + a typed,
          APPEND-ONLY section table (1 identity, 2 plan, 3 js — NUL-included
-         for zero-copy device eval, 4 pak, 5 cover; unknown kinds skip).
+         for zero-copy device eval, 4 pak, 5 cover, 6 reserved qjsc,
+         7 fixed-width ESP-IDF host inputs; unknown kinds skip).
          Per-variant FNV-1a64: `thin` extracts a device subset from a
          universal file without changing any variant's identity.
 footer   FNV-1a64 over the whole file (the stale-embed tripwire, now a
@@ -101,6 +102,9 @@ Design rules:
   lesson for free).
 - Corrupt or inadmissible packages fail into the launcher's existing
   broken-guest path (log + return to deck), never a halt.
+- ESP-IDF variants duplicate their target ABI in the variant entry and binary
+  host-input record. The device compares target, ABI, tick rate, viewport,
+  density, presentation, and host-profile SHA-256 before exposing JS/PAK spans.
 
 ## Dynamic install & runtime admission
 

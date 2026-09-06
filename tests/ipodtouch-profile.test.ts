@@ -28,11 +28,11 @@ import {
 const REPOSITORY = fileURLToPath(new URL("../", import.meta.url));
 const MANIFEST = join(REPOSITORY, "apps/ipodtouch-demo/pocket.json");
 const ENTRY = join(REPOSITORY, "apps/ipodtouch-demo/main.tsx");
-const ICON = join(REPOSITORY, "hosts/ipodtouch/Icon.svg");
-const INFO = join(REPOSITORY, "hosts/ipodtouch/Info.plist");
-const RUNTIME = join(REPOSITORY, "hosts/ipodtouch/runtime.m");
-const SURFACE = join(REPOSITORY, "engine/apple/apple/PocketSurfaceView.m");
-const APPLE_CORE = join(REPOSITORY, "engine/apple/src/lib.rs");
+const ICON = join(REPOSITORY, "hosts/ipodtouch6/Icon.svg");
+const INFO = join(REPOSITORY, "hosts/ipodtouch6/Info.plist");
+const RUNTIME = join(REPOSITORY, "hosts/ipodtouch6/runtime.m");
+const SURFACE = join(REPOSITORY, "engine/ios/uikit/PocketSurfaceView.m");
+const APPLE_CORE = join(REPOSITORY, "engine/ios/src/lib.rs");
 const POCKET_MOD = join(REPOSITORY, "engine/crates/pocket-mod/src/lib.rs");
 const ICON_TOOL = join(REPOSITORY, "tools/ipodtouch-icon.ts");
 const TOOL = join(REPOSITORY, "tools/ipodtouch.ts");
@@ -49,7 +49,7 @@ describe("private iPod touch 6 profile", () => {
     expect(POCKET_TARGETS).not.toHaveProperty(IPODTOUCH_DEV_TARGET_ID);
     expect(IPODTOUCH_DEV_CONTRACTS.targets[IPODTOUCH_DEV_TARGET_ID]).toEqual({
       hostAbi: IPODTOUCH_DEV_HOST_ABI,
-      platform: "iphoneos",
+      platform: "ios",
       form: "takeover",
       display: {
         physicalViewport: IPODTOUCH_PHYSICAL_VIEWPORT,
@@ -197,7 +197,7 @@ describe("private iPod touch 6 profile", () => {
     expect(tool.indexOf("await tunnel.exited")).toBeLessThan(
       tool.indexOf("new Response(tunnel.stderr"),
     );
-    expect(tool).toContain('join(REPOSITORY, "hosts/ipodtouch/Info.plist")');
+    expect(tool).toContain('join(REPOSITORY, "hosts/ipodtouch6/Info.plist")');
     expect(tool).toContain('join(REPOSITORY, "tools/ipodtouch-icon.ts")');
     expect(tool).toContain("pocketjs-ipodtouch.deploy.lock");
     expect(tool.indexOf('if mkdir \\"$lock\\"')).toBeLessThan(

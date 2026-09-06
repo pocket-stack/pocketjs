@@ -535,7 +535,7 @@ export async function buildApp(
         resolve(payload, "libpocketjs_symbian_core.a"),
       );
     } else {
-      const coreDirectory = resolve(root, "engine/symbian");
+      const coreDirectory = resolve(root, "engine/ui-cabi");
       const rustBuild = await spawn(rustHost.rustupPath!, [
         "run",
         rustHost.toolchainName!,
@@ -544,7 +544,7 @@ export async function buildApp(
         "--release",
         "--locked",
         "--target",
-        "targets/armv6-symbian-eabi.json",
+        resolve(root, "hosts/nokia-e7/targets/armv6-symbian-eabi.json"),
         "-Z",
         "json-target-spec",
         "-Z",

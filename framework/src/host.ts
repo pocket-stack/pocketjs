@@ -405,7 +405,7 @@ export function reportAppAction(name: string, value: number): void {
 // Frame hookup
 // ---------------------------------------------------------------------------
 // Every host drives frames the same way: once per vblank/rAF tick it calls
-// `globalThis.frame(buttons, analog?, touches?, hits?, touchSurfaces?)` with the
+// `globalThis.frame(buttons, analog?, touches?, hits?, touchSurfaces?, rightAnalog?)` with the
 // PSP button bitmask (spec BTN)
 // and, when the host has an analog stick, the packed nub value
 // (x << 8 | y, each axis 0..255, 128 = center — spec ANALOG_CENTER). Hosts
@@ -421,6 +421,7 @@ export function installFrameHandler(
     touches?: readonly number[],
     hits?: readonly number[],
     touchSurfaces?: readonly number[],
+    rightAnalog?: number,
   ) => void,
 ): void {
   (
@@ -431,6 +432,7 @@ export function installFrameHandler(
         touches?: readonly number[],
         hits?: readonly number[],
         touchSurfaces?: readonly number[],
+        rightAnalog?: number,
       ) => void;
     }
   ).frame = fn;

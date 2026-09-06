@@ -1,7 +1,7 @@
 // tools/ios.ts — the pocket ios toolchain: doctor/setup for Xcode, the
 // simulator and the NativeScript CLI; guest builds against the transitional
 // ios-dev profile; staging into the committed NativeScript shell
-// (hosts/apple/ns-shell); and launch on an arm64 iOS simulator.
+// (hosts/ios-nativescript); and launch on an arm64 iOS simulator.
 //
 //   pocket ios doctor
 //   pocket ios setup --yes
@@ -24,9 +24,9 @@ import {
 } from "./ios-profile.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
-const DEFAULT_SHELL = resolve(ROOT, "hosts/apple/ns-shell");
-const XCFRAMEWORK_SCRIPT = resolve(ROOT, "engine/apple/build-xcframework.sh");
-const XCFRAMEWORK_DIST = resolve(ROOT, "engine/apple/dist/PocketApple.xcframework");
+const DEFAULT_SHELL = resolve(ROOT, "hosts/ios-nativescript");
+const XCFRAMEWORK_SCRIPT = resolve(ROOT, "engine/ios/build-xcframework.sh");
+const XCFRAMEWORK_DIST = resolve(ROOT, "engine/ios/dist/PocketApple.xcframework");
 const MIN_IOS_RUNTIME = 16;
 /** Display cadences a PocketSurfaceView can be pinned to: 60, or ProMotion. */
 const IOS_TICK_RATES = [60, 120];
@@ -511,7 +511,7 @@ const HELP = `PocketJS Apple / iOS toolchain
   pocket ios doctor                 inspect Xcode, the simulator, Rust targets and the NativeScript CLI
   pocket ios setup                  add the two Rust iOS targets; print install hints for the rest
   pocket ios devices                list the arm64 iOS simulators this target can run on
-  pocket ios native [--force]       build engine/apple/dist/PocketApple.xcframework
+  pocket ios native [--force]       build engine/ios/dist/PocketApple.xcframework
   pocket ios build <app> [--density=1..${IOS_DEV_MAX_DENSITY}] [--hz=${IOS_TICK_RATES.join("|")}]
                                     resolve the ${IOS_DEV_TARGET_ID} plan and emit dist/ios/<app>/
   pocket ios stage <app> [flags]    build + copy assets into the shell, without launching
@@ -530,7 +530,7 @@ flags for stage/play:
   --no-launch         stage only
   --attach            stay attached to ns run for console output (default exits after launch)
   --release           build the shell in release configuration
-  --shell-dir=<path>  stage into another NativeScript app instead of hosts/apple/ns-shell
+  --shell-dir=<path>  stage into another NativeScript app instead of hosts/ios-nativescript
   --plugin-path=<path>  use a local @nativescript/pocketjs checkout instead of npm
   --runtime-tgz=<path>  use a local @nativescript/ios-quickjs tgz instead of npm
 `;

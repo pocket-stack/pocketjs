@@ -18,7 +18,7 @@ import {
 const REPOSITORY = fileURLToPath(new URL("../", import.meta.url));
 const MANIFEST_PATH = join(REPOSITORY, "apps/nsengine/pocket.json");
 const ENTRY_PATH = join(REPOSITORY, "apps/nsengine/main.tsx");
-const SURFACE_VIEW_PATH = join(REPOSITORY, "engine/apple/apple/PocketSurfaceView.m");
+const SURFACE_VIEW_PATH = join(REPOSITORY, "engine/ios/uikit/PocketSurfaceView.m");
 const ROOT_TSCONFIG = join(REPOSITORY, "tsconfig.json");
 const JSX_DECLARATIONS = join(REPOSITORY, "framework/src/jsx.d.ts");
 
@@ -116,7 +116,7 @@ describe("private iOS build profile", () => {
     // in its setter (start only pins the display link), and the mounted
     // namespace carries __tickHz.
     const header = readFileSync(
-      join(REPOSITORY, "engine/apple/include/pocket_apple.h"),
+      join(REPOSITORY, "engine/ios/include/pocket_apple.h"),
       "utf8",
     );
     expect(header).toContain("[set_tick_rate] -> eval_bundle");
