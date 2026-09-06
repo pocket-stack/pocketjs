@@ -146,7 +146,7 @@ $(FLAGS_STAMP): $(FLAGS_STAMP).probe ;
 $(BUILD)/%.o: $(SOURCE)/%.c $(BUILD)/vshader_shbin.h $(FLAGS_STAMP) | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/offload.o: $(SOURCE)/offload.h $(SOURCE)/offload_queue.h
+$(BUILD)/offload.o: $(SOURCE)/offload.h $(SOURCE)/offload_queue.h $(SOURCE)/offload_image.h
 $(BUILD)/qjs.o: $(SOURCE)/offload.h $(SOURCE)/offload_coverage.h
 
 $(ELF): $(OBJECTS)

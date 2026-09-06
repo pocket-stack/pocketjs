@@ -1,8 +1,9 @@
 /** Desktop transport. Capability implementations execute in a Worker owned by
  * each authenticated device connection, never inside the socket callbacks. */
 import { connect } from "node:net";
-import { OFFLOAD, type OffloadRequest, type OffloadReply } from "../contracts/spec/offload.ts";
-import { OffloadDecoder, encodeOffloadRecord } from "./offload-wire.ts";
+import { OFFLOAD, OFFLOAD_IMAGE, type OffloadRequest, type OffloadProviderReply, type OffloadImage } from "../contracts/spec/offload.ts";
+import { OffloadDecoder, encodeOffloadRecord, encodeOffloadImage } from "./offload-wire.ts";
+export type { OffloadImage } from "../contracts/spec/offload.ts";
 
 export function connectOffloadProvider(options: {
   address: string; key: string; worker: string | URL; data?: unknown;
@@ -17,7 +18,7 @@ export function connectOffloadProvider(options: {
     const socket = connect({ host: options.address, port: options.port ?? OFFLOAD.port });
     const decoder = new OffloadDecoder();
     let worker: Worker | undefined;
-    const pending = new Set<number>();
+    const pending = new Map<number, boolean>();
     const deadlines = new Map<number, ReturnType<typeof setTimeout>>();
     closeCurrent = () => socket.destroy();
     socket.setNoDelay(true);
@@ -27,14 +28,16 @@ export function connectOffloadProvider(options: {
       worker = new Worker(options.worker, { type: "module" });
       worker.postMessage({ init: options.data });
       worker.onerror = () => socket.destroy();
-      worker.onmessage = (event: MessageEvent<OffloadReply>) => {
+      worker.onmessage = (event: MessageEvent<OffloadProviderReply>) => {
         const reply = event.data;
+        const expectsImage = pending.get(reply.id);
         if (!pending.delete(reply.id)) return socket.destroy();
         clearTimeout(deadlines.get(reply.id)); deadlines.delete(reply.id);
         try {
           if (typeof reply.payload === "string" && reply.payload.length > OFFLOAD.payloadChars) throw new Error("Result budget exceeded");
-          const record = encodeOffloadRecord(JSON.stringify(reply));
-          if (socket.writableLength > OFFLOAD.recordBytes * OFFLOAD.pending) return socket.destroy();
+          if (reply.image && !expectsImage) throw new Error("Unrequested image response");
+          const record = reply.image ? encodeOffloadImage(reply.id, reply.image) : encodeOffloadRecord(JSON.stringify(reply));
+          if (socket.writableLength > (OFFLOAD_IMAGE.maxBytes + OFFLOAD_IMAGE.headerBytes + 4) * OFFLOAD.pending) return socket.destroy();
           socket.write(record);
         } catch { socket.destroy(); }
       };
@@ -50,8 +53,9 @@ export function connectOffloadProvider(options: {
           if (request.v !== 1 || !Number.isSafeInteger(request.id) || request.id < 1 ||
               typeof request.method !== "string" || !/^[a-z][a-z0-9_.-]{0,63}$/.test(request.method) ||
               typeof request.payload !== "string" || request.payload.length > OFFLOAD.payloadChars ||
+              request.response !== undefined && request.response !== "image" ||
               pending.size >= OFFLOAD.pending || pending.has(request.id)) throw new Error("Invalid request");
-          pending.add(request.id);
+          pending.set(request.id, request.response === "image");
           // Terminate a wedged provider worker. Sent mutations are never retried.
           deadlines.set(request.id, setTimeout(() => socket.destroy(), 9000));
           worker!.postMessage(request);
@@ -71,13 +75,18 @@ export function connectOffloadProvider(options: {
 
 /** Worker-side allowlist. A missing method cannot open arbitrary resources. */
 export async function dispatchOffload(
-  methods: Readonly<Record<string, (payload: string) => string | Promise<string>>>,
+  methods: Readonly<Record<string, (payload: string) => string | OffloadImage | Promise<string | OffloadImage>>>,
   request: OffloadRequest,
-): Promise<OffloadReply> {
+): Promise<OffloadProviderReply> {
   try {
     const handler = Object.prototype.hasOwnProperty.call(methods, request.method) ? methods[request.method] : undefined;
     if (!handler) throw new Error("Capability not granted");
     const payload = await handler(request.payload);
+    if (typeof payload !== "string") {
+      if (request.response !== "image") throw new Error("Image response was not requested");
+      encodeOffloadImage(request.id, payload);
+      return { id: request.id, image: payload };
+    }
     if (payload.length > OFFLOAD.payloadChars) throw new Error("Result budget exceeded");
     const reply = { id: request.id, payload };
     encodeOffloadRecord(JSON.stringify(reply));

@@ -1,4 +1,16 @@
-import { OFFLOAD } from "../contracts/spec/offload.ts";
+import { OFFLOAD, OFFLOAD_IMAGE, type OffloadImage } from "../contracts/spec/offload.ts";
+
+export function encodeOffloadImage(id: number, image: OffloadImage): Buffer {
+  const valid = (n: number) => Number.isInteger(n) && n >= 16 && n <= OFFLOAD_IMAGE.maxSide && (n & (n - 1)) === 0;
+  if (!Number.isSafeInteger(id) || id < 1 || id > 0xffffffff || !valid(image.width) || !valid(image.height) ||
+      image.format !== "r5g6b5" || !(image.pixels instanceof Uint8Array) || image.pixels.byteLength !== image.width * image.height * 2)
+    throw new Error("Invalid offload image envelope");
+  const bytes = Buffer.allocUnsafe(4 + OFFLOAD_IMAGE.headerBytes + image.pixels.byteLength);
+  bytes.writeUInt32BE((OFFLOAD_IMAGE.flag + bytes.length - 4) >>> 0);
+  bytes.write("PIMG", 4); bytes.writeUInt32LE(id, 8);
+  bytes.writeUInt16LE(image.width, 12); bytes.writeUInt16LE(image.height, 14); bytes.writeUInt32LE(0, 16);
+  bytes.set(image.pixels, 20); return bytes;
+}
 
 export function encodeOffloadRecord(record: string): Buffer {
   const payload = Buffer.from(record);

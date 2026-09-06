@@ -182,6 +182,59 @@ can use a companion transport or an on-device worker without changing cache or
 UI code. It must provide the same nonwaiting admission/cancellation contract and
 bounded immutable response ownership. It must not execute IO on the UI thread.
 
+### Remote images and tile viewports
+
+The image adapter defines transport, staging release and texture disposal once:
+
+```tsx
+import { createResourceRuntime, createResourceView } from "@pocketjs/framework/resource-view";
+import { createOffloadImageCollection } from "@pocketjs/framework/resource-offload";
+import { ResourceImage } from "@pocketjs/framework/resource";
+import { offload } from "@pocketjs/framework/offload";
+
+const io = offload();
+const runtime = createResourceRuntime({
+  maxConcurrent: 3, startsPerFrame: 1, completionsPerFrame: 1,
+  maxCollections: 1, available: io.connected,
+});
+const tiles = createOffloadImageCollection(runtime, io, {
+  key: (tile: TileAddress) => `${tile.source}/${tile.z}/${tile.x}/${tile.y}`,
+  method: "map.tile", payload: JSON.stringify,
+  width: 256, height: 256, maxEntries: 24, maxViews: 2,
+  maxDemandsPerView: 12,
+});
+const view = createResourceView(tiles, { demand: visibleTileDemand });
+
+// Component setup: input is an accessor for this tile's domain address.
+<ResourceImage state={() => view.state(input())}
+  fallback={() => <TileSkeleton />}
+  errorFallback={() => <UnavailableTile />} />;
+```
+
+**Component reads do not initiate requests.** Two view owners can demand the
+same key and share one request and one texture. Removing the old zoom layer
+withdraws its demand without releasing a texture still used by the new layer.
+`ResourceImage` borrows its texture; the collection owns eviction and cleanup.
+
+The lower-level `releaseResponse(raw)` cache hook releases external staging
+after materialization, including failure, or when cancellation or late delivery
+prevents materialization. It is separate from `dispose(value)`, which releases
+an adopted value. Both hooks must be bounded and must not throw.
+
+`@pocketjs/framework/tile-viewport` supplies `createTileCamera` and `visibleTiles`.
+The camera stores level-zero pixel coordinates, integrates screen-space velocity
+and inertia, and keeps the world point beneath an anchor fixed during zoom.
+`visibleTiles` returns a near-first window and rejects an excessive window
+before enumeration. Neither API performs IO or knows geographic coordinates.
+
+[Pocket Map](https://github.com/pocket-stack/pocket-map) supplies Mercator
+projection, wrapped tile identities, source selection, explicit place searches
+and viewport demand. Its Mac worker owns HTTP caching, PNG decoding and label
+rasterization. Only the active viewport is downloaded; a previous zoom layer
+retains already loaded tiles until the new layer fills. The native image
+transport and resource APIs also apply to document pages, photo renditions and
+other tile pyramids.
+
 ### Freshness and recovery
 
 `invalidate(predicate)` fences outstanding reads and marks matching entries

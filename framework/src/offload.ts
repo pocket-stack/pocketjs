@@ -1,4 +1,4 @@
-import { OFFLOAD, type OffloadOps, type OffloadReply } from "../../contracts/spec/offload.ts";
+import { OFFLOAD, type OffloadOps, type OffloadReply, type OffloadImageTicket } from "../../contracts/spec/offload.ts";
 import { registerServicePump } from "./services.ts";
 
 export { OFFLOAD };
@@ -11,7 +11,13 @@ export function uploadCoverage(base64: string, width: number, height: number, fo
   return (globalThis as unknown as { offload?: OffloadOps }).offload?.uploadCoverage?.(base64, width, height, foreground, colors?.columns, colors?.palette);
 }
 export type OffloadResult = { ok: true; value: string } | { ok: false; error: string };
-type Pending = { record: string; callback: (result: OffloadResult) => void; deadline: number; sent: boolean; session: number };
+type Pending = { record: string; callback: (result: OffloadResult) => void; deadline: number; sent: boolean; session: number; image: boolean };
+
+function imageTicket(value: unknown): value is OffloadImageTicket {
+  const v = value as OffloadImageTicket | undefined;
+  const side = (n: number) => Number.isInteger(n) && n >= 16 && n <= 256 && (n & (n - 1)) === 0;
+  return !!v && Number.isSafeInteger(v.token) && v.token > 0 && v.token <= 0xffffffff && side(v.width) && side(v.height);
+}
 
 /** One client per JS realm. Inputs are already serialized bounded strings:
  * arbitrary object traversal/serialization is never hidden inside this API. */
@@ -24,16 +30,13 @@ export function createOffloadClient(ops: OffloadOps) {
     pending.delete(id);
     item.callback(result);
   };
-  return {
-    connected: () => !disposed && ops.session() > 0,
-    session: () => disposed ? 0 : ops.session(),
-    pending: () => pending.size,
-    request(method: string, payload: string, callback: Pending["callback"]): number {
+  function request(method: string, payload: string, callback: Pending["callback"], image = false): number {
       if (disposed || pending.size >= OFFLOAD.pending) return 0;
       if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(method)) throw new Error("Invalid offload capability");
       if (typeof payload !== "string" || payload.length > OFFLOAD.payloadChars) throw new Error("Offload payload exceeds budget");
+      if (nextId > 0xffffffff) throw new Error("Offload request ID exhausted; restart the realm");
       const id = nextId++;
-      const record = JSON.stringify({ v: 1, id, method, payload });
+      const record = JSON.stringify({ v: 1, id, method, payload, ...(image ? { response: "image" } : {}) });
       // Conservative UTF-8 bound, refined without allocating a byte buffer.
       let bytes = 0;
       for (let i = 0; i < record.length; i++) {
@@ -42,8 +45,29 @@ export function createOffloadClient(ops: OffloadOps) {
         else bytes += c < 128 ? 1 : c < 2048 ? 2 : 3;
       }
       if (bytes > OFFLOAD.recordBytes) throw new Error("Offload record exceeds budget");
-      pending.set(id, { record, callback, deadline: frame + OFFLOAD.timeoutFrames, sent: false, session: 0 });
+      pending.set(id, { record, callback, deadline: frame + OFFLOAD.timeoutFrames, sent: false, session: 0, image });
       return id;
+  }
+  return {
+    connected: () => !disposed && ops.session() > 0,
+    session: () => disposed ? 0 : ops.session(),
+    pending: () => pending.size,
+    request,
+    requestImage(method: string, payload: string, callback: Pending["callback"]): number {
+      if (!ops.uploadImage || !ops.releaseImage) throw new Error("Host does not implement offload images");
+      return request(method, payload, callback, true);
+    },
+    /** The resource scheduler owns this small serialized ticket after delivery. */
+    uploadImage(raw: string) {
+      const ticket: unknown = JSON.parse(raw);
+      if (!imageTicket(ticket)) throw new Error("Invalid offload image ticket");
+      const handle = ops.uploadImage?.(ticket.token) ?? -1;
+      if (handle < 0) throw new Error("Image staging or frame upload credit unavailable");
+      return { handle, width: ticket.width, height: ticket.height };
+    },
+    releaseImage(raw: string) {
+      const ticket: unknown = JSON.parse(raw);
+      if (imageTicket(ticket)) ops.releaseImage?.(ticket.token);
     },
     cancel(id: number) { pending.delete(id); },
     /** Called exactly once at the frame boundary by the realm service pump. */
@@ -57,12 +81,15 @@ export function createOffloadClient(ops: OffloadOps) {
         try {
           const reply = JSON.parse(raw) as OffloadReply;
           const item = pending.get(reply.id);
+          const image = imageTicket(reply.image) ? reply.image : undefined;
           if (item?.sent && item.session === session && session > 0) {
             delivered = true;
-            finish(reply.id, typeof reply.payload === "string" && reply.payload.length <= OFFLOAD.payloadChars
+            if (image && !item.image) ops.releaseImage?.(image.token);
+            finish(reply.id, item.image && image ? { ok: true, value: JSON.stringify(image) }
+              : !item.image && !image && typeof reply.payload === "string" && reply.payload.length <= OFFLOAD.payloadChars
               ? { ok: true, value: reply.payload }
               : { ok: false, error: typeof reply.error === "string" ? reply.error.slice(0, 160) : "Malformed reply" });
-          }
+          } else if (image) ops.releaseImage?.(image.token);
         } catch { /* A malformed bounded record cannot stop the UI. */ }
       }
       let submitted = 0;
