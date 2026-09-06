@@ -288,6 +288,27 @@
     position: sticky; top: 3.5rem; align-self: start; max-height: calc(100vh - 3.5rem); overflow-y: auto;
   }
   @media (min-width: 1000px) { .doc-nav { display: block; } }
+  /* Native disclosure keeps the full directory usable without JavaScript. */
+  .doc-mobile-nav {
+    position: sticky; top: 3.6rem; z-index: 40; background: var(--bg);
+    border-bottom: 1px solid var(--color-line-2); min-width: 0;
+  }
+  .doc-mobile-nav summary {
+    display: flex; align-items: center; gap: 0.75rem; min-height: 3.25rem;
+    padding: 0.7rem 1.25rem; cursor: pointer; font-size: 0.85rem;
+    color: var(--ink); font-weight: 600; list-style: none;
+  }
+  .doc-mobile-nav summary::-webkit-details-marker { display: none; }
+  .doc-mobile-nav summary::after { content: "+"; font-size: 1.25rem; margin-left: auto; }
+  .doc-mobile-nav[open] summary::after { content: "−"; }
+  .doc-mobile-nav summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+  .doc-current { color: var(--ink-2); font-size: 0.75rem; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc-mobile-links { max-height: calc(100vh - 8rem); max-height: calc(100dvh - 8rem); overflow-y: auto; overscroll-behavior: contain; padding: 1rem 1.25rem; border-top: 1px solid var(--line); }
+  .doc-mobile-links a { display: block; padding: 0.7rem 0.6rem; min-height: 44px; border-radius: 0.4rem; font-size: 0.9rem; color: var(--ink-2); }
+  .doc-mobile-links a:hover { background: var(--panel); color: var(--ink); }
+  .doc-mobile-links a[aria-current="page"] { background: var(--panel); color: var(--accent); font-weight: 600; }
+  .doc-mobile-links a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  @media (min-width: 1000px) { .doc-mobile-nav { display: none; } }
   .doc-sec { margin-bottom: 1.4rem; }
   .doc-sec-t { font-size: 0.78rem; font-weight: 600; color: var(--color-slate-500); margin-bottom: 0.5rem; }
   .doc-nav a { display: block; padding: 0.3rem 0.6rem; border-radius: 0.4rem; font-size: 0.88rem; color: var(--color-slate-400); }

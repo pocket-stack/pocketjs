@@ -18,6 +18,13 @@
 .nav-links .ico{display:flex;align-items:center;color:var(--ink-2)}
 .nav-links .ico svg{width:1.05rem;height:1.05rem;display:block}
 .nav-links .ico:hover{color:var(--accent)}
+@media(max-width:600px){
+  .nav-links{gap:1rem;font-size:.8rem}
+  .nav-links .ico{display:none}
+  .nav .wrap{padding-inline:1rem}
+  .mark{gap:.4rem}
+  .mark .nm{font-size:.95rem}
+}
 .menu{position:relative}
 .menu-btn{appearance:none;background:none;border:none;cursor:pointer;color:var(--ink-2);
   font:inherit;letter-spacing:.02em;display:flex;align-items:center;gap:.35rem;padding:0}
@@ -33,6 +40,10 @@
 .menu-list a{padding:.6rem .9rem;border-bottom:1px solid var(--line)}
 .menu-list a:last-child{border-bottom:none}
 .menu-list a:hover{background:var(--panel);color:var(--accent)}
+@media(max-width:600px){
+  .nav-links .menu-list{left:auto;right:0;transform:translateY(-.35rem)}
+  .nav-links .menu:hover .menu-list,.nav-links .menu:focus-within .menu-list{transform:translateY(0)}
+}
 
 
 /* buttons */

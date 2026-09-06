@@ -1066,7 +1066,7 @@ async function buildDocs(highlight: Highlight) {
         (sec) =>
           `<div class="doc-sec"><div class="doc-sec-t">${sec.title}</div>` +
           sec.items
-            .map((it) => `<a href="${hrefFor(it.slug)}" class="${it.slug === active ? "on" : ""}">${it.title}</a>`)
+            .map((it) => `<a href="${hrefFor(it.slug)}" class="${it.slug === active ? "on" : ""}"${it.slug === active ? ' aria-current="page"' : ""}>${it.title}</a>`)
             .join("") +
           `</div>`,
       ).join("");
@@ -1090,7 +1090,10 @@ async function buildDocs(highlight: Highlight) {
         (next ? `<a href="${hrefFor(next.slug)}" class="next"><span>Next</span>${next.title}</a>` : `<span></span>`) +
         `</nav>`;
       const body =
-        `<div class="doc-shell"><aside class="doc-nav">${sidebarFor(slug)}</aside>` +
+        `<div class="doc-shell">` +
+        `<details class="doc-mobile-nav"><summary><span>Browse docs</span><span class="doc-current">${title}</span></summary>` +
+        `<nav class="doc-mobile-links" aria-label="Documentation">${sidebarFor(slug)}</nav></details>` +
+        `<aside class="doc-nav"><nav aria-label="Documentation">${sidebarFor(slug)}</nav></aside>` +
         `<article class="doc-body" data-slug="${slug}"><div class="prose prose-invert max-w-none doc-content">${html}</div>${pager}</article></div>`;
       write(`${tree.outPrefix}/${slug}/index.html`, renderPage({
         title,
