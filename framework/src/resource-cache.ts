@@ -17,7 +17,7 @@ export interface ResourceCacheOptions<I, R extends ResourceBytes, T> {
   load: ResourceLoad<I, R>;
   /** Bounded decoding/upload only; executed by step(), never by a transport callback. */
   materialize(raw: R, input: I): T;
-  dispose?(value: T): void;
+  dispose?(value: NoInfer<T>): void;
   changed?(input: I): void;
   maxAgeFrames?: number;
   retry?: { attempts: number; delayFrames: number; maxDelayFrames: number };

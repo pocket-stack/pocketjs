@@ -4,6 +4,8 @@ on:
     paths:
       - 'framework/src/resource*.ts'
       - 'framework/src/offload.ts'
+      - 'framework/src/frame.ts'
+      - 'framework/src/lifecycle.ts'
       - 'contracts/spec/offload.ts'
       - 'tests/resource*.test.ts'
       - 'tests/offload.test.ts'
@@ -15,6 +17,8 @@ on:
     paths:
       - 'framework/src/resource*.ts'
       - 'framework/src/offload.ts'
+      - 'framework/src/frame.ts'
+      - 'framework/src/lifecycle.ts'
       - 'contracts/spec/offload.ts'
       - 'tests/resource*.test.ts'
       - 'tests/offload.test.ts'

@@ -124,3 +124,18 @@ test("runtime installs one frame hook after input setup and tears it down with i
   dispose(); runFrameHooks(0); expect(x.runtime.stats().frame).toBe(1); expect(x.requests[0].cancelled).toBe(true);
   resetFrameHooks();
 });
+
+test("a reusable disposer does not erase the decoded value's type", () => {
+  createRoot(dispose => {
+    const runtime = createResourceRuntime({ maxConcurrent: 1, startsPerFrame: 1, completionsPerFrame: 1, maxCollections: 1 });
+    const freed: number[] = [];
+    const freeHandle = (value: { handle: number }) => { freed.push(value.handle); };
+    const collection = runtime.createCollection({ key: (s: string) => s, maxViews: 1, maxEntries: 1, maxCost: 20, cost: () => 20, maxResponseBytes: 10,
+      load(_, done) { done({ ok: true, value: "x" }); return { cancel() {} }; },
+      materialize: (_raw: string) => ({ handle: 7, width: 256, height: 16, row: 42 }), dispose: freeHandle });
+    const view = createResourceView(collection, { demand: () => demand("tile") });
+    runtime.step(); runtime.step();
+    const tile: { handle: number; width: number; height: number; row: number } | undefined = view.value("tile");
+    expect(tile?.row).toBe(42); dispose(); expect(freed).toEqual([7]);
+  });
+});

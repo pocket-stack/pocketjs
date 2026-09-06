@@ -55,40 +55,85 @@ source revision, layout/font version, zoom, tile coordinate, or output format.
 Keys are at most 1,024 code units. Do not place credentials in keys. A cache
 instance may itself provide a fixed namespace; clear it when that namespace changes.
 
-```ts
-import { createResourceScheduler } from "@pocketjs/framework/resource-cache";
-import { offloadResource } from "@pocketjs/framework/resource-offload";
-import { offload } from "@pocketjs/framework/offload";
-import { onFrame } from "@pocketjs/framework/lifecycle";
-import { createSignal, onCleanup } from "solid-js";
+The core API's `reconcile()` replaces the collection's entire working set. Use
+it when one controller owns that set. **Solid components use scoped views** to
+merge independent demands and subscribe without application notification maps.
+Separate collections share work budgets but do not deduplicate their values.
 
-const io = offload();
-const [version, changed] = createSignal(0);
-const scheduler = createResourceScheduler({
+### Solid resource views
+
+`@pocketjs/framework/resource-view` connects resource definitions, demand,
+reactive reads and cleanup on Solid 1. A runtime belongs to a Solid owner and
+registers one frame hook on mount, after the initial component setup hooks.
+Each frame evaluates view demand, reconciles each collection and runs the shared
+scheduler. Publication is batched after materialization. Cleanup removes the
+hook and disposes collections, pending reads and owned native values.
+
+```tsx
+import { createResourceRuntime, createResourceView } from "@pocketjs/framework/resource-view";
+import { offloadResource } from "@pocketjs/framework/resource-offload";
+import { ResourceBoundary } from "@pocketjs/framework/resource";
+
+// In application setup; io, decodePage and PageBody belong to the application.
+const runtime = createResourceRuntime({
   maxConcurrent: 4, startsPerFrame: 2, completionsPerFrame: 1,
   maxCollections: 4, available: () => io.connected() && io.pending() < 4,
 });
-const pages = scheduler.createCache({
-  key: (input: { revision: string; page: number }) => `${input.revision}/${input.page}`,
+const pages = runtime.createCollection({
+  key: (p: { revision: string; page: number }) => `${p.revision}/${p.page}`,
+  maxViews: 4, maxDemandsPerView: 2,
   maxEntries: 8, maxCost: 8 * 8192, maxResponseBytes: 5000,
   cost: () => 8192,
   load: offloadResource(io, "document.page", JSON.stringify),
-  materialize: (raw: string) => JSON.parse(raw) as { title: string },
-  changed: () => changed(n => n + 1),
+  materialize: decodePage,
 });
-// In the controller, before scheduler.step():
-pages.reconcile([{ input: { revision: "r7", page: 12 }, priority: 0, pin: true }]);
-onFrame(() => scheduler.step());
-onCleanup(() => scheduler.dispose());
-// Supply this accessor to ResourceBoundary:
-const state = () => { version(); return pages.state({ revision: "r7", page: 12 }); };
+
+function PagePane(props) {
+  const view = createResourceView(pages, {
+    demand: () => [{ input: props.input, priority: 0, pin: true }],
+  });
+  return <ResourceBoundary state={() => view.state(props.input)}
+    fallback={() => <PageSkeleton />}>
+    {page => <PageBody page={page()} />}
+  </ResourceBoundary>;
+}
 ```
 
-Use fixed notification lanes or per-visible-view signals for a large view; the
-example uses one signal for one page. The planner owns each collection's working
-set. Multiple views using that collection must merge their demands before
-`reconcile`; separate collections share the scheduler's work budget but do not
-deduplicate across collections. The read API does not create unbounded observers.
+The snippet omits application-specific types and decoding. Two `PagePane`
+instances create independent views over `pages`. Their demands are merged by
+key; overlapping keys use the lower numerical priority and preserve either
+view's pin. **Closing one pane withdraws only that pane's demand.** The remaining
+pane keeps its requests and values. Undemanded ready values can remain cached
+until eviction. Hidden components that stay mounted return an empty demand
+array when their content is no longer needed.
+
+`view.state(input)` tracks availability for that key. `view.value(input)` returns
+the ready value or `undefined`. `view.state(input, select)` projects a loaded
+page into an item while preserving pending and error states; a projection that
+returns `undefined` produces pending. Rendering does not allocate subscriptions
+for arbitrary keys, add demand or dispatch IO. Reads outside the view's last
+planned demand return pending. Changes to demand take effect at the next frame.
+Do not retain a borrowed native handle beyond the resource state's lifetime.
+
+**View storage and resident values have separate bounds.** `maxViews` limits
+owners per collection. Each view accepts at most `maxDemandsPerView` demands
+(default: `maxEntries`). Their union is bounded by the product. Per-key signals
+exist only for that union and are removed when the last demand leaves. Repeated
+reads of absent keys allocate no additional signal storage. An over-budget view
+or invalid demand throws before replacing the collection's previous demand.
+
+The union is admitted by priority within the existing entry and byte budgets.
+Demand that does not fit remains pending until capacity becomes available; pins
+protect admitted values, and do not increase capacity. Applications can reduce
+prefetch or resolution when visible demand exceeds the configured budget.
+Demand, key, cost, projection and materialization callbacks must have bounded
+work. Demand callbacks describe reads and must not mutate resource collections.
+
+Collection `invalidate`, `clear` and `cancel` publish reactive changes without
+manual version signals. The runtime's `step()` is exposed for deterministic
+tests; applications using its mounted frame hook must not add a second step
+hook. The framework-neutral scheduler remains available to other UI adapters;
+this owner/subscription adapter is exported for Solid only.
 
 ### Admission, execution and ownership
 
@@ -107,7 +152,12 @@ A burst of network responses therefore cannot create a separate unbounded
 upload queue. A loader may complete synchronously, but its value is still
 materialized on a subsequent `step`. Late, duplicate, cancelled and disposed
 completions never reach the materializer. A loader returning `false` declines
-admission without consuming a slot or retry attempt.
+admission without consuming a slot or retry attempt. That entry is skipped for
+the rest of the frame; other keys and loaders can still start. The scan is
+bounded by resident entries plus the accepted-start budget. Refusals and
+cancelled attempts preserve the failure budget already accumulated. Completed
+responses are materialized in arrival order across collections, so a cache
+that keeps refreshing cannot starve another cache's completed response.
 
 Lower numerical priority runs first. Visible demand can cancel an outstanding
 unpinned speculative read to recover credit. Work leaving the desired set is
@@ -203,7 +253,10 @@ Pocket Doc uses four collections: eight file pages, eight layout windows,
 72 Markdown tiles and 20 text tiles. They share four active requests, two starts
 and one materialization per frame. File/geometry demands precede visible text
 and document textures, followed by directional prefetch. The application retains
-its 12 physical row notification lanes and viewport planner. The framework owns
-deduplication, generation checks, retries, admission, eviction and texture
-release. Documents, SQLite drafts, Markdown layout and rasterization remain in
+its viewport planner and 12 physical rendering slots. Scoped views replace
+manual row notification lanes, version signals and cache-shaped store wrappers.
+Unicode text components declare their own demand instead of relying on a central
+scan of file labels and editor text. Framework subscriptions notify consumers by
+key. Deduplication, generation checks, retries, admission, eviction and texture
+release share the same scheduler implementation. Documents, SQLite drafts, Markdown layout and rasterization remain in
 the Mac provider. No renderer ABI or companion protocol changes are required.
