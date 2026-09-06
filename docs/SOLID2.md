@@ -85,7 +85,7 @@ scroll offsets match. The **839-frame QuickJS replay** also passes.
 | --- | ---: | ---: |
 | Original Pocket Doc / Solid 1 | 250,723 | 128 KiB |
 | Shared resources / Solid 1 | 264,913 | 128 KiB |
-| Shared resources / Solid 2 | See paired app's validation receipt | 192 KiB |
+| Shared resources / Solid 2 | 334,683 | 192 KiB |
 
 The Solid 2 application does not pass the former 128 KiB smoke limit. The 3DS
 host already provides **384 KiB**; this upgrade does not raise that native limit.
@@ -98,3 +98,57 @@ resource limits. The implementation benefits are fewer app-owned scheduling
 paths, split effects, automatic write batching and a native async-graph path.
 Hardware frame-time improvement is unmeasured. The new application binary needs
 a separate device-install and interaction receipt.
+
+
+## Validation
+
+The framework renderer/resource/scrolling/keyboard suite passes **126 tests /
+881 assertions**, including invalid-demand admission and native frame commits. Development-condition renderer/resource/list checks
+pass **75 tests / 327 assertions**; controller fixtures outside a root still
+emit owner-cleanup diagnostics. Integration checks cover package exports,
+compiler portability, QuickJS C hosts, DevTools and platform profiles. IM,
+launcher, deep-zoom and audio simulations pass **35 tests / 519 assertions**;
+clock and base simulation checks pass **16 tests / 84 assertions**.
+
+The website builds and links all **28 playground variants**. The first full
+browser pass completed 25 variants; Chrome/Solid and Library/Vue/Octane needed
+separate reruns and then passed. The verifier now reports incomplete compilation
+at its wait boundary instead of continuing with a missing frame callback.
+The embedded Clear documentation demo passes its scripted touch drag.
+
+**18 PSP applications pass real-device PSPLINK regression.** The set comprises
+all 17 PSP-admitted example manifests plus the standalone Launcher. Each fresh
+release build is loaded on the USB-connected PSP. Device `devStats` reports the
+same FNV-1a64 bundle identity as its compiled JS and asset pack. DevTools replays
+button masks, the frame counter advances, and the device supplies before/after
+480×272 VRAM captures. No guest error is recorded. The captures have been
+inspected for text, layout and resulting state: Hero count, Café order receipt,
+Gallery page, Library detail, IM thread, Settings values and Vue SFC model value.
+
+![PSP framebuffer captures after input replay](validation/solid2-psp.png)
+
+[Per-application receipts](validation/solid2-psp.json) include PRX SHA-256,
+expected/reported bundle identity, input tape and capture frame numbers.
+A separate 18 MB multi-app PRX also passes native guest replacement:
+replayed Circle opens Café from Launcher, and `appLaunch` returns to Launcher.
+The whole-package hash matches the embedded package set before and after both
+switches. SELECT-based summon, audio samples and physical button feel were not
+audited.
+Debug USB mailbox IO is enabled during this regression, so these observations
+are not production frame-time measurements.
+
+![Native Launcher guest switches](validation/solid2-psp-launcher.png)
+
+[Multi-app switch receipt](validation/solid2-psp-launcher.json).
+
+To repeat a single build, use its manifest and the repository's PSP toolchain:
+
+```sh
+bun tools/pocket.ts build --target psp --manifest apps/hero/pocket.json \
+  --project-root . --outdir dist/psp-check -- --release
+```
+
+Serve the PRX directory with `usbhostfs_pc`, enable the DevTools mailbox before
+loading, and use `pspsh -e 'ldstart host0:/pocketjs-psp.prx'`. The existing
+[DevTools protocol](DEVTOOLS.md) supplies `devStats`, `replay` and `screenshot`;
+pixels are read from VRAM through a RAM bounce buffer and transferred over USB.

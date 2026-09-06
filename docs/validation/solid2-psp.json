@@ -1,0 +1,1331 @@
+{
+  "source": "PSPLINK USB, device DevTools mailbox and VRAM readback",
+  "runtime": "80dc51f1",
+  "count": 18,
+  "results": [
+    {
+      "output": "cafe-main",
+      "manifest": "apps/cafe/pocket.json",
+      "prxSha256": "8a620cf4fdb612535832f763a25f8868712ddadc83f4575d8db6e8c680110bbe",
+      "expectedBundle": "d1454c880d41da6e",
+      "load": "Load/Start host0:/cafe-main.prx UID: 0x0433A103 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "cafe-main",
+          "bundle": "d1454c880d41da6e",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "cafe-main-before.png",
+        "frame": 129
+      },
+      "tape": {
+        "v": 1,
+        "app": "cafe-main",
+        "frames": 128,
+        "masks": [
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "cafe-main-after.png",
+        "frame": 369
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "cards-main",
+      "manifest": "apps/cards/pocket.json",
+      "prxSha256": "1a1905c6f5dca8e3f483d725cd3a9f5c5cf3f9e8d77b837aa897e4d41af99c6c",
+      "expectedBundle": "93ad54740ecfd85d",
+      "load": "Load/Start host0:/cards-main.prx UID: 0x0431B401 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "cards-main",
+          "bundle": "93ad54740ecfd85d",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "cards-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "cards-main",
+        "frames": 96,
+        "masks": [
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "cards-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "chrome-main",
+      "manifest": "apps/chrome/pocket.json",
+      "prxSha256": "9e7752d00b6737354c21aacb054718fdf0d24b99faa884c355c3bdf043d72aaa",
+      "expectedBundle": "b82df260ffc79e44",
+      "load": "Load/Start host0:/chrome-main.prx UID: 0x0431B401 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "chrome-main",
+          "bundle": "b82df260ffc79e44",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "chrome-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "chrome-main",
+        "frames": 96,
+        "masks": [
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "chrome-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "cursor-main",
+      "manifest": "apps/cursor/pocket.json",
+      "prxSha256": "37b7d87b2f192b5e5492b09be392f2cd3a969f81c2669761bd47a679b5ef54b4",
+      "expectedBundle": "f636015f01595c3f",
+      "load": "Load/Start host0:/cursor-main.prx UID: 0x0433C503 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "cursor-main",
+          "bundle": "f636015f01595c3f",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "cursor-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "cursor-main",
+        "frames": 96,
+        "masks": [
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "cursor-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "gallery-main",
+      "manifest": "apps/gallery/pocket.json",
+      "prxSha256": "6f51f0a8352486a86c7e73fe794885d35d2f3277bdec9c712c35299624bff8a4",
+      "expectedBundle": "4c7d1338cc1878b9",
+      "load": "Load/Start host0:/gallery-main.prx UID: 0x0433A103 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "gallery-main",
+          "bundle": "4c7d1338cc1878b9",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "gallery-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "gallery-main",
+        "frames": 96,
+        "masks": [
+          [
+            512,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "gallery-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "hero-main",
+      "manifest": "apps/hero/pocket.json",
+      "prxSha256": "e8e5cf61a04019452d5f77822cc36eb08ab3984112f6034ae81ea3b60809a4cf",
+      "expectedBundle": "028df61036d691ff",
+      "load": "Load/Start host0:/hero-main.prx UID: 0x0433C503 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "hero-main",
+          "bundle": "028df61036d691ff",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "hero-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "hero-main",
+        "frames": 128,
+        "masks": [
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "hero-main-after.png",
+        "frame": 369
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "hero-vue-sfc-main",
+      "manifest": "apps/hero-vue-sfc/pocket.json",
+      "prxSha256": "c779881a23dfc14c63883e0c8950e92d595d7b30d9c33860f130110e06e2afc0",
+      "expectedBundle": "41398ab6d3ef3d5f",
+      "load": "Load/Start host0:/hero-vue-sfc-main.prx UID: 0x0433C503 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "hero-vue-sfc-main",
+          "bundle": "41398ab6d3ef3d5f",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "hero-vue-sfc-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "hero-vue-sfc-main",
+        "frames": 128,
+        "masks": [
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "hero-vue-sfc-main-after.png",
+        "frame": 369
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "hero-vue-vapor-main",
+      "manifest": "apps/hero-vue-vapor/pocket.json",
+      "prxSha256": "2080b1200660df0c74f801d2fa287d7f7669de95d0e315562080d001539d5b3a",
+      "expectedBundle": "87ab8a385cc4afb8",
+      "load": "Load/Start host0:/hero-vue-vapor-main.prx UID: 0x0433C503 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "hero-vue-vapor-main",
+          "bundle": "87ab8a385cc4afb8",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "hero-vue-vapor-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "hero-vue-vapor-main",
+        "frames": 128,
+        "masks": [
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "hero-vue-vapor-main-after.png",
+        "frame": 369
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "im-main",
+      "manifest": "apps/im/pocket.json",
+      "prxSha256": "1bce8ce9e72075dbcd8809695741aa4f526090d569ef0b7ab652e82d1df26df3",
+      "expectedBundle": "a7cde23cc6354c7e",
+      "load": "Load/Start host0:/im-main.prx UID: 0x0433A103 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "im-main",
+          "bundle": "a7cde23cc6354c7e",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "im-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "im-main",
+        "frames": 96,
+        "masks": [
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "im-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "launcher-main",
+      "manifest": "apps/launcher/pocket.json",
+      "prxSha256": "9a1eacef3c8d4c4a37ca18989b2805ba5a5440e8d11d27033fbf2d846e135abe",
+      "expectedBundle": "e0d05f2ea0fe36c3",
+      "load": "Load/Start host0:/launcher-main.prx UID: 0x0431B401 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "launcher-main",
+          "bundle": "e0d05f2ea0fe36c3",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "launcher-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "launcher-main",
+        "frames": 64,
+        "masks": [
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            512,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "launcher-main-after.png",
+        "frame": 309
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "library-main",
+      "manifest": "apps/library/pocket.json",
+      "prxSha256": "94df8be026021c29908a44f299864b2444dd5f83d6a6225f39242177bbc1ff03",
+      "expectedBundle": "f85096fb8acc0697",
+      "load": "Load/Start host0:/library-main.prx UID: 0x0431B401 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "library-main",
+          "bundle": "f85096fb8acc0697",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "library-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "library-main",
+        "frames": 96,
+        "masks": [
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "library-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "motions-main",
+      "manifest": "apps/motions/pocket.json",
+      "prxSha256": "e628edffb341fb607d1a26dfcdd76c32d9b5a31d2e7aaddbf7416452eaafdffd",
+      "expectedBundle": "6e34212fd73546d5",
+      "load": "Load/Start host0:/motions-main.prx UID: 0x0433E203 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "motions-main",
+          "bundle": "6e34212fd73546d5",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "motions-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "motions-main",
+        "frames": 32,
+        "masks": [
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "motions-main-after.png",
+        "frame": 279
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "music-main",
+      "manifest": "apps/music/pocket.json",
+      "prxSha256": "2a27c7376dcffa957b4f2684160be6b0469d2a1ee97a4a2787ef68aa6b73eae7",
+      "expectedBundle": "ab92304c108fd036",
+      "load": "Load/Start host0:/music-main.prx UID: 0x0431B401 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "music-main",
+          "bundle": "ab92304c108fd036",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "music-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "music-main",
+        "frames": 96,
+        "masks": [
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            512,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "music-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "notifications-main",
+      "manifest": "apps/notifications/pocket.json",
+      "prxSha256": "85d3d50e4e65742a6f504cc907c445af3694efbcca6380d35dd9baca9fe73ed8",
+      "expectedBundle": "079427f321ab9379",
+      "load": "Load/Start host0:/notifications-main.prx UID: 0x0433A103 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "notifications-main",
+          "bundle": "079427f321ab9379",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "notifications-main-before.png",
+        "frame": 129
+      },
+      "tape": {
+        "v": 1,
+        "app": "notifications-main",
+        "frames": 96,
+        "masks": [
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "notifications-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "settings-main",
+      "manifest": "apps/settings/pocket.json",
+      "prxSha256": "c8aa2ae7dc4c8099945d45f7a0fe60e020f5e590b9746d6d14eb74cd6fd79934",
+      "expectedBundle": "a071eac4cd2d1943",
+      "load": "Load/Start host0:/settings-main.prx UID: 0x0433C501 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "settings-main",
+          "bundle": "a071eac4cd2d1943",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "settings-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "settings-main",
+        "frames": 96,
+        "masks": [
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "settings-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "stats-main",
+      "manifest": "apps/stats/pocket.json",
+      "prxSha256": "b3dfc0565ad7e15016b0ae442cfb33a766cafc1ff9dc7644d3c1ecddabf82437",
+      "expectedBundle": "77f960288a8fbd00",
+      "load": "Load/Start host0:/stats-main.prx UID: 0x0433A103 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "stats-main",
+          "bundle": "77f960288a8fbd00",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "stats-main-before.png",
+        "frame": 129
+      },
+      "tape": {
+        "v": 1,
+        "app": "stats-main",
+        "frames": 32,
+        "masks": [
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "stats-main-after.png",
+        "frame": 279
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "vue-sfc-lab-main",
+      "manifest": "apps/vue-sfc-lab/pocket.json",
+      "prxSha256": "457d0c0e015dedcfe014c394d1f470c11eebad76d6353306ea6b845e081890e1",
+      "expectedBundle": "884f2d6b92177a53",
+      "load": "Load/Start host0:/vue-sfc-lab-main.prx UID: 0x0433C503 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "vue-sfc-lab-main",
+          "bundle": "884f2d6b92177a53",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "vue-sfc-lab-main-before.png",
+        "frame": 129
+      },
+      "tape": {
+        "v": 1,
+        "app": "vue-sfc-lab-main",
+        "frames": 96,
+        "masks": [
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "vue-sfc-lab-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    },
+    {
+      "output": "zoomlab-main",
+      "manifest": "apps/zoomlab/pocket.json",
+      "prxSha256": "4313d474a4b4de8d824417bbd0062f1c599d12011874fd2bd636891976f9c6dc",
+      "expectedBundle": "4aba9d539384dd67",
+      "load": "Load/Start host0:/zoomlab-main.prx UID: 0x0431B401 Name: pocketjs\r\n",
+      "identity": {
+        "t": "devStats",
+        "frame": 129,
+        "data": {
+          "app": "zoomlab-main",
+          "bundle": "4aba9d539384dd67",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      },
+      "before": {
+        "file": "zoomlab-main-before.png",
+        "frame": 139
+      },
+      "tape": {
+        "v": 1,
+        "app": "zoomlab-main",
+        "frames": 96,
+        "masks": [
+          [
+            64,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            32,
+            2
+          ],
+          [
+            0,
+            30
+          ],
+          [
+            8192,
+            2
+          ],
+          [
+            0,
+            30
+          ]
+        ]
+      },
+      "after": {
+        "file": "zoomlab-main-after.png",
+        "frame": 339
+      },
+      "errors": [],
+      "pass": true
+    }
+  ]
+}

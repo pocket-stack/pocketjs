@@ -238,6 +238,9 @@ function makeProbe(buttons: string[]) {
         if (document.querySelector('#pg-status')?.dataset.kind === 'err') break;
         await sleep(25);
       }
+      if (document.querySelector('#pg-status')?.dataset.kind !== 'ok') {
+        throw new Error('Compilation did not finish: ' + document.querySelector('#pg-status')?.textContent);
+      }
     };
     await waitForRun();
     const canvas = document.querySelector('#pg-canvas');

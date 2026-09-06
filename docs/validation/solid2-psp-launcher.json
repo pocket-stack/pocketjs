@@ -1,0 +1,109 @@
+{
+  "expectedBundle": "f751e5a57be65ba3",
+  "load": "Load/Start host0:/multi.prx UID: 0x0431B401 Name: pocketjs\r\n",
+  "switches": [
+    {
+      "hello": {
+        "t": "hello",
+        "host": "psp",
+        "frame": 9
+      },
+      "identity": {
+        "t": "devStats",
+        "frame": 49,
+        "data": {
+          "app": "launcher-main",
+          "bundle": "f751e5a57be65ba3",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      }
+    },
+    {
+      "identity": {
+        "t": "devStats",
+        "frame": 59,
+        "data": {
+          "app": "launcher-main",
+          "bundle": "f751e5a57be65ba3",
+          "audio": {
+            "starved": 0,
+            "reserveGiveups": 0,
+            "lastReserveErr": 0,
+            "releaseTimeouts": 0,
+            "pushedFrames": 0
+          },
+          "vid": {
+            "presented": 0,
+            "torn": 0,
+            "lapped": 0,
+            "epochs": 0,
+            "hdrFails": 0,
+            "bytes": 0
+          },
+          "svc": {
+            "truncResets": 0
+          }
+        }
+      }
+    }
+  ],
+  "initial": {
+    "t": "devStats",
+    "frame": 129,
+    "data": {
+      "app": "launcher-main",
+      "bundle": "f751e5a57be65ba3",
+      "audio": {
+        "starved": 0,
+        "reserveGiveups": 0,
+        "lastReserveErr": 0,
+        "releaseTimeouts": 0,
+        "pushedFrames": 0
+      },
+      "vid": {
+        "presented": 0,
+        "torn": 0,
+        "lapped": 0,
+        "epochs": 0,
+        "hdrFails": 0,
+        "bytes": 0
+      },
+      "svc": {
+        "truncResets": 0
+      }
+    }
+  },
+  "before": {
+    "file": "launcher-multi-before.png",
+    "frame": 139
+  },
+  "opened": {
+    "file": "launcher-multi-opened.png",
+    "frame": 59
+  },
+  "returned": {
+    "file": "launcher-multi-returned.png",
+    "frame": 69
+  },
+  "errors": [],
+  "pass": true,
+  "runtime": "80dc51f1",
+  "note": "Native multi-app build: replay Circle to launch Cafe, then appLaunch to return; SELECT summon was not simulated."
+}
