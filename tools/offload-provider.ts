@@ -1,6 +1,8 @@
 /** Desktop transport. Capability implementations execute in a Worker owned by
  * each authenticated device connection, never inside the socket callbacks. */
 import { connect } from "node:net";
+import { resolve } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { OFFLOAD, OFFLOAD_IMAGE, type OffloadRequest, type OffloadProviderReply, type OffloadImage } from "../contracts/spec/offload.ts";
 import { OffloadDecoder, encodeOffloadRecord, encodeOffloadImage } from "./offload-wire.ts";
 export type { OffloadImage } from "../contracts/spec/offload.ts";
@@ -8,40 +10,66 @@ export type { OffloadImage } from "../contracts/spec/offload.ts";
 export function connectOffloadProvider(options: {
   address: string; key: string; worker: string | URL; data?: unknown;
   port?: number; log?: (message: string) => void;
+  /** Process mode isolates native codecs and fetch teardown from the transport.
+   * Both modes use the same self.onmessage/postMessage provider module API. */
+  isolation?: "thread" | "process";
 }) {
   if (!/^[0-9a-f]{64}$/.test(options.key)) throw new Error("Expected a 256-bit pairing key");
   let stopped = false;
   let closeCurrent = () => {};
   let retry: ReturnType<typeof setTimeout> | undefined;
+  let generation = 0;
   const attach = () => {
     if (stopped) return;
     const socket = connect({ host: options.address, port: options.port ?? OFFLOAD.port });
     const decoder = new OffloadDecoder();
-    let worker: Worker | undefined;
+    const session = ++generation;
+    const log = (message: string) => options.log?.(`Session ${session}: ${message}`);
+    let worker: { postMessage(value: unknown): void; terminate(): void | Promise<unknown> } | undefined;
+    let closed = false, reason = "device closed connection";
     const pending = new Map<number, boolean>();
     const deadlines = new Map<number, ReturnType<typeof setTimeout>>();
-    closeCurrent = () => socket.destroy();
+    const fail = (why: string) => { if (closed) return; reason = why; socket.destroy(); };
+    closeCurrent = () => fail("provider stopped");
     socket.setNoDelay(true);
-    socket.setTimeout(15000, () => socket.destroy());
+    socket.setTimeout(15000, () => fail("device idle timeout"));
     socket.on("connect", () => {
       socket.write(options.key);
-      worker = new Worker(options.worker, { type: "module" });
-      worker.postMessage({ init: options.data });
-      worker.onerror = () => socket.destroy();
-      worker.onmessage = (event: MessageEvent<OffloadProviderReply>) => {
-        const reply = event.data;
+      const replyToDevice = (reply: OffloadProviderReply) => {
+        if (closed || socket.destroyed) return;
         const expectsImage = pending.get(reply.id);
-        if (!pending.delete(reply.id)) return socket.destroy();
+        if (!pending.delete(reply.id)) return fail("unexpected provider reply ID");
         clearTimeout(deadlines.get(reply.id)); deadlines.delete(reply.id);
         try {
           if (typeof reply.payload === "string" && reply.payload.length > OFFLOAD.payloadChars) throw new Error("Result budget exceeded");
           if (reply.image && !expectsImage) throw new Error("Unrequested image response");
           const record = reply.image ? encodeOffloadImage(reply.id, reply.image) : encodeOffloadRecord(JSON.stringify(reply));
-          if (socket.writableLength > (OFFLOAD_IMAGE.maxBytes + OFFLOAD_IMAGE.headerBytes + 4) * OFFLOAD.pending) return socket.destroy();
+          if (socket.writableLength > (OFFLOAD_IMAGE.maxBytes + OFFLOAD_IMAGE.headerBytes + 4) * OFFLOAD.pending) return fail("device response backlog exceeded");
           socket.write(record);
-        } catch { socket.destroy(); }
+        } catch { fail("invalid provider response"); }
       };
-      options.log?.("Transport connected; waiting for paired device requests");
+      try {
+        if (options.isolation === "process") {
+          const entry = options.worker instanceof URL ? options.worker.href : options.worker.startsWith("file:") ? options.worker : pathToFileURL(resolve(options.worker)).href;
+          const child = Bun.spawn([process.execPath, fileURLToPath(new URL("./offload-process.ts", import.meta.url)), entry], {
+            stdin: "ignore", stdout: "inherit", stderr: "inherit", serialization: "advanced",
+            ipc: replyToDevice,
+            onExit(_child, code, signal) { if (!closed) fail(`provider process exited (code=${code}, signal=${signal ?? "none"})`); },
+          });
+          worker = { postMessage: value => child.send(value), terminate() {
+            if (child.exitCode === null && !child.signalCode) child.kill("SIGKILL");
+            return child.exited;
+          } };
+          log(`provider process pid=${child.pid}`);
+        } else {
+          const thread = new Worker(options.worker, { type: "module" });
+          thread.onerror = () => fail("provider worker error");
+          thread.onmessage = event => replyToDevice(event.data);
+          worker = thread;
+        }
+        worker.postMessage({ init: options.data });
+        log("transport connected; waiting for paired device requests");
+      } catch { fail("provider executor could not start"); }
     });
     socket.on("data", chunk => {
       try {
@@ -57,16 +85,22 @@ export function connectOffloadProvider(options: {
               pending.size >= OFFLOAD.pending || pending.has(request.id)) throw new Error("Invalid request");
           pending.set(request.id, request.response === "image");
           // Terminate a wedged provider worker. Sent mutations are never retried.
-          deadlines.set(request.id, setTimeout(() => socket.destroy(), 9000));
+          deadlines.set(request.id, setTimeout(() => fail(`request deadline: ${request.method} id=${request.id}`), 9000));
           worker!.postMessage(request);
         });
-      } catch { socket.destroy(); }
+      } catch { fail("invalid device request or provider unavailable"); }
     });
-    socket.on("error", () => {});
+    socket.on("error", (error: NodeJS.ErrnoException) => { reason = `socket ${error.code ?? "error"}`; });
     socket.on("close", () => {
-      worker?.terminate();
+      closed = true;
       for (const timer of deadlines.values()) clearTimeout(timer);
-      if (!stopped) retry = setTimeout(attach, 1500);
+      if (worker) log(`disconnected: ${reason}; pending=${pending.size}`);
+      // Reap the old process before starting another; its late replies cannot
+      // enter a replacement session, including after request IDs restart.
+      const reconnect = () => {
+        if (!stopped) retry = setTimeout(attach, 1500);
+      };
+      Promise.resolve().then(() => worker?.terminate()).then(reconnect, reconnect);
     });
   };
   attach();

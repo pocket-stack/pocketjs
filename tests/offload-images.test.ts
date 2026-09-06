@@ -11,7 +11,7 @@ import { createResourceScheduler } from "../framework/src/resource-cache.ts";
 import { createResourceRuntime, createResourceView } from "../framework/src/resource-view.ts";
 import { createOffloadImageCollection } from "../framework/src/resource-offload.ts";
 
-test("actual native worker receives binary images from the real provider transport and reconnects after realm reset", async () => {
+for (const isolation of ["thread", "process"] as const) test(`actual native worker receives binary images from the ${isolation} provider transport and reconnects after realm reset`, async () => {
   const directory = mkdtempSync(join(tmpdir(), "pocket-native-"));
   const server = Bun.serve({ port: 0, fetch: () => new Response("") }); const port = server.port!; server.stop(true);
   const key = randomBytes(32).toString("hex"), keyPath = join(directory, "pair.key"); writeFileSync(keyPath, key, { mode: 0o600 });
@@ -23,7 +23,7 @@ test("actual native worker receives binary images from the real provider transpo
       "tests/fixtures/offload-native/main.c", "hosts/3ds/src/offload.c", "-o", binary]);
     if (compile.exitCode) throw new Error(compile.stderr.toString());
     const process = Bun.spawn([binary], { stdout: "pipe", stderr: "pipe" }); child = process;
-    provider = connectOffloadProvider({ address: "127.0.0.1", port, key, worker: new URL("./fixtures/offload-native/worker.ts", import.meta.url), data: {} });
+    provider = connectOffloadProvider({ address: "127.0.0.1", port, key, worker: new URL("./fixtures/offload-native/worker.ts", import.meta.url), data: {}, isolation });
     const [status, output, error] = await Promise.all([process.exited, new Response(process.stdout).text(), new Response(process.stderr).text()]);
     if (status) throw new Error(error); expect(output).toContain("realm-reset reconnect passed");
   } finally { provider?.close(); child?.kill(); rmSync(directory, { recursive: true }); }
