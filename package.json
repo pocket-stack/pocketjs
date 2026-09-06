@@ -148,6 +148,7 @@
     "./resource-state": "./framework/src/resource-state.ts",
     "./resource-cache": "./framework/src/resource-cache.ts",
     "./resource-offload": "./framework/src/resource-offload.ts",
+    "./resource-view": "./framework/src/resource-view.ts",
     "./resource": "./framework/src/resource.ts",
     "./audio": "./framework/src/audio-api.ts",
     "./clock": "./framework/src/clock.ts",

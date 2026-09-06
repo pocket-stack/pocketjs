@@ -34,7 +34,7 @@ interface Job { priority: number; order: number; start(): boolean }
 interface Collection {
   candidate(): Job | undefined;
   speculative(): { priority: number; cancel(): void } | undefined;
-  complete(): boolean;
+  completion(): { order: number; run(): void } | undefined;
   cancel(): void;
   dispose(): void;
 }
@@ -48,7 +48,7 @@ const positive = (n: number, name: string) => {
 export function createResourceScheduler(options: ResourceSchedulerOptions) {
   for (const name of ["maxConcurrent", "startsPerFrame", "completionsPerFrame", "maxCollections"] as const) positive(options[name], name);
   const collections = new Set<Collection>();
-  let frame = 0, order = 0, active = 0, disposed = false, stepping = false;
+  let frame = 0, order = 0, completionOrder = 0, active = 0, disposed = false, stepping = false;
   function createCache<I, R extends ResourceBytes, T>(config: ResourceCacheOptions<I, R, T>) {
     if (disposed || collections.size >= options.maxCollections) throw new Error("Resource collection budget exceeded");
     positive(config.maxEntries, "maxEntries"); positive(config.maxCost, "maxCost"); positive(config.maxResponseBytes, "maxResponseBytes");
@@ -60,13 +60,17 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
       desired: boolean; pin: boolean; priority: number; touched: number; order: number;
       generation: number; busy: boolean; cancel?: () => void; result?: ResourceResult<R>;
       attempts: number; retryAt: number; loadedAt: number; error?: unknown;
+      declinedAt: number; resultOrder: number; charged: boolean;
     };
     const entries = new Map<string, Entry>();
     let cost = 0, dead = false;
     const notify = (entry: Entry) => config.changed?.(entry.input);
     function stop(entry: Entry) {
-      entry.generation++; entry.attempts = 0;
-      if (entry.busy) { entry.busy = false; active--; }
+      entry.generation++;
+      if (entry.busy) {
+        if (entry.charged) entry.attempts--;
+        entry.charged = false; entry.busy = false; active--;
+      }
       const cancel = entry.cancel; entry.cancel = undefined; entry.result = undefined;
       cancel?.();
     }
@@ -86,19 +90,21 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
             const bytes = result.ok ? typeof result.value === "string" ? result.value.length * 2
               : result.value instanceof Uint8Array ? result.value.byteLength : Infinity : 0;
             entry.result = bytes <= config.maxResponseBytes ? result : { ok: false, error: "Resource response exceeds budget" };
+            entry.resultOrder = completionOrder++;
           }
         });
-        if (!task) { stop(entry); return false; }
-        entry.cancel = task.cancel; entry.attempts++; notify(entry); return true;
+        if (!task) { stop(entry); entry.declinedAt = frame; return false; }
+        entry.cancel = task.cancel; entry.attempts++; entry.charged = true; notify(entry); return true;
       } catch (error) {
-        entry.result = { ok: false, error }; entry.attempts++; return true;
+        entry.result = { ok: false, error }; entry.resultOrder = completionOrder++;
+        entry.attempts++; entry.charged = true; return true;
       }
     }
     const collection: Collection = {
       candidate() {
         let chosen: Entry | undefined;
         for (const entry of entries.values()) {
-          if (!entry.desired || entry.busy || entry.attempts >= retry.attempts || frame < entry.retryAt) continue;
+          if (!entry.desired || entry.busy || entry.declinedAt === frame || entry.attempts >= retry.attempts || frame < entry.retryAt) continue;
           if (!entry.stale && entry.state.status === "ready" && (config.maxAgeFrames === undefined || frame - entry.loadedAt < config.maxAgeFrames)) continue;
           if (!chosen || entry.priority < chosen.priority || entry.priority === chosen.priority && entry.order < chosen.order) chosen = entry;
         }
@@ -109,24 +115,25 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
         for (const entry of entries.values()) if (entry.busy && !entry.pin && !entry.result && (!worst || entry.priority > worst.priority)) worst = entry;
         return worst && { priority: worst.priority, cancel: () => { stop(worst!); notify(worst!); } };
       },
-      complete() {
-        for (const entry of entries.values()) {
-          if (!entry.result) continue;
-          const result = entry.result; entry.result = undefined; entry.cancel = undefined; entry.busy = false; active--;
+      completion() {
+        let chosen: Entry | undefined;
+        for (const entry of entries.values()) if (entry.result && (!chosen || entry.resultOrder < chosen.resultOrder)) chosen = entry;
+        if (!chosen) return;
+        const entry = chosen;
+        return { order: entry.resultOrder, run() {
+          const result = entry.result!; entry.result = undefined; entry.cancel = undefined; entry.busy = false; entry.charged = false; active--;
           let next: ResourceState<T>;
           try { if (!result.ok) throw result.error; next = ready(config.materialize(result.value, entry.input)); }
           catch (error) {
             entry.error = error; entry.stale = true;
             entry.retryAt = frame + Math.min(retry.maxDelayFrames, retry.delayFrames * 2 ** Math.min(20, entry.attempts - 1));
             if (entry.state.status !== "ready") entry.state = failed(error);
-            notify(entry); return true;
+            notify(entry); return;
           }
           const previous = entry.state; entry.state = next; entry.stale = false; entry.error = undefined;
           entry.attempts = 0; entry.loadedAt = frame; notify(entry);
           if (previous.status === "ready" && next.status === "ready" && previous.value !== next.value) config.dispose?.(previous.value);
-          return true;
-        }
-        return false;
+        } };
       },
       cancel,
       dispose() { if (dead) return; dead = true; clear(); collections.delete(collection); },
@@ -171,7 +178,7 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
           if (entries.size >= config.maxEntries || cost + reserved > config.maxCost) continue;
           entries.set(key, { key, input: demand.input, cost: reserved, state: pending(), stale: true, desired: true,
             pin: !!demand.pin, priority: demand.priority, touched: frame, order: order++, generation: 0,
-            busy: false, attempts: 0, retryAt: 0, loadedAt: 0 });
+            busy: false, attempts: 0, retryAt: 0, loadedAt: 0, declinedAt: -1, resultOrder: 0, charged: false });
           cost += reserved; admitted++;
         }
         return admitted;
@@ -204,11 +211,17 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
       stepping = true; frame++;
       try {
         for (let n = 0; n < options.completionsPerFrame; n++) {
-          let delivered = false;
-          for (const collection of collections) if (collection.complete()) { delivered = true; break; }
-          if (!delivered) break;
+          let oldest: ReturnType<Collection["completion"]>;
+          for (const collection of collections) {
+            const candidate = collection.completion();
+            if (candidate && (!oldest || candidate.order < oldest.order)) oldest = candidate;
+          }
+          if (!oldest) break;
+          oldest.run();
         }
-        for (let n = 0; n < options.startsPerFrame; n++) {
+        // Each declined entry is skipped for this frame. The scan is bounded by
+        // resident entries plus startsPerFrame, including across different loaders.
+        for (let n = 0; n < options.startsPerFrame;) {
           let chosen: Job | undefined;
           for (const collection of collections) {
             const candidate = collection.candidate();
@@ -221,7 +234,8 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
             if (!worst || worst.priority <= chosen.priority) break;
             worst.cancel();
           }
-          if (options.available && !options.available() || !chosen.start()) break;
+          if (options.available && !options.available()) break;
+          if (chosen.start()) n++;
         }
       } finally { stepping = false; }
     },

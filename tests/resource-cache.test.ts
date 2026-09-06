@@ -130,3 +130,49 @@ test("invalid demand costs leave the previous working set and request intact", (
   expect(cancelled).toBe(false); expect(cache.snapshot("active").refreshing).toBe(true);
   expect(cache.stats().entries).toBe(1); scheduler.dispose();
 });
+
+test("completed responses are delivered across collections despite continuous early-cache refreshes", () => {
+  const scheduler = createResourceScheduler({ maxConcurrent: 3, startsPerFrame: 3, completionsPerFrame: 1, maxCollections: 2 });
+  const config = { key: (s: string) => s, maxEntries: 2, maxCost: 2, cost: () => 1, maxResponseBytes: 20,
+    load(s: string, done: (result: ResourceResult<string>) => void) { done({ ok: true, value: s }); return { cancel() {} }; }, materialize: (s: string) => s };
+  const early = scheduler.createCache({ ...config, maxAgeFrames: 1 });
+  const visible = scheduler.createCache(config);
+  early.reconcile([{ input: "a", priority: 20 }, { input: "b", priority: 20 }]);
+  scheduler.step();
+  visible.reconcile([{ input: "visible", priority: 0, pin: true }]);
+  for (let n = 0; n < 5; n++) scheduler.step();
+  expect(visible.state("visible")).toEqual({ status: "ready", value: "visible" });
+  // Completion order, rather than registration or refresh rate, also protects a
+  // lower-priority response already waiting behind a continuously refreshing one.
+  visible.invalidate(); for (let n = 0; n < 5; n++) scheduler.step();
+  expect(visible.snapshot("visible").refreshing).toBe(false);
+  scheduler.dispose();
+});
+
+test("a refusing loader cannot block healthy loaders or other keys in its own cache", () => {
+  const scheduler = createResourceScheduler({ maxConcurrent: 2, startsPerFrame: 2, completionsPerFrame: 1, maxCollections: 2 });
+  const starts: string[] = [], refused: string[] = [];
+  const config = { key: (s: string) => s, maxEntries: 3, maxCost: 3, cost: () => 1, maxResponseBytes: 20,
+    load(s: string) { if (s.startsWith("blocked")) { refused.push(s); return false as const; } starts.push(s); return { cancel() {} }; }, materialize: (s: string) => s };
+  const first = scheduler.createCache(config), second = scheduler.createCache(config);
+  first.reconcile([{ input: "blocked-1", priority: 0 }, { input: "blocked-2", priority: 1 }, { input: "healthy-1", priority: 2 }]);
+  second.reconcile([{ input: "healthy-2", priority: 3 }]);
+  scheduler.step();
+  expect(starts).toEqual(["healthy-1", "healthy-2"]);
+  expect(refused).toEqual(["blocked-1", "blocked-2"]);
+  scheduler.dispose();
+});
+
+test("temporary refusals preserve the finite failure budget", () => {
+  const scheduler = createResourceScheduler({ maxConcurrent: 1, startsPerFrame: 1, completionsPerFrame: 1, maxCollections: 1 });
+  let calls = 0, failures = 0;
+  const cache = scheduler.createCache({ key: (s: string) => s, maxEntries: 1, maxCost: 1, cost: () => 1, maxResponseBytes: 20,
+    retry: { attempts: 2, delayFrames: 1, maxDelayFrames: 1 },
+    load(_, done) { if (++calls % 2 === 0) return false; failures++; done({ ok: false, error: "offline" }); return { cancel() {} }; },
+    materialize: (s: string) => s });
+  cache.reconcile([{ input: "x", priority: 0 }]);
+  for (let n = 0; n < 30; n++) scheduler.step();
+  expect(failures).toBe(2); expect(calls).toBe(3);
+  expect(cache.state("x").status).toBe("error"); expect(scheduler.stats().active).toBe(0);
+  scheduler.dispose();
+});
