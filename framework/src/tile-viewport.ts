@@ -68,9 +68,25 @@ export function createTileCamera(options: TileCameraOptions) {
 }
 
 export interface VisibleTile { column: number; row: number; priority: number }
+export interface TileWindowOptions {
+  x: number; y: number; zoom: number; level: number; width: number; height: number; tileSize?: number; maxTiles: number;
+}
+/** Explicit, bounded look-ahead, returned separately from visible demand.
+ * Margins and prediction are screen pixels; callers decide whether their
+ * source permits look-ahead and give these entries a lower load priority. */
+export function planTileWindow(options: TileWindowOptions & { margin: number; leadX?: number; leadY?: number; maxExtra: number }) {
+  const { margin, maxExtra } = options, leadX = options.leadX ?? 0, leadY = options.leadY ?? 0;
+  finite(margin, leadX, leadY, maxExtra);
+  if (margin < 0 || margin > 128 || Math.abs(leadX) > 128 || Math.abs(leadY) > 128 || !Number.isSafeInteger(maxExtra) || maxExtra < 0 || maxExtra > 16) throw new Error("Invalid tile look-ahead");
+  const visible = visibleTiles(options);
+  if (!maxExtra) return { visible, lookAhead: [] as VisibleTile[] };
+  const expanded = visibleTiles({ ...options, x: options.x + leadX / 2 / 2 ** options.zoom, y: options.y + leadY / 2 / 2 ** options.zoom,
+    width: options.width + 2 * margin + Math.abs(leadX), height: options.height + 2 * margin + Math.abs(leadY), maxTiles: 256 });
+  return { visible, lookAhead: expanded.filter(t => !visible.some(v => v.column === t.column && v.row === t.row)).slice(0, maxExtra) };
+}
 /** Current viewport only, near-first. Large/invalid windows throw before any
  * enumeration. The app maps columns/rows to domain keys (including wrap). */
-export function visibleTiles(options: { x: number; y: number; zoom: number; level: number; width: number; height: number; tileSize?: number; maxTiles: number }): VisibleTile[] {
+export function visibleTiles(options: TileWindowOptions): VisibleTile[] {
   const { x, y, zoom, level, width, height, maxTiles } = options, size = options.tileSize ?? 256;
   finite(x, y, zoom, level, width, height, size, maxTiles);
   if (!Number.isInteger(level) || level < -20 || level > 24 || zoom < -20 || zoom > 24 || size <= 0 || width <= 0 || height <= 0 || !Number.isSafeInteger(maxTiles) || maxTiles < 1 || maxTiles > 256) throw new Error("Invalid tile window");

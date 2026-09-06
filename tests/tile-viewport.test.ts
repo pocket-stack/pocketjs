@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { createTileCamera, visibleTiles } from "../framework/src/tile-viewport.ts";
+import { createTileCamera, visibleTiles, planTileWindow } from "../framework/src/tile-viewport.ts";
+import { createDragFilter } from "../framework/src/drag-filter.ts";
 const options = { width: 400, height: 240, x: 128, y: 128, zoom: 10, minZoom: 1, maxZoom: 18 };
 test("anchored zoom preserves the world point beneath the chosen viewport pixel", () => {
   const camera = createTileCamera(options), before = camera.view();
@@ -24,4 +25,31 @@ test("world wrap, pole clamping and malformed input remain bounded", () => {
   c.jump(257, -100, 1); expect(c.view().x).toBe(1); expect(c.view().y).toBe(60);
   c.jump(-1, 1000, 99); expect(c.view().x).toBe(255); expect(c.view().zoom).toBe(18); expect(c.view().y).toBeLessThan(256);
   expect(() => c.step(1)).toThrow(); expect(() => c.drag(NaN, 0)).toThrow();
+});
+test("look-ahead has a separate cap and never replaces visible demand", () => {
+  const p = { x: 256, y: 256, zoom: 0, level: 0, width: 400, height: 240, maxTiles: 12, margin: 64, leadX: 128, maxExtra: 4 };
+  const plan = planTileWindow(p);
+  expect(plan.visible).toEqual(visibleTiles(p)); expect(plan.lookAhead.length).toBeLessThanOrEqual(4);
+  expect(plan.lookAhead.some(t => t.column === 2)).toBe(true);
+  expect(plan.lookAhead.every(t => !plan.visible.some(v => v.column === t.column && v.row === t.row))).toBe(true);
+  expect(planTileWindow({ ...p, maxExtra: 0 }).lookAhead).toEqual([]);
+  expect(() => planTileWindow({ ...p, leadX: Infinity })).toThrow();
+  expect(() => planTileWindow({ ...p, level: 24 })).toThrow("budget");
+});
+test("drag filter rejects stationary quantization without accumulating drift", () => {
+  const filter = createDragFilter(); let x = 0, y = 0;
+  for (let i = 0; i < 600; i++) { const d = filter.update(i % 2 ? 1 : -1, 0, 1 / 60); x += d.dx; y += d.dy; }
+  expect(x).toBe(0); expect(y).toBe(0); expect(filter.velocity()).toEqual({ x: 0, y: 0 });
+  expect(() => filter.update(NaN, 0, 1 / 60)).toThrow();
+  expect(() => filter.update(0, 0, 1)).toThrow();
+});
+test("drag tracks total travel within a pixel budget at both sample rates and stops flinging after a hold", () => {
+  for (const hz of [30, 60]) {
+    const filter = createDragFilter(); let x = 0;
+    for (let i = 1; i <= hz; i++) { const d = filter.update(i * 300 / hz, 0, 1 / hz); x += d.dx; expect(i * 300 / hz - x).toBeLessThanOrEqual(4.0001); }
+    expect(filter.velocity().x).toBeGreaterThan(280);
+    for (let i = 0; i < hz; i++) x += filter.update(300, 0, 1 / hz).dx;
+    expect(x).toBeCloseTo(299, 4); expect(filter.velocity().x).toBe(0);
+    filter.reset(); expect(filter.update(0, 0, 1 / hz).dx).toBe(0);
+  }
 });
