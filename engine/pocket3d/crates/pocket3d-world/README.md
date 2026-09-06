@@ -21,6 +21,22 @@ Each call to `World::step` performs the same ordered phases:
 the result.** A seed, configuration, initial snapshot, and interaction stream
 replay to the same state hash on the same target and build.
 
+## World laws
+
+`WorldLawRuntime` is a separate hidden-world transaction store for fictional
+or otherwise non-physical ontologies. It provides typed hidden values,
+persistent weighted relations, finite spherical fields, deferred transitions,
+projection/materialization events, snapshots, and deterministic hashes. Games
+define law packs and translate their projections into ordinary `World`
+interactions; the runtime does not name characters, recipes, or scenarios.
+
+Opposing fields on the same channel cancel only inside their shared volume.
+`spherical_barrier_projection` maps a locally resolved finite field budget to
+an ordinary body impulse. It changes only inward normal motion, leaves
+tangential motion untouched, never increases kinetic energy, and removes no
+more than either the incoming normal kinetic energy or the field budget. The
+contract is tested with two mass, speed, and radial-extent configurations.
+
 ## Heat, water, and fuel
 
 **Retained water and dry material share one energy budget.** A `Douse`

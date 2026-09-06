@@ -2,12 +2,16 @@
 //!
 //! This crate contains no renderer, window, or asset types. Games submit
 //! interactions, advance one fixed turn, consume ordered events, and map the
-//! resulting entity snapshot to any presentation backend.
+//! resulting entity snapshot to any presentation backend. [`WorldLawRuntime`]
+//! adds deterministic hidden state, relations, fields, and projections without
+//! coupling fictional law packs to the physical solver.
 
+mod law;
 mod rng;
 mod types;
 mod world;
 
+pub use law::*;
 pub use rng::WorldRng;
 pub use types::*;
 pub use world::{SpawnError, World};
