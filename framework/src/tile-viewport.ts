@@ -93,6 +93,9 @@ export function visibleTiles(options: TileWindowOptions): VisibleTile[] {
   const scale = 2 ** level, screen = 2 ** zoom;
   const x0 = Math.floor((x - width / 2 / screen) * scale / size), y0 = Math.floor((y - height / 2 / screen) * scale / size);
   const x1 = Math.ceil((x + width / 2 / screen) * scale / size) - 1, y1 = Math.ceil((y + height / 2 / screen) * scale / size) - 1;
+  // A finite input can overflow projection math or exceed integer precision;
+  // ++ would then stop advancing, defeating the enumeration budget.
+  if (![x0, y0, x1, y1].every(Number.isSafeInteger)) throw new Error("Tile coordinates exceed integer range");
   if ((x1 - x0 + 1) * (y1 - y0 + 1) > maxTiles) throw new Error("Tile window exceeds budget");
   const tiles: VisibleTile[] = [], cx = x * scale / size - 0.5, cy = y * scale / size - 0.5;
   for (let row = y0; row <= y1; row++) for (let column = x0; column <= x1; column++) tiles.push({ column, row, priority: (column - cx) ** 2 + (row - cy) ** 2 });

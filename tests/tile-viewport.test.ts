@@ -35,6 +35,8 @@ test("look-ahead has a separate cap and never replaces visible demand", () => {
   expect(planTileWindow({ ...p, maxExtra: 0 }).lookAhead).toEqual([]);
   expect(() => planTileWindow({ ...p, leadX: Infinity })).toThrow();
   expect(() => planTileWindow({ ...p, level: 24 })).toThrow("budget");
+  expect(() => planTileWindow({ ...p, x: Number.MAX_VALUE })).toThrow("integer range");
+  expect(() => visibleTiles({ ...p, y: 1e100 })).toThrow("integer range");
 });
 test("drag filter rejects stationary quantization without accumulating drift", () => {
   const filter = createDragFilter(); let x = 0, y = 0;
