@@ -8,9 +8,14 @@ the alternatives without rebuilding runtime artifacts.
 
 | Route | Arrangement |
 | --- | --- |
-| `/_preview/landing/a/` | Three featured apps, community spotlight, device-filtered app collection |
-| `/_preview/landing/b/` | Device columns with app lists, community spotlight, full collection |
-| `/_preview/landing/c/` | Pocket Doc hardware photo and story, related handheld apps, community spotlight, collection |
+| `/_preview/landing/a/` | Original hero with a compact app panel on the right |
+| `/_preview/landing/b/` | Original hero with an app strip below its existing buttons |
+| `/_preview/landing/c/` | Unmodified hero followed by a compact app strip before Modern DX |
+
+All alternatives extend the generated production homepage. They retain the video,
+pixel headline, original hero controls, every technical section, and all six
+existing Ecosystem cases. The additions append four cases and provide setup
+links and device filters within the existing Ecosystem section.
 
 All variants use `site/showcase.ts` for app descriptions, device associations,
 setup requirements, source links, and screenshot attribution. The links open

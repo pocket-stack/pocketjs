@@ -2,7 +2,7 @@
 
 These images are copied from the projects' own published pages for the local
 landing-page alternatives. Keep the visible author credits and image-source
-links with the cases. The PSPMAN images remain ObsoleteSony's product images;
+links with the cases. The PSPMAN image remains ObsoleteSony's product image;
 their inclusion does not imply that PSPMAN or its artwork is open source.
 
 | Local file | Published source |
@@ -11,7 +11,6 @@ their inclusion does not imply that PSPMAN or its artwork is open source.
 | `pocket-shell.png` | [Pocket Shell, 3DS capture](https://github.com/pocket-stack/pocket-shell/blob/2a3ee64b866b113a17a7adcc2c2e2c0b4ecaa641/media/hw/tiled.png) |
 | `pocket-term.png` | [Pocket Term, project screenshot](https://github.com/pocket-stack/pocket-term/blob/36e316549bd8afe416a09f6fbb0163796649531a/docs/console.png) |
 | `pspman.png` | [PSPMAN, Now Playing](https://www.obsoletesony.com/images/pspman/now-playing.png) |
-| `pspman-hardware.png` | [PSPMAN, PSP-3000 product image](https://www.obsoletesony.com/images/pspman/hero-psp3000.png) |
 
 The remaining screenshots already live in `site/assets/blog/`. Their capture
 provenance is recorded in the corresponding project README and PocketJS blog

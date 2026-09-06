@@ -1,10 +1,10 @@
 import { renderPage } from "./templates.ts";
-import { DEVICES, SHOWCASE_APPS, type ShowcaseApp, type ShowcaseDevice } from "./showcase.ts";
+import { DEVICES, SHOWCASE_APPS, type ShowcaseApp } from "./showcase.ts";
 
 export const LANDING_STUDIES = [
-  { id: "a", title: "应用优先", subtitle: "先看到能做什么，再选择自己的设备。", detail: "首屏并排展示 OpenStrike、Pocket Doc 和 Pocket Voxel，覆盖游戏、生产力、PSP、3DS 与 PS Vita。接着用社区案例 PSPMAN 建立生态感，完整应用目录提供设备筛选。", label: "The app collection" },
-  { id: "b", title: "设备优先", subtitle: "我有一台 3DS，可以玩什么？", detail: "首屏按 Nintendo 3DS、PSP、PS Vita 分为三列，每列给出代表应用和进入该设备应用目录的入口。适合带着硬件来访、想尽快找到安装方式的用户。", label: "Choose your handheld" },
-  { id: "c", title: "重点案例优先", subtitle: "用一张真机照片，打开一个新用途。", detail: "首屏用 Pocket Doc 的 3DS 真机照片讲一个完整用途，旁边点出 PSP 和 PS Vita 游戏。紧接着突出 PSPMAN 社区作品，再展示完整目录。适合持续更新的编辑精选。", label: "The field notes" },
+  { id: "a", title: "右侧案例栏", subtitle: "原 Hero 右侧，补一列可体验的应用。", detail: "视频、像素标题、说明和按钮保持原样。桌面右侧增加四条应用入口；手机端接在原按钮之后。后续技术章节全部沿用。", label: "Hero side panel" },
+  { id: "b", title: "Hero 内应用条", subtitle: "原按钮下方，加一条紧凑的案例预览。", detail: "在原 Hero 内追加一行应用缩略图、名称、设备和体验入口。首屏主体仍然是原来的标题与视频，往下仍然先读 Modern DX。", label: "Hero app strip" },
+  { id: "c", title: "Hero 后案例带", subtitle: "Hero 完全原样，案例放在紧接着的一小段。", detail: "整个 Hero 连布局都保持原样。在它与 Modern DX 之间加一条案例带，给愿意继续浏览的人一个应用入口，之后接回完整技术介绍。", label: "After-hero app strip" },
 ] as const;
 type Study = typeof LANDING_STUDIES[number]["id"];
 const esc = (value: string) => value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -12,72 +12,45 @@ const app = (id: string) => SHOWCASE_APPS.find((item) => item.id === id)!;
 const badges = (a: ShowcaseApp) => a.devices.map((d) => `<span>${DEVICES[d]}</span>`).join("");
 const tryLink = (a: ShowcaseApp, label = "How to try") => `<a class="sc-try" href="${esc(a.href)}" data-open-app="${a.id}">${label}<span aria-hidden="true"> ↗</span><span class="sc-sr"> ${a.name}</span></a>`;
 
-function card(a: ShowcaseApp, featured = false): string {
-  return `<article class="sc-card ${a.community ? "sc-card-community" : ""}"${featured ? "" : ` data-app-card data-devices="${a.devices.join(" ")}"`}>
-    <a class="sc-card-image sc-image-${a.id}" href="${esc(a.href)}" data-open-app="${a.id}" aria-label="Explore ${a.name}">
-      <img src="${a.image}" alt="${esc(a.imageAlt)}" ${featured ? 'fetchpriority="high"' : 'loading="lazy"'} width="480" height="272">
-      <span class="sc-image-label">${a.category}</span>
-    </a>
-    <div class="sc-card-body"><div class="sc-badges">${badges(a)}</div>
-      <h3>${a.name}${a.community ? '<span class="sc-community-mark">Community</span>' : ""}</h3>
-      <p>${a.description}</p><div class="sc-card-bottom"><span>${a.availability}</span>${tryLink(a)}</div>
-    </div></article>`;
+function once(html: string, marker: string, replacement: string): string {
+  if (html.split(marker).length !== 2) throw new Error(`Expected one homepage marker: ${marker}`);
+  return html.replace(marker, () => replacement);
 }
 
 function reviewbar(current?: Study): string {
-  return `<nav class="sc-reviewbar" aria-label="Landing page alternatives"><div class="sc-wrap">
-    <a href="/_preview/landing/" class="sc-review-title">首页方案 <span> / </span></a>
-    ${LANDING_STUDIES.map((s) => `<a href="/_preview/landing/${s.id}/"${s.id === current ? ' aria-current="page"' : ""}>${s.id.toUpperCase()}<span> ${s.title}</span></a>`).join("")}
-    <a class="sc-original" href="/">现有首页 ↗</a></div></nav>`;
+  return `<nav class="pe-review" aria-label="Landing page alternatives"><span>局部增强</span>${LANDING_STUDIES.map((s) => `<a href="/_preview/landing/${s.id}/"${s.id === current ? ' aria-current="page"' : ""}>${s.id.toUpperCase()}<span> ${s.title}</span></a>`).join("")}<a href="/_preview/landing/">对比</a><a href="/">原版 ↗</a></nav>`;
 }
 
-function community(): string {
-  const a = app("pspman");
-  return `<section class="sc-community sc-wrap" aria-labelledby="community-title">
-    <div class="sc-community-image"><img src="/assets/showcase/pspman-hardware.png" width="640" height="360" loading="lazy" alt="PSPMAN playing music on a Sony PSP-3000, official ObsoleteSony product image"></div>
-    <div><p class="sc-eyebrow">Made in the community <span> / </span> ObsoleteSony</p>
-      <h2 id="community-title">Meet PSPMAN.</h2><p>A new life for your music library. A Walkman-inspired FLAC and MP3 player, built with PocketJS.</p>
-      <div class="sc-community-actions">${tryLink(a, "Get the public alpha")}<span>PSP · Source currently private</span></div>
-    </div><a class="sc-credit" href="${a.imageSource}">Images © ObsoleteSony ↗</a>
-  </section>`;
+function appEntry(a: ShowcaseApp): string {
+  return `<a class="pe-entry" href="${esc(a.href)}" data-open-app="${a.id}"><img src="${a.image}" alt="${esc(a.imageAlt)}" width="80" height="50"><span class="pe-entry-copy"><strong>${a.name}</strong><span>${a.devices.map(d => DEVICES[d]).join(" · ")}${a.community ? " · Community" : ""}</span><small>${a.community ? "Public alpha · ObsoleteSony" : a.id === "pocket-voxel" ? "Web player + console export" : "Setup guide"}</small></span><span class="pe-arrow" aria-hidden="true">↗</span></a>`;
 }
 
-function collection(): string {
-  return `<section class="sc-collection sc-wrap" id="apps" aria-labelledby="apps-title">
-    <div class="sc-section-heading"><div><p class="sc-eyebrow">The growing collection</p><h2 id="apps-title">Find your next app.</h2></div>
-      <p>Pick your hardware.<br>Every app has a route to try it.</p></div>
-    <div class="sc-filter-row"><div class="sc-filters" role="group" aria-label="Filter apps by device"><button type="button" data-filter="all" aria-pressed="true">All devices</button>${Object.entries(DEVICES).map(([id, label]) => `<button type="button" data-filter="${id}" aria-pressed="false">${label}</button>`).join("")}</div><span class="sc-count" role="status" aria-live="polite">${SHOWCASE_APPS.length} apps</span></div>
-    <div class="sc-app-grid">${SHOWCASE_APPS.map((a) => card(a)).join("")}</div>
-  </section>`;
+function appShelf(style: "side" | "strip" | "band"): string {
+  return `<aside class="pe-shelf pe-${style}" aria-label="Apps built with PocketJS"><div class="pe-shelf-heading"><span class="hud">Built with PocketJS</span><a href="#ecosystem">All cases ↓</a></div><div class="pe-entries">${["pocket-doc", "openstrike", "pocket-voxel", "pspman"].map(id => appEntry(app(id))).join("")}</div></aside>`;
 }
 
-function heroA(): string {
-  return `<section class="sc-hero sc-wrap"><div class="sc-intro"><div><p class="sc-eyebrow"><span class="sc-status-dot"></span> Built with PocketJS</p><h1>UI runtime for<br><span>every kind of computer.</span></h1></div>
-    <div class="sc-intro-copy"><p>New apps. Familiar hardware.<br> Games, creative tools, and everyday software on Nintendo 3DS, PSP, and PS Vita.</p><div class="sc-actions"><a class="sc-button" href="#apps">Find an app <span>↓</span></a><a class="sc-text-link" href="/docs/getting-started/">Build your own ↗</a></div></div></div>
-    <div class="sc-feature-heading"><span>01 / In your hands</span><span>Games. Documents. Whole worlds.</span></div>
-    <div class="sc-feature-grid">${["openstrike", "pocket-doc", "pocket-voxel"].map((id) => card(app(id), true)).join("")}</div>
-  </section>`;
+function ecosystemCard(a: ShowcaseApp): string {
+  return `<article class="ecard" data-app-card data-devices="${a.devices.join(" ")}"><div class="scr pe-image-${a.id}"><img src="${a.image}" alt="${esc(a.imageAlt)}" loading="lazy"></div><div class="bd"><div class="sc-badges">${badges(a)}</div><h4>${a.name}<span>${a.community ? "community" : a.category}</span></h4><p>${a.description}${a.community ? " By ObsoleteSony. Public alpha; source currently private." : ""}</p>${tryLink(a)}<a class="story" href="${a.imageSource}">${a.community ? "Project & image credit" : "Project & capture details"} ↗</a></div></article>`;
 }
 
-function heroB(): string {
-  const lane = (id: ShowcaseDevice, headline: string, featured: string) => {
-    const a = app(featured);
-    const matches = SHOWCASE_APPS.filter((a) => a.devices.includes(id));
-    return `<article class="sc-device sc-device-${id}" id="device-${id}"><div class="sc-device-title"><span class="sc-eyebrow">${id === "3ds" ? "01" : id === "psp" ? "02" : "03"} / ${matches.length} apps</span><h2>${DEVICES[id]}</h2><p>${headline}</p></div>
-      <a class="sc-device-image" href="${a.href}" data-open-app="${a.id}"><img src="${a.image}" alt="${esc(a.imageAlt)}" width="480" height="272"><span>${a.name} ↗</span></a>
-      <ul>${matches.map((a) => `<li><a href="${a.href}" data-open-app="${a.id}"><span>${a.name}</span><span>${a.community ? "Community" : a.category} ↗</span></a></li>`).join("")}</ul>
-      <a class="sc-device-link" href="?device=${id}#apps" data-select-device="${id}">Explore ${DEVICES[id]} apps <span>↓</span></a></article>`;
-  };
-  return `<section class="sc-hero sc-wrap"><div class="sc-intro sc-device-intro"><div><p class="sc-eyebrow">Built with PocketJS</p><h1>Your handheld.<br><span>A whole new lineup.</span></h1></div><div class="sc-intro-copy"><p>Choose the hardware you have.<br> Discover what people are building for it,<br> and how to run it yourself.</p><a class="sc-text-link" href="/docs/getting-started/">Here to build? Start with the docs ↗</a></div></div><nav class="sc-device-jumps" aria-label="Jump to a handheld">${Object.entries(DEVICES).map(([id, label]) => `<a href="#device-${id}">${label} ↓</a>`).join("")}</nav><div class="sc-device-grid">${lane("3ds", "Two screens. Room to work.", "pocket-doc")}${lane("psp", "Press play. Then try something new.", "openstrike")}${lane("vita", "More pixels. Same curiosity.", "pocket-voxel")}</div></section>`;
-}
-
-function heroC(): string {
-  const a = app("pocket-doc");
-  return `<section class="sc-hero sc-wrap"><div class="sc-editorial-heading"><p class="sc-eyebrow">Built with PocketJS / Field notes No. 01</p><span>Nintendo 3DS · PSP · PS Vita</span></div>
-    <div class="sc-editorial"><div class="sc-editorial-copy"><div class="sc-badges"><span>Nintendo 3DS</span><span>Productivity</span></div><h1>A second life.<br><span>Two screens.</span></h1><p>Your Markdown library, on a Nintendo 3DS. Pocket Doc turns the lower screen into an editing deck while your document stays in view above.</p><div class="sc-actions">${tryLink(a, "Try Pocket Doc")}<a class="sc-text-link" href="#apps">Explore all apps ↓</a></div><span class="sc-small">Homebrew Launcher + paired Mac over Wi-Fi</span></div>
-    <figure><img src="${a.image}" alt="${esc(a.imageAlt)}" width="840" height="640" fetchpriority="high"><figcaption><span>Pocket Doc / Nintendo 3DS</span><span>Photographed on hardware</span></figcaption></figure></div>
-    <div class="sc-editorial-next"><span class="sc-eyebrow">Also in your pocket</span>${["openstrike", "pocket-voxel", "pocket-figma"].map((id) => {const a = app(id);return `<a href="${a.href}" data-open-app="${a.id}"><img src="${a.image}" width="100" height="57" alt=""><span><strong>${a.name}</strong><small>PSP · PS Vita</small></span><span aria-hidden="true">↗</span></a>`;}).join("")}</div>
-  </section>`;
+function enhanceEcosystem(home: string): string {
+  const start = home.indexOf('<section class="sect" id="ecosystem">');
+  const end = home.indexOf("</section>", start) + "</section>".length;
+  if (start < 0 || end < start) throw new Error("Missing original Ecosystem section");
+  const original = home.slice(start, end);
+  // Keep the six original cards, including their technical copy and story links.
+  let content = original.replace(/<article class="ecard">[\s\S]*?<\/article>/g, (card) => {
+    const a = SHOWCASE_APPS.find(a => card.includes(`<h4>${a.name}<span>`));
+    let result = card.replace('<article class="ecard">', `<article class="ecard" data-app-card data-devices="${a ? a.devices.join(" ") : "other"}">`);
+    if (!a) return result;
+    result = result.replace(`<h4>${a.name}`, `<div class="sc-badges">${badges(a)}</div><h4>${a.name}`);
+    return result.replace(/(\s*<\/div>\s*<\/article>)$/, `${tryLink(a)}$1`);
+  });
+  const filters = `<div class="pe-filters" role="group" aria-label="Filter ecosystem by device"><button type="button" data-filter="all" aria-pressed="true">All cases</button>${Object.entries(DEVICES).map(([id,label]) => `<button type="button" data-filter="${id}" aria-pressed="false">${label}</button>`).join("")}<span class="sc-count" role="status" aria-live="polite">10 cases</span></div>`;
+  content = once(content, '<div class="eco">', filters + '<div class="eco">');
+  const tail = '    </div>\n    <div class="labband">';
+  content = once(content, tail, ["pocket-doc", "pocket-shell", "pocket-term", "pspman"].map(id => ecosystemCard(app(id))).join("\n") + "\n" + tail);
+  return home.slice(0, start) + content + home.slice(end);
 }
 
 function dialogs(): string {
@@ -87,18 +60,24 @@ function dialogs(): string {
     <figure><img src="${a.image}" loading="lazy" width="480" height="272" alt="${esc(a.imageAlt)}"><figcaption><a href="${a.imageSource}">${a.imageCredit} ↗</a></figcaption></figure></div></dialog>`).join("");
 }
 
-export function renderLandingStudy(id: Study): string {
-  const study = LANDING_STUDIES.find((s) => s.id === id)!;
-  return renderPage({ title: `${study.label} (preview)`, active: "home", bodyClass: `showcase-page sc-layout-${id}`, path: `/_preview/landing/${id}/`, robots: "noindex,nofollow",
-    head: '<link rel="stylesheet" href="/_preview/assets/showcase.css">',
-    scripts: ['<script type="module" src="/_preview/assets/showcase.js"></script>'],
-    body: reviewbar(id) + (id === "a" ? heroA() : id === "b" ? heroB() : heroC()) + community() + collection() +
-      `<section class="sc-build sc-wrap"><div><p class="sc-eyebrow">Your turn</p><h2>What will you put<br>in someone's pocket?</h2><p>PocketJS brings modern component code to native pixels.<br>Write with Solid, Vue Vapor, or Octane. Start with one device.</p></div><div class="sc-actions"><a class="sc-button" href="/docs/getting-started/">Start building ↗</a><a class="sc-text-link" href="/playground/">Open the playground ↗</a></div></section>` + dialogs(),
-  });
+
+// Extend the actual production HTML rather than keeping a separate homepage.
+// Every technical section, shared asset and original hero child comes from it.
+export function renderLandingStudy(id: Study, homeHtml: string): string {
+  let home = enhanceEcosystem(homeHtml);
+  const heroEnd = '  </div>\n</section>\n\n<section class="sect" id="write">';
+  const addition = id === "c"
+    ? `  </div>\n</section>\n<div class="pe-band-wrap"><div class="wrap">${appShelf("band")}</div></div>\n\n<section class="sect" id="write">`
+    : `    ${appShelf(id === "a" ? "side" : "strip")}\n${heroEnd}`;
+  home = once(home, heroEnd, addition);
+  home = once(home, '<meta name="robots" content="index,follow">', '<meta name="robots" content="noindex,nofollow">');
+  home = once(home, "</head>", '<link rel="stylesheet" href="/_preview/assets/showcase.css">\n</head>');
+  home = once(home, "<body>", `<body class="pe-preview pe-layout-${id}">`);
+  return once(home, "</body>", reviewbar(id) + dialogs() + '<script type="module" src="/_preview/assets/showcase.js"></script>\n</body>');
 }
 
 export function renderLandingStudyIndex(): string {
-  return renderPage({ title: "Landing page alternatives", active: "home", bodyClass: "showcase-page sc-index", path: "/_preview/landing/", robots: "noindex,nofollow", head: '<link rel="stylesheet" href="/_preview/assets/showcase.css">',
-    body: reviewbar() + `<section class="sc-wrap sc-study-index"><p class="sc-eyebrow">PocketJS / Homepage studies</p><h1>让应用走到首屏。</h1><p class="sc-index-lead">三种排列方式，同一份经过核实的应用目录。<br>点开任意方案，即可切换设备、查看案例和体验步骤。</p><div class="sc-study-grid">${LANDING_STUDIES.map((s) => `<a class="sc-study" href="/_preview/landing/${s.id}/"><div class="sc-study-visual sc-study-visual-${s.id}"><span>${s.id.toUpperCase()}</span><img src="${app(s.id === "a" ? "openstrike" : s.id === "b" ? "pocket-shell" : "pocket-doc").image}" alt="" width="480" height="272"></div><div class="sc-study-body"><span class="sc-eyebrow">${s.id === "a" ? "推荐 · " : ""}${s.label}</span><h2>${s.title} ↗</h2><strong>${s.subtitle}</strong><p>${s.detail}</p></div></a>`).join("")}</div><div class="sc-index-note"><p><strong>建议选 A：</strong>先用游戏、文档和 3D 世界展示用途，再通过设备筛选回答“我怎么体验”。PSPMAN 紧接首屏作为社区精选，和第一方应用一起构成生态。</p><p>3DS 文档应用按公开仓库名称标为 <a href="https://github.com/pocket-stack/pocket-doc">Pocket Doc</a>。PSPMAN 标注社区作者、公开 alpha 和源码未公开；需要自行构建的项目不会显示为直接下载。</p><p><a href="/docs/overview/">查看手机端文档导航修复 →</a> <span>窄屏顶部的 Browse docs 可展开完整目录。</span></p></div></section>`,
+  return renderPage({ title: "Homepage additions", active: "home", bodyClass: "sc-index", path: "/_preview/landing/", robots: "noindex,nofollow", head: '<link rel="stylesheet" href="/_preview/assets/showcase.css">',
+    body: `<section class="wrap pe-index"><p class="hud">PocketJS / Homepage additions</p><h1>原来的首页，<br>补上应用入口。</h1><p class="pe-index-lead">视频 Hero、像素标题、原按钮和全部技术章节都保留。<br>这次只比较一件事：案例入口放在哪里。</p><div class="pe-study-grid">${LANDING_STUDIES.map(s => `<a class="pe-study" href="/_preview/landing/${s.id}/"><div class="pe-mini pe-mini-${s.id}" aria-hidden="true"><span class="pe-mini-title">UI runtime for<br>every kind of<br>computer</span><span class="pe-mini-add">${s.id === "a" ? "案例栏" : s.id === "b" ? "应用条" : "Hero 后案例带"}</span><span class="pe-mini-tech">Modern DX · Motion · Architecture · Compatibility</span></div><div class="pe-study-copy"><span class="hud">${s.id.toUpperCase()} / ${s.label}</span><h2>${s.title} ↗</h2><strong>${s.subtitle}</strong><p>${s.detail}</p></div></a>`).join("")}</div><div class="pe-index-note"><p>三版都在原来的 <strong>Ecosystem</strong> 中保留既有案例与技术说明，增加 Pocket Doc、Pocket Shell、Pocket Term、PSPMAN，并补上设备筛选、运行条件和体验入口。</p><p><a href="/">查看原版首页 ↗</a> · <a href="/docs/overview/">查看手机文档目录修复 ↗</a></p></div></section>` + reviewbar(),
   });
 }

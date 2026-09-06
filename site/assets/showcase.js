@@ -11,7 +11,7 @@ function filterApps(device, updateUrl = true) {
     if (!card.hidden) count++;
   }
   const status = document.querySelector(".sc-count");
-  if (status) status.textContent = `${count} ${count === 1 ? "app" : "apps"}`;
+  if (status) status.textContent = `${count} ${count === 1 ? "case" : "cases"}`;
   if (updateUrl) {
     const url = new URL(location.href);
     if (device === "all") url.searchParams.delete("device");
@@ -21,14 +21,6 @@ function filterApps(device, updateUrl = true) {
 }
 
 for (const button of filters) button.addEventListener("click", () => filterApps(button.dataset.filter));
-for (const link of document.querySelectorAll("[data-select-device]")) {
-  link.addEventListener("click", (event) => {
-    event.preventDefault();
-    filterApps(link.dataset.selectDevice);
-    document.querySelector("#apps").scrollIntoView({ behavior: "instant" });
-    filters.find((button) => button.dataset.filter === link.dataset.selectDevice)?.focus({ preventScroll: true });
-  });
-}
 filterApps(new URL(location.href).searchParams.get("device") || "all", false);
 window.addEventListener("popstate", () => filterApps(new URL(location.href).searchParams.get("device") || "all", false));
 

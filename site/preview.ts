@@ -1,5 +1,5 @@
 // Local site + opt-in homepage studies. Production builds never emit /_preview/.
-import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { LANDING_STUDIES, renderLandingStudy, renderLandingStudyIndex } from "./landing-previews.ts";
 
@@ -18,7 +18,8 @@ const write = (path: string, html: string) => {
   writeFileSync(target, html);
 };
 write("_preview/landing", renderLandingStudyIndex());
-for (const study of LANDING_STUDIES) write(`_preview/landing/${study.id}`, renderLandingStudy(study.id));
+const homeHtml = readFileSync(resolve(OUT, "index.html"), "utf8");
+for (const study of LANDING_STUDIES) write(`_preview/landing/${study.id}`, renderLandingStudy(study.id, homeHtml));
 mkdirSync(resolve(OUT, "_preview/assets"), { recursive: true });
 for (const file of ["showcase.css", "showcase.js"]) cpSync(resolve(ROOT, "site/assets", file), resolve(OUT, "_preview/assets", file));
 cpSync(resolve(ROOT, "site/assets/showcase"), resolve(OUT, "assets/showcase"), { recursive: true });
