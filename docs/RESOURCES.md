@@ -222,23 +222,37 @@ prevents materialization. It is separate from `dispose(value)`, which releases
 an adopted value. Both hooks must be bounded and must not throw.
 
 `@pocketjs/framework/tile-viewport` supplies `createTileCamera`, `visibleTiles`
-and `planTileWindow`.
+`createTileIntent` and `planTileWindow`.
 The camera stores level-zero pixel coordinates, integrates screen-space velocity
 and inertia, and keeps the world point beneath an anchor fixed during zoom.
 `visibleTiles` returns a near-first window and rejects an excessive window
 before enumeration. `planTileWindow` returns separate visible and look-ahead
 arrays, with an extra-tile cap and screen-pixel margins / directional lead.
+With `directional: true`, extras occupy a forward corridor; they do not form a
+ring behind the camera. `createTileIntent` accumulates screen-space camera
+travel in constant space, preserving direction across separate gestures. Its
+confidence holds through three seconds of rest, then decays; sustained turns
+replace the earlier direction. Reset it on a teleport or coordinate change.
 **The application selects look-ahead policy and priority.** These functions
 perform no IO and contain no geographic projection.
 
 ```ts
 const window = planTileWindow({ ...camera.view(), level, width: 400, height: 240,
-  maxTiles: 12, margin: 64, leadX: predictedX, leadY: predictedY, maxExtra: 4 });
+  maxTiles: 12, margin: 128, leadX: predictedX, leadY: predictedY,
+  directional: confidence > 0.45, maxExtra: 4 });
 const demand = [
   ...window.visible.map(tile => ({ input: address(tile), priority: tile.priority, pin: true })),
   ...window.lookAhead.map(tile => ({ input: address(tile), priority: 1000 + tile.priority, pin: false })),
 ];
 ```
+
+`camera.view().targetZoom` exposes the final level during a zoom animation.
+An application can use it to demand a bounded next-level viewport after a zoom
+input, subject to its source policy. These entries belong in the same collection
+and concurrency budget as current tiles. `camera.setWorld({ minZoom, maxZoom,
+bounds })` validates new limits before applying them, stops previous motion and
+clamps the camera. It supports metadata received after a source opens without
+replacing the camera object or resource owners.
 
 The extra entries share cache and concurrency budgets with visible entries.
 Retaining an unused ready value costs residency but creates no new request.
