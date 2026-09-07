@@ -269,6 +269,9 @@ pub struct Entity {
     pub body: Option<Body>,
     pub collider: Option<Collider>,
     pub surface: PhysicalSurface,
+    /// Optional fixed-step surface locomotion for a kinematic collider.
+    #[serde(default)]
+    pub locomotion: Option<crate::Locomotion>,
     pub attachment: Option<Attachment>,
     pub structure: Option<Structure>,
     pub reactive_material: Option<ReactiveMaterial>,
@@ -289,6 +292,9 @@ pub struct EntityBundle {
     pub body: Option<Body>,
     pub collider: Option<Collider>,
     pub surface: PhysicalSurface,
+    /// Optional fixed-step surface locomotion for a kinematic collider.
+    #[serde(default)]
+    pub locomotion: Option<crate::Locomotion>,
     pub attachment: Option<Attachment>,
     pub structure: Option<Structure>,
     pub reactive_material: Option<ReactiveMaterial>,
@@ -304,6 +310,7 @@ impl EntityBundle {
             body: None,
             collider: None,
             surface: PhysicalSurface::default(),
+            locomotion: None,
             attachment: None,
             structure: None,
             reactive_material: None,
@@ -351,6 +358,14 @@ impl Default for EnvironmentSample {
 
 pub trait Environment {
     fn sample(&self, position: Vec3) -> EnvironmentSample;
+
+    /// Terrain contact coefficients; height and normal come from `sample`.
+    fn surface(&self, _position: Vec3) -> PhysicalSurface {
+        PhysicalSurface {
+            friction: 0.86,
+            restitution: 0.04,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]

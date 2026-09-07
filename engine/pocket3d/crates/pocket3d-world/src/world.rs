@@ -198,6 +198,7 @@ impl World {
         self.sync_attachments();
         self.step_reactions(environment, &mut events);
         self.integrate_bodies();
+        self.step_locomotion(environment);
         let contacts = self.solve_ground(environment);
         let mut pair_contacts = self.solve_pairs();
         let mut contacts = contacts;
@@ -939,6 +940,45 @@ impl World {
                 }
                 None => hash.u8(0),
             }
+            match entity.locomotion {
+                Some(motor) => {
+                    hash.u8(1);
+                    let c = motor.config;
+                    for value in [
+                        c.walk_speed,
+                        c.climb_speed,
+                        c.jump_speed,
+                        c.min_ground_dot,
+                        c.contact_offset,
+                        c.grip_reach,
+                        c.grip_acceleration,
+                        c.max_temperature_c,
+                        c.stamina_seconds,
+                        c.recovery_per_second,
+                    ] {
+                        hash.f32(value);
+                    }
+                    hash.vec3(motor.input.direction);
+                    hash.f32(motor.input.climb.x);
+                    hash.f32(motor.input.climb.y);
+                    hash.u8(motor.input.grip as u8);
+                    hash.u8(motor.input.jump as u8);
+                    hash.u8(motor.mode as u8);
+                    hash.vec3(motor.normal);
+                    hash.f32(motor.stamina);
+                    hash.f32(motor.regrip_delay);
+                    match motor.support {
+                        Some(anchor) => {
+                            hash.u8(1);
+                            hash.u64(anchor.entity.0);
+                            hash.vec3(anchor.local_point);
+                            hash.vec3(anchor.world_point);
+                        }
+                        None => hash.u8(0),
+                    }
+                }
+                None => hash.u8(0),
+            }
             hash.f32(entity.surface.friction);
             hash.f32(entity.surface.restitution);
             match entity.attachment {
@@ -1256,6 +1296,7 @@ fn entity_from_bundle(id: EntityId, bundle: EntityBundle) -> Entity {
         body: bundle.body,
         collider: bundle.collider,
         surface: bundle.surface,
+        locomotion: bundle.locomotion,
         attachment: bundle.attachment,
         structure: bundle.structure,
         reactive_material: bundle.reactive_material,
@@ -1312,7 +1353,7 @@ fn reaction_shape(entity: &Entity) -> (Vec3, Vec3, f32) {
     }
 }
 
-fn collider_segment(entity: &Entity) -> (Vec3, Vec3, f32) {
+pub(crate) fn collider_segment(entity: &Entity) -> (Vec3, Vec3, f32) {
     let collider = entity.collider.expect("caller filters collider");
     match collider {
         Collider::Sphere { .. } => {
@@ -1342,7 +1383,7 @@ fn collider_segment(entity: &Entity) -> (Vec3, Vec3, f32) {
 
 /// Closest points on two finite segments. Based on the standard clamped
 /// two-parameter solution, with explicit degenerate handling for spheres.
-fn closest_segment_points(p1: Vec3, q1: Vec3, p2: Vec3, q2: Vec3) -> (Vec3, Vec3) {
+pub(crate) fn closest_segment_points(p1: Vec3, q1: Vec3, p2: Vec3, q2: Vec3) -> (Vec3, Vec3) {
     let d1 = q1 - p1;
     let d2 = q2 - p2;
     let r = p1 - p2;

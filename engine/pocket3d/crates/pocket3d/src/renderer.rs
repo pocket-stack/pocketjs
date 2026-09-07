@@ -443,6 +443,7 @@ fn model_normal_matrix(model: Mat4) -> Mat4 {
 }
 
 pub(crate) struct ModelDraw {
+    instance_blend: bool,
     asset: std::sync::Arc<ModelAsset>,
     inst_offset: u32,
     joints_offset: u32,
@@ -680,6 +681,7 @@ impl ModelPass {
             joint_bytes.extend(std::iter::repeat_n(0u8, pad));
 
             draws.push(ModelDraw {
+                instance_blend: inst.tint[3] < 1.0,
                 asset: inst.asset.clone(),
                 inst_offset: off as u32,
                 joints_offset,
@@ -748,7 +750,8 @@ impl ModelPass {
             pass.set_index_buffer(d.asset.ibuf.slice(..), wgpu::IndexFormat::Uint32);
             let mut overlay_bound = false;
             for (pi, prim) in d.asset.primitives.iter().enumerate() {
-                if (prim.alpha_mode == MaterialAlphaMode::Blend) != blend_phase {
+                if (d.instance_blend || prim.alpha_mode == MaterialAlphaMode::Blend) != blend_phase
+                {
                     continue;
                 }
                 let pipeline = match (blend_phase, prim.double_sided) {

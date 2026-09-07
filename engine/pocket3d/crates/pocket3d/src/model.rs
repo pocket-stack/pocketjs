@@ -1630,6 +1630,8 @@ fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
 pub struct ModelInstance {
     pub asset: Arc<ModelAsset>,
     pub transform: Mat4,
+    /// Color multiplier. Alpha below one selects depth-tested blending,
+    /// including for authored opaque materials; the instance does not write depth.
     pub tint: [f32; 4],
     pub anim: AnimState,
     /// 0..1 how strongly lighting applies (1 = fully lit by sun/ambient).
