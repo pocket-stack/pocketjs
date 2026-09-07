@@ -7,11 +7,12 @@ import { getOps } from "./host.ts";
 /** An opt-in adapter for reproducible read capabilities. Already-serialized
  * payloads retain offload's wire bound. Mutating methods must use offload directly. */
 export function offloadResource<I>(
-  client: Pick<ReturnType<typeof createOffloadClient>, "request" | "cancel">,
+  client: Pick<ReturnType<typeof createOffloadClient>, "request" | "cancel"> & { connected?(): boolean },
   method: string,
   payload: (input: I) => string,
 ): ResourceLoad<I, string> {
   return (input, complete) => {
+    if (client.connected?.() === false) return false;
     const id = client.request(method, payload(input), (result) => complete(result));
     return id ? { cancel: () => client.cancel(id) } : false;
   };
@@ -22,7 +23,7 @@ export function offloadResource<I>(
  * owned by the collection. Configure one image materialization per frame. */
 export function createOffloadImageCollection<I>(
   runtime: ReturnType<typeof createResourceRuntime>,
-  client: Pick<ReturnType<typeof createOffloadClient>, "requestImage" | "cancel" | "uploadImage" | "releaseImage">,
+  client: Pick<ReturnType<typeof createOffloadClient>, "requestImage" | "cancel" | "uploadImage" | "releaseImage"> & { connected?(): boolean },
   options: Omit<
     ResourceCollectionOptions<I, string, TextureResource>,
     "load" | "materialize" | "dispose" | "releaseResponse" | "maxResponseBytes" | "cost" | "maxCost"
@@ -46,6 +47,7 @@ export function createOffloadImageCollection<I>(
     cost: () => cost,
     maxCost: options.maxEntries * cost,
     load: (input, complete) => {
+      if (client.connected?.() === false) return false;
       const id = client.requestImage(options.method, options.payload(input), complete);
       return id ? { cancel: () => client.cancel(id) } : false;
     },
@@ -64,7 +66,7 @@ export function createOffloadImageCollection<I>(
  * One completion per frame covers the bounded native validation/copy. */
 export function createOffloadMeshCollection<I>(
   runtime: ReturnType<typeof createResourceRuntime>,
-  client: Pick<ReturnType<typeof createOffloadClient>, "requestMesh" | "cancel" | "uploadMesh" | "releaseMesh">,
+  client: Pick<ReturnType<typeof createOffloadClient>, "requestMesh" | "cancel" | "uploadMesh" | "releaseMesh"> & { connected?(): boolean },
   options: Omit<
     ResourceCollectionOptions<I, string, MeshResource>,
     "load" | "materialize" | "dispose" | "releaseResponse" | "maxResponseBytes" | "cost" | "maxCost"
@@ -82,6 +84,7 @@ export function createOffloadMeshCollection<I>(
     cost: () => cost,
     maxCost: options.maxEntries * cost,
     load: (input, complete) => {
+      if (client.connected?.() === false) return false;
       const id = client.requestMesh(options.method, options.payload(input), complete);
       return id ? { cancel: () => client.cancel(id) } : false;
     },

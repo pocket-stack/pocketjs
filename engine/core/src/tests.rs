@@ -3919,3 +3919,18 @@ fn retiring_texture_invalidates_handle_before_gpu_owner_drops() {
     assert_eq!(ui.texture(next).unwrap().pixels[0], 9);
     assert!(ui.take_texture(old).is_none());
 }
+
+#[test]
+fn external_texture_has_dimensions_and_generations_without_cpu_pixels() {
+    let mut ui = Ui::new();
+    assert_eq!(ui.register_external_texture(0, 256), -1);
+    assert_eq!(ui.register_external_texture(255, 256), -1);
+    let handle = ui.register_external_texture(256, 256);
+    let view = ui.texture(handle).unwrap();
+    assert_eq!((view.w, view.h), (256, 256));
+    assert!(view.pixels.is_empty());
+    assert_eq!(view.psm, u32::MAX);
+    ui.free_texture(handle);
+    assert!(ui.texture(handle).is_none());
+    assert_ne!(handle, ui.register_external_texture(256, 256));
+}

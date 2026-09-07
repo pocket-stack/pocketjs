@@ -62,6 +62,7 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
   "resource-state": { file: "framework/src/resource-state.ts", aliases: TWINS },
   "resource-cache": { file: "framework/src/resource-cache.ts", aliases: TWINS },
   "resource-offload": { file: "framework/src/resource-offload.ts", aliases: TWINS },
+  "resource-pack": { file: "framework/src/resource-pack.ts", aliases: TWINS },
   "resource-view": { file: { solid: "framework/src/resource-view.ts" } },
   "tile-viewport": { file: "framework/src/tile-viewport.ts", aliases: TWINS },
   resource: { file: { solid: "framework/src/resource.ts" } },

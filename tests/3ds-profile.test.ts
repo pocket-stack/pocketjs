@@ -103,6 +103,7 @@ describe("private Nintendo 3DS build profile", () => {
       },
       capabilities: [
         "io.offload",
+        "io.resource-pack",
         "input.analog.left",
         "input.analog.right",
         "input.buttons",

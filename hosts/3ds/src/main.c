@@ -33,6 +33,7 @@
 #include "pocket_core.h"
 #include "qjs.h"
 #include "offload.h"
+#include "asset_pack.h"
 #include "devserver.h"
 #include "devmenu.h"
 #include "runtime.h"
@@ -728,6 +729,9 @@ int main(void) {
 #endif
   PocketRuntimeFailureLineage failures = {0};
   input_init();
+#ifdef POCKETJS_ASSET_PACK
+  asset_pack_start();
+#endif
 #ifdef POCKETJS_OFFLOAD
   GuestChoice guest = package_choice(embedded, 0, &runtime_state);
   guest.commit_on_accept = false;
@@ -1055,6 +1059,9 @@ int main(void) {
 #endif
   );
   offload_stop();
+#ifdef POCKETJS_ASSET_PACK
+  asset_pack_stop();
+#endif
   input_shutdown();
   teardown_guest();
   C3D_FrameEnd(0);
