@@ -15,6 +15,9 @@
  * target and before C3D_FrameEnd.
  */
 bool gfx_init(uint32_t logical_width, uint32_t logical_height);
+/* Materialize one immutable mesh VBO. Safe before FrameBegin: superseded
+ * buffers remain alive until the next GPU fence. Never allocates while drawing. */
+bool gfx_upload_mesh(int32_t handle);
 void gfx_begin_frame(void);
 bool gfx_prepare_surface(
   uint32_t surface,

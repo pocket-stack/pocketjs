@@ -481,6 +481,13 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
     let mut i = 0usize;
     while i < n {
         match words[i] {
+            spec::draw_op::MESH => {
+                if i + 10 > n { break; }
+                crate::mesh::draw(&words[i..i + 10]);
+                if let Some(&(x, y, w, h)) = scissors.last() { sys::sceGuScissor(x, y, x + w, y + h); }
+                i += 10;
+            }
+
             // The `i + N <= n` guards make truncated tails fall through to the
             // default `break` arm instead of spinning forever with count = 0.
             spec::draw_op::RECT if i + 4 <= n => {
@@ -820,3 +827,11 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
     sys::sceGuDisable(GuState::Texture2D);
     sys::sceGuScissor(0, 0, SCREEN_WIDTH as i32, SCREEN_HEIGHT as i32);
 }
+
+// Previous-frame GE commands may still sample a texture while JS disposes it.
+// Defer the core allocation's release to the display-list retirement point.
+static mut RETIRED_TEXTURES: Vec<pocketjs_core::Texture> = Vec::new();
+pub unsafe fn free_texture(ui: &mut Ui, handle: i32){
+    if let Some(texture) = ui.take_texture(handle) { RETIRED_TEXTURES.push(texture); }
+}
+pub unsafe fn retire_textures() { RETIRED_TEXTURES.clear(); }

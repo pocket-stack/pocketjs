@@ -689,6 +689,7 @@ fn claims_hit(
     w: f32,
     h: f32,
 ) -> bool {
+    if node.mesh >= 0 { return true; }
     if node.node_type == spec::NodeType::Text as u8 {
         return true; // the glyph run
     }
@@ -848,6 +849,8 @@ struct Walker<'a> {
     tree: &'a Tree,
     styles: &'a StyleTable,
     fonts: &'a Fonts,
+    meshes: &'a crate::mesh::Meshes,
+    mesh_commands: bool,
     /// Global vblank counter — drives deterministic sprite frame selection.
     frame: u64,
     /// Viewport bounds in px — every emitted coordinate is clipped to
@@ -885,7 +888,8 @@ pub fn build(
     tree: &Tree,
     styles: &StyleTable,
     fonts: &Fonts,
-    frame: u64,
+    meshes: &crate::mesh::Meshes,
+    mesh_commands: bool,    frame: u64,
     screen: (f32, f32),
     textures: &mut Vec<crate::TexSlot>,
     tex_free: &mut Vec<u32>,
@@ -900,6 +904,8 @@ pub fn build(
         tree,
         styles,
         fonts,
+        meshes,
+        mesh_commands,
         frame,
         spec::ROOT_ID,
         screen,
@@ -921,7 +927,8 @@ pub fn build_root(
     tree: &Tree,
     styles: &StyleTable,
     fonts: &Fonts,
-    frame: u64,
+    meshes: &crate::mesh::Meshes,
+    mesh_commands: bool,    frame: u64,
     root_id: i32,
     screen: (f32, f32),
     textures: &mut Vec<crate::TexSlot>,
@@ -946,6 +953,8 @@ pub fn build_root(
         tree,
         styles,
         fonts,
+        meshes,
+        mesh_commands,
         frame,
         screen,
         glyph_scratch: Vec::new(),
@@ -1162,6 +1171,21 @@ impl<'a> Walker<'a> {
         }
 
         // -- image / animated sprite -------------------------------------------
+        if let Some(mesh) = self.meshes.get(node.mesh) {
+            let bounds = clip.intersect(&world_aabb_of(self.screen, &world, l.w, l.h));
+            if self.mesh_commands && op == 1.0 && bounds.x1 > bounds.x0 && bounds.y1 > bounds.y0 {
+                let sx = l.w / mesh.width as f32;
+                let sy = l.h / mesh.height as f32;
+                dl.words.extend_from_slice(&[
+                    spec::draw_op::MESH, node.mesh as u32,
+                    (world.a*sx).to_bits(), (world.b*sx).to_bits(), (world.c*sy).to_bits(), (world.d*sy).to_bits(),
+                    world.tx.to_bits(), world.ty.to_bits(),
+                    xy_word(roundf(clip.x0),roundf(clip.y0)), xy_word(roundf(clip.x1)-roundf(clip.x0),roundf(clip.y1)-roundf(clip.y0)),
+                ]);
+            } else if bounds.x1 > bounds.x0 && bounds.y1 > bounds.y0 {
+                paint_mesh(dl, mesh, &world, l.w, l.h, &clip, self.screen, op);
+            }
+        }
         if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 {
             // Plain image samples the whole texture; a sprite samples the
             // current frame's atlas cell (auto-played from the vblank counter).
@@ -2775,4 +2799,176 @@ fn emit_tri(
     dl.words.push(pack(v0.color));
     dl.words.push(pack(v1.color));
     dl.words.push(pack(v2.color));
+}
+
+/// Fixed scratch clipping: at most seven vertices after clipping a triangle.
+/// Core TRI output keeps all software/GPU backends and damage snapshots valid.
+fn paint_mesh(
+    dl: &mut DrawList,
+    mesh: &crate::mesh::Mesh,
+    world: &Affine,
+    width: f32,
+    height: f32,
+    clip: &Clip,
+    screen: (f32, f32),
+    opacity: f32,
+) {
+    let sx = width / (mesh.width as f32 * 16.0);
+    let sy = height / (mesh.height as f32 * 16.0);
+    let empty = ClipVert {
+        x: 0.0,
+        y: 0.0,
+        color: [0.0; 4],
+        u: 0.0,
+        v: 0.0,
+    };
+    let mut cur = [empty; 8];
+    let mut next = [empty; 8];
+    for triangle in &mesh.triangles {
+        let mut color = unpack(triangle.color);
+        color[3] *= opacity;
+        for (i, index) in triangle.indices.iter().enumerate() {
+            let p = mesh.vertices[*index as usize];
+            let (x, y) = world.apply(p[0] as f32 * sx, p[1] as f32 * sy);
+            cur[i] = ClipVert {
+                x,
+                y,
+                color,
+                ..empty
+            };
+        }
+        if cur[..3].iter().all(|p| p.x < clip.x0)
+            || cur[..3].iter().all(|p| p.x > clip.x1)
+            || cur[..3].iter().all(|p| p.y < clip.y0)
+            || cur[..3].iter().all(|p| p.y > clip.y1) { continue; }
+        if cur[..3].iter().all(|p| p.x >= clip.x0 && p.x <= clip.x1 && p.y >= clip.y0 && p.y <= clip.y1) {
+            emit_tri(dl, &cur[0], &cur[1], &cur[2], clip, screen);
+            continue;
+        }
+        let mut count = 3;
+        for (axis, bound, le) in [
+            (0, clip.x0, false),
+            (0, clip.x1, true),
+            (1, clip.y0, false),
+            (1, clip.y1, true),
+        ] {
+            if count == 0 {
+                break;
+            }
+            let coord = |v: ClipVert| if axis == 0 { v.x } else { v.y };
+            let mut n = 0;
+            for i in 0..count {
+                let a = cur[i];
+                let b = cur[(i + 1) % count];
+                let da = coord(a) - bound;
+                let db = coord(b) - bound;
+                let ia = if le { da <= 0.0 } else { da >= 0.0 };
+                let ib = if le { db <= 0.0 } else { db >= 0.0 };
+                if ia {
+                    next[n] = a;
+                    n += 1;
+                }
+                if ia != ib {
+                    next[n] = lerp_vert(&a, &b, da / (da - db));
+                    n += 1;
+                }
+            }
+            core::mem::swap(&mut cur, &mut next);
+            count = n;
+        }
+        for i in 1..count.saturating_sub(1) {
+            emit_tri(dl, &cur[0], &cur[i], &cur[i + 1], clip, screen);
+        }
+    }
+}
+
+#[cfg(test)]
+mod mesh_tests {
+    use super::*;
+    #[test]
+    fn retained_mesh_is_opt_in_bounded_and_falls_back_for_opacity() {
+        let mut bytes = alloc::vec![0u8; 16 + 12 + 10];
+        bytes[..4].copy_from_slice(b"PMH1");
+        for (offset, value) in [(4, 256u16), (6, 256), (8, 3), (10, 1), (20, 4096), (26, 4096), (30, 1), (32, 2)] {
+            bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[34..38].copy_from_slice(&0xff112233u32.to_le_bytes());
+        let mut ui = crate::Ui::new();
+        let handle = ui.upload_mesh(&bytes);
+        assert!(handle >= 0);
+        let node = ui.create_node(spec::NodeType::View as u8);
+        ui.insert_before(spec::ROOT_ID, node, 0);
+        ui.set_prop(node, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+        ui.set_prop(node, spec::prop::WIDTH, 512.0);
+        ui.set_prop(node, spec::prop::HEIGHT, 512.0);
+        ui.set_mesh(node, handle);
+        // Other backends receive only their established triangle contract.
+        assert_eq!(ui.draw().words[0], spec::draw_op::TRI);
+        ui.set_mesh_commands(true);
+        let words = &ui.draw().words;
+        assert_eq!(words.len(), 10);
+        assert_eq!(&words[..2], &[spec::draw_op::MESH, handle as u32]);
+        assert_eq!(f32::from_bits(words[2]), 2.0);
+        assert_eq!(f32::from_bits(words[5]), 2.0);
+        ui.set_prop(node, spec::prop::OPACITY, 0.5);
+        assert_eq!(ui.draw().words[0], spec::draw_op::TRI);
+        ui.set_prop(node, spec::prop::OPACITY, 1.0);
+        ui.set_prop(node, spec::prop::TRANSLATE_X, 2000.0);
+        assert!(ui.draw().words.is_empty());
+        ui.set_prop(node, spec::prop::TRANSLATE_X, 0.0);
+        ui.free_mesh(handle);
+        assert!(ui.mesh(handle).is_none());
+        assert!(ui.draw().words.is_empty());
+    }
+    #[test]
+    fn prepared_mesh_clips_without_changing_the_drawlist_contract() {
+        let mesh = crate::mesh::Mesh {
+            width: 256,
+            height: 256,
+            vertices: alloc::vec![[0, 0], [4096, 0], [0, 4096]],
+            triangles: alloc::vec![crate::mesh::Triangle {
+                indices: [0, 1, 2],
+                color: 0xff112233
+            }],
+        };
+        let mut dl = DrawList::new();
+        for angle in 0..100 {
+            dl.words.clear();
+            let f = angle as f32 / 15.0;
+            let world = Affine {
+                a: cosf(f) * 4.0,
+                b: sinf(f) * 4.0,
+                c: -sinf(f) * 4.0,
+                d: cosf(f) * 4.0,
+                tx: -100.0,
+                ty: 30.0,
+            };
+            paint_mesh(
+                &mut dl,
+                &mesh,
+                &world,
+                256.0,
+                256.0,
+                &Clip {
+                    x0: 0.0,
+                    y0: 20.0,
+                    x1: 400.0,
+                    y1: 220.0,
+                },
+                (400.0, 240.0),
+                0.5,
+            );
+            for op in dl.words.chunks_exact(7) {
+                assert_eq!(op[0], spec::draw_op::TRI);
+                for p in &op[1..4] {
+                    assert!((*p & 65535) <= 400);
+                    assert!((20..=220).contains(&(p >> 16)));
+                }
+                for color in &op[4..7] {
+                    assert_eq!(*color & 0xffffff, 0x112233);
+                    assert!((127..=128).contains(&(color >> 24)));
+                }
+            }
+        }
+    }
 }

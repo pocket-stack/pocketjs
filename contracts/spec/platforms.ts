@@ -254,6 +254,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       rasterDensity: 1,
     },
     capabilities: [
+      "io.offload",
       "input.analog.left",
       "input.buttons",
       "input.cursor",

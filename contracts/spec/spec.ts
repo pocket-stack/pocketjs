@@ -1444,6 +1444,13 @@ export const FONT_FLAG_BOLD = 1 << 0;
 //                           in shell painter order, so later shell ops remain
 //                           above the child surface.
 
+//   MESH (10 words): op, meshHandle, a,b,c,d,tx,ty (f32 affine), clipXY,clipWH.
+//                           Opt-in retained geometry command. Vertices remain
+//                           in the native mesh resource's logical coordinates;
+//                           the GPU applies the affine and clips. Only hosts
+//                           enabling Ui::set_mesh_commands receive this op.
+//                           Other hosts retain CPU-clipped TRI output. The
+//                           resource revision participates in render invalidation.
 export const DRAW_OP = {
   rect: 1,
   gradRect: 2,
@@ -1455,6 +1462,7 @@ export const DRAW_OP = {
   texTri: 8,
   textRun: 9,
   surfaceQuad: 10,
+  mesh: 11,
 } as const;
 
 // ---------------------------------------------------------------------------

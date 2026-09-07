@@ -161,7 +161,7 @@ guest and forwards each op to a caller-owned core; see
 [ESP-IDF](/docs/esp-idf/).
 
 Every host drives frames through
-`globalThis.frame(buttons, analog?, touches?, hits?, touchSurfaces?)`. Buttons use the shared PSP
+`globalThis.frame(buttons, analog?, touches?, hits?, touchSurfaces?, rightAnalog?, inputElapsedUs?)`. Buttons use the shared PSP
 bitmask, analog is `(x << 8) | y` with centered bytes on stickless hosts, and
 touch contacts are packed snapshots in logical coordinates. `hits` carries
 parallel down-edge hit facts; `touchSurfaces` uses `0` for primary and `1` for
@@ -169,6 +169,13 @@ auxiliary, with omitted entries defaulting to primary. The runtime latches
 these inputs before app hooks, then performs input edge detection and the
 end-of-frame sweep. See [Input & focus](/docs/input-focus/) and
 [Platform contracts](/docs/platform-contracts/).
+
+`rightAnalog` is the packed optional second stick. **`inputElapsedUs` carries
+a bounded input-sampling duration**, in microseconds, for velocity-driven
+interaction through `@pocketjs/framework/clock`'s `inputDeltaSeconds()`. The 3DS
+host supplies it from its monotonic counter; captures and hosts that omit it
+use the nominal simulation step. It does not add ticks or resource pumps.
+The flight recorder includes this input in v4 tapes.
 
 ## Frame order
 
@@ -179,7 +186,7 @@ hosts perform the same logical steps under a fixed-step
 ```
 read host input                     buttons + optional analog/touch snapshot
   ↓
-frame(buttons, analog?, touches?, hits?, touchSurfaces?)
+frame(buttons, analog?, touches?, hits?, touchSurfaces?, rightAnalog?, inputElapsedUs?)
                  ── JS ──►          advance virtual time, latch input, run
                                     service pumps, deliver queued effects,
                                     resolve contact lifecycles (gestures),
@@ -226,7 +233,7 @@ Key properties:
 
 In steady state — no reactive values changed — `frame()` emits **no** mutation
 ops, the sweep set is empty, and the only JS boundary crossing is the single
-`frame(buttons, analog?, touches?, hits?, touchSurfaces?)` call itself.
+`frame(buttons, analog?, touches?, hits?, touchSurfaces?, rightAnalog?, inputElapsedUs?)` call itself.
 Everything downstream (tick, layout, draw) is Rust.
 
 ## Node reclamation
@@ -289,7 +296,7 @@ The whole design converges on a small steady-state cost:
 
 | budget | target |
 |---|---|
-| FFI crossings per steady frame | **one** (`frame(buttons, analog?, touches?, hits?, touchSurfaces?)`; no mutation ops when nothing changed) |
+| FFI crossings per steady frame | **one** (`frame(buttons, analog?, touches?, hits?, touchSurfaces?, rightAnalog?, inputElapsedUs?)`; no mutation ops when nothing changed) |
 | DrawList draw calls | **≤ ~40** `sceGuDrawArray` calls |
 | DrawList quads | **≤ ~2000** |
 | per-frame vertex bytes | **≈ 48 KB** from a per-frame bump pool (reset after `sceGuSync`) |

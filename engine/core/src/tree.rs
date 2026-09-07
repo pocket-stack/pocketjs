@@ -67,6 +67,8 @@ pub struct Node {
     /// Uploaded texture handle (image nodes only; -1 = none). For an animated
     /// sprite this is the ATLAS texture; the drawn frame is a UV sub-rect of it.
     pub tex: i32,
+    /// Borrowed generation-tagged prepared geometry; -1 = none.
+    pub mesh: i32,
     /// Pocket System package surface handle (surface nodes only; -1 = none).
     pub compositor_surface: i32,
     /// Shell focus fact carried by SURFACE_QUAD for native scheduling/input.
@@ -109,6 +111,7 @@ impl Node {
             anim_values: Vec::new(),
             text: String::new(),
             tex: -1,
+            mesh: -1,
             compositor_surface: -1,
             compositor_focused: false,
             sprite_frames: 0,

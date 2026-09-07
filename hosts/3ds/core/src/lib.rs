@@ -212,7 +212,9 @@ fn clear_draw_snapshot() {
 #[no_mangle]
 pub extern "C" fn ui_init(raster_density: u32) {
     unsafe {
-        UI = Some(Ui::new_with_raster_density(raster_density.max(1)));
+        let mut instance = Ui::new_with_raster_density(raster_density.max(1));
+        instance.set_mesh_commands(true);
+        UI = Some(instance);
         PAK_TEXTURES = Vec::new();
         PAK_SPRITES = Vec::new();
     }
@@ -846,3 +848,19 @@ fn read_u16(blob: &[u8], offset: usize) -> Option<u16> {
         *blob.get(offset + 1)?,
     ]))
 }
+
+#[no_mangle]
+pub extern "C" fn ui_upload_mesh(ptr: *const u8, len: usize) -> i32 {
+    ui().upload_mesh(unsafe { bytes(ptr, len) })
+}
+#[no_mangle]
+pub extern "C" fn ui_free_mesh(handle: i32) { ui().free_mesh(handle); }
+#[no_mangle]
+pub extern "C" fn ui_set_mesh(id: i32, handle: i32) { ui().set_mesh(id, handle); }
+
+#[no_mangle]
+pub extern "C" fn ui_mesh_vertices(handle:i32) -> *const u16 { ui().mesh(handle).map_or(core::ptr::null(), |m| m.vertices.as_ptr() as *const u16) }
+#[no_mangle]
+pub extern "C" fn ui_mesh_triangles(handle:i32) -> *const pocketjs_core::mesh::Triangle { ui().mesh(handle).map_or(core::ptr::null(), |m| m.triangles.as_ptr()) }
+#[no_mangle]
+pub extern "C" fn ui_mesh_triangle_count(handle:i32) -> u32 { ui().mesh(handle).map_or(0, |m| m.triangles.len() as u32) }

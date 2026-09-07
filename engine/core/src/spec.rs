@@ -440,6 +440,7 @@ pub mod draw_op {
     pub const TEX_TRI: u32 = 8;
     pub const TEXT_RUN: u32 = 9;
     pub const SURFACE_QUAD: u32 = 10;
+    pub const MESH: u32 = 11;
 }
 
 /// .pak container constants (byte-compatible with dreamcart's format;

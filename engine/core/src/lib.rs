@@ -40,6 +40,7 @@ pub mod anim;
 pub mod codec;
 pub mod damage;
 pub mod draw;
+pub mod mesh;
 pub mod layout;
 pub mod package;
 pub mod pak;
@@ -254,6 +255,8 @@ pub struct Ui {
     textures: Vec<TexSlot>,
     /// LIFO free list of texture slots (freed most recently, reused first).
     tex_free: Vec<u32>,
+    meshes: mesh::Meshes,
+    mesh_commands: bool,
     /// Baked rounded-corner disc sprites (see draw::DiscCache).
     discs: draw::DiscCache,
     /// Raster pixels baked for each logical UI pixel. Layout and DrawList
@@ -341,6 +344,8 @@ impl Ui {
             auxiliary: None,
             textures: Vec::new(),
             tex_free: Vec::new(),
+            meshes: mesh::Meshes::new(),
+            mesh_commands: false,
             discs: draw::DiscCache::new(),
             raster_density,
             raster_revision: 1,
@@ -799,19 +804,50 @@ impl Ui {
     /// core-internal texture (a baked corner disc) is safe: the DiscCache
     /// re-validates its handles each use and re-bakes dead ones.
     pub fn free_texture(&mut self, handle: i32) {
-        let Some(slot) = tex_resolve(&self.textures, handle) else {
-            return;
-        };
+        drop(self.take_texture(handle));
+    }
+
+    /// Invalidate a handle immediately and transfer its storage to the backend.
+    /// A pipelined GPU keeps this owner until its previous commands complete.
+    pub fn take_texture(&mut self, handle: i32) -> Option<Texture> {
+        let slot = tex_resolve(&self.textures, handle)?;
         let s = &mut self.textures[slot as usize];
-        s.tex = None;
+        let texture = s.tex.take();
         s.gen = ((s.gen as u32 + 1) & TEX_GEN_MASK) as u16;
         self.tex_free.push(slot);
         self.bump_raster_revision();
+        texture
+    }
+
+    /// Validate a bounded prepared geometry entry and own its native storage.
+    /// Opt into retained geometry commands only when the backend implements them.
+    pub fn set_mesh_commands(&mut self, enabled: bool) { self.mesh_commands = enabled; self.bump_raster_revision(); }
+    pub fn mesh(&self, handle: i32) -> Option<&mesh::Mesh> { self.meshes.get(handle) }
+
+    pub fn upload_mesh(&mut self, bytes: &[u8]) -> i32 {
+        let handle = self.meshes.upload(bytes);
+        if handle >= 0 { self.bump_raster_revision(); }
+        handle
+    }
+
+    pub fn free_mesh(&mut self, handle: i32) {
+        self.meshes.free(handle);
+        self.bump_raster_revision();
+    }
+
+    /// Views borrow a generation-tagged geometry handle; a negative value clears it.
+    pub fn set_mesh(&mut self, id: i32, handle: i32) {
+        if handle >= 0 && self.meshes.get(handle).is_none() { return; }
+        let Some(slot) = self.tree.resolve(id) else { return; };
+        let node = &mut self.tree.slots[slot as usize];
+        if node.node_type == spec::NodeType::View as u8 {
+            node.mesh = handle.max(-1);
+            self.bump_raster_revision();
+        }
     }
 
     /// Bind an uploaded texture to an image node. Handles are 0-based, so
-    /// tex < 0 CLEARS the binding (node.tex = -1, the "none" sentinel);
-    /// unknown/stale positive handles are ignored.
+    /// tex < 0 clears the binding; unknown/stale positive handles are ignored.
     pub fn set_image(&mut self, id: i32, tex: i32) {
         if tex >= 0 && tex_resolve(&self.textures, tex).is_none() {
             return;
@@ -1465,6 +1501,8 @@ impl Ui {
             &self.tree,
             &self.styles,
             &self.fonts,
+            &self.meshes,
+            self.mesh_commands,
             self.frame,
             self.layout.viewport,
             &mut self.textures,
@@ -1491,6 +1529,8 @@ impl Ui {
                 &self.tree,
                 &self.styles,
                 &self.fonts,
+                &self.meshes,
+            self.mesh_commands,
                 self.frame,
                 self.layout.viewport,
                 &mut self.textures,
@@ -1537,6 +1577,8 @@ impl Ui {
             &self.tree,
             &self.styles,
             &self.fonts,
+            &self.meshes,
+            self.mesh_commands,
             self.frame,
             auxiliary.root,
             auxiliary.layout.viewport,
@@ -1563,6 +1605,8 @@ impl Ui {
                 &self.tree,
                 &self.styles,
                 &self.fonts,
+                &self.meshes,
+            self.mesh_commands,
                 self.frame,
                 auxiliary.root,
                 auxiliary.layout.viewport,

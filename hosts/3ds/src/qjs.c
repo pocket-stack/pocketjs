@@ -19,6 +19,7 @@
  */
 
 #include "qjs.h"
+#include "gfx.h"
 #include "offload.h"
 #include "offload_coverage.h"
 
@@ -50,7 +51,7 @@
 #define POCKETJS_JS_STACK_SIZE (384 * 1024)
 
 typedef enum {
-  HostOffloadSession, HostOffloadSubmit, HostOffloadTake, HostOffloadCoverage,
+  HostOffloadSession, HostOffloadSubmit, HostOffloadTake, HostOffloadCoverage, HostOffloadImage, HostOffloadReleaseImage, HostOffloadMesh,
   HostCreateNode,
   HostDestroyNode,
   HostInsertBefore,
@@ -61,7 +62,7 @@ typedef enum {
   HostSetText,
   HostReplaceText,
   HostUploadTexture,
-  HostSetImage,
+  HostSetImage, HostSetMesh, HostFreeMesh,
   HostSetSprite,
   HostAnimate,
   HostCancelAnim,
@@ -107,6 +108,7 @@ static char debug_poll_buffer[32 * 1024];
 static char svc_poll_buffer[8192 + 1];
 static uint8_t coverage_pixels[512 * 16 * 4];
 static bool coverage_used;
+static bool image_used;
 
 static void set_error(const char *message) {
   size_t length = message == NULL ? 0 : strlen(message);
@@ -296,6 +298,8 @@ static JSValue host_operation(
           (uint32_t)argument_int(ctx, argc, argv, 3)
         )
       );
+    case HostSetMesh: ui_set_mesh(argument_int(ctx,argc,argv,0),argument_int(ctx,argc,argv,1)); return JS_UNDEFINED;
+    case HostFreeMesh: ui_free_mesh(argument_int(ctx,argc,argv,0)); return JS_UNDEFINED;
     case HostSetImage:
       ui_set_image(argument_int(ctx, argc, argv, 0), argument_int(ctx, argc, argv, 1));
       return JS_UNDEFINED;
@@ -493,6 +497,27 @@ static JSValue host_operation(
       unsigned padded_height = 8; while (padded_height < (unsigned)height) padded_height *= 2;
       return JS_NewInt32(ctx, ui_upload_texture(coverage_pixels, envelope * padded_height * 4, envelope, padded_height, 3));
     }
+    case HostOffloadMesh: {
+      if(image_used) return JS_NewInt32(ctx,-1);
+      unsigned length; const uint8_t *bytes=offload_mesh((uint32_t)argument_int(ctx,argc,argv,0),&length);
+      if(!bytes) return JS_NewInt32(ctx,-1); image_used=true;
+      int32_t handle = ui_upload_mesh(bytes, length);
+      if (handle >= 0 && !gfx_upload_mesh(handle)) {
+        ui_free_mesh(handle);
+        handle = -1;
+      }
+      return JS_NewInt32(ctx, handle);
+    }
+    case HostOffloadImage: {
+      if (image_used) return JS_NewInt32(ctx, -1);
+      unsigned width, height;
+      const uint8_t *pixels = offload_image((uint32_t)argument_int(ctx, argc, argv, 0), &width, &height);
+      if (!pixels) return JS_NewInt32(ctx, -1);
+      image_used = true;
+      return JS_NewInt32(ctx, ui_upload_img_entry(pixels - 8, width * height * 2 + 8));
+    }
+    case HostOffloadReleaseImage:
+      offload_release_image((uint32_t)argument_int(ctx, argc, argv, 0)); return JS_UNDEFINED;
     case HostOffloadSession: return JS_NewInt32(ctx, offload_session());
     case HostOffloadSubmit: {
       if (argc < 1 || !JS_IsString(argv[0])) return JS_FALSE;
@@ -574,6 +599,10 @@ static void install_host(void) {
 #ifdef POCKETJS_OFFLOAD
   JSValue offload = JS_NewObject(context);
   add_operation(offload, "uploadCoverage", 6, HostOffloadCoverage);
+  add_operation(offload, "uploadMesh", 1, HostOffloadMesh);
+  add_operation(offload, "releaseMesh", 1, HostOffloadReleaseImage);
+  add_operation(offload, "uploadImage", 1, HostOffloadImage);
+  add_operation(offload, "releaseImage", 1, HostOffloadReleaseImage);
   add_operation(offload, "session", 0, HostOffloadSession);
   add_operation(offload, "submit", 1, HostOffloadSubmit);
   add_operation(offload, "take", 0, HostOffloadTake);
@@ -591,6 +620,8 @@ static void install_host(void) {
   add_operation(ui, "setText", 2, HostSetText);
   add_operation(ui, "replaceText", 2, HostReplaceText);
   add_operation(ui, "uploadTexture", 4, HostUploadTexture);
+  add_operation(ui, "setMesh", 2, HostSetMesh);
+  add_operation(ui, "freeMesh", 1, HostFreeMesh);
   add_operation(ui, "setImage", 2, HostSetImage);
   add_operation(ui, "setSprite", 5, HostSetSprite);
   add_operation(ui, "animate", 6, HostAnimate);
@@ -788,18 +819,21 @@ bool qjs_frame(
   const uint32_t *touches,
   const int32_t *hits,
   size_t touch_count,
-  int32_t right_analog
+  int32_t right_analog,
+  uint32_t input_elapsed_us
 ) {
   if (context == NULL) return false;
   offload_frame();
   coverage_used = false;
-  JSValue arguments[6] = {
+  image_used = false;
+  JSValue arguments[7] = {
     JS_NewInt32(context, buttons),
     JS_NewInt32(context, analog),
     JS_NewArray(context),
     JS_NewArray(context),
     JS_NewArray(context),
     JS_NewInt32(context, right_analog),
+    JS_NewUint32(context, input_elapsed_us),
   };
   for (size_t index = 0; index < touch_count && index < 8; index += 1) {
     JS_SetPropertyUint32(
@@ -817,8 +851,8 @@ bool qjs_frame(
     /* 1 = auxiliary output; the 3DS touch panel is the bottom screen. */
     JS_SetPropertyUint32(context, arguments[4], (uint32_t)index, JS_NewInt32(context, 1));
   }
-  JSValue result = JS_Call(context, frame_function, global, 6, arguments);
-  for (size_t index = 0; index < 6; index += 1) JS_FreeValue(context, arguments[index]);
+  JSValue result = JS_Call(context, frame_function, global, 7, arguments);
+  for (size_t index = 0; index < 7; index += 1) JS_FreeValue(context, arguments[index]);
   if (JS_IsException(result)) {
     take_exception();
     JS_FreeValue(context, result);
@@ -834,6 +868,7 @@ const char *qjs_last_error(void) {
 }
 
 void qjs_shutdown(void) {
+  offload_reset();
   if (context != NULL) {
     JS_FreeValue(context, frame_function);
     JS_FreeValue(context, global);

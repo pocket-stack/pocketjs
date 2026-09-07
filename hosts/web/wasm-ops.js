@@ -91,6 +91,9 @@ export async function createWasmUi(wasm, options = {}) {
     setText: (id, str) => withStr(str, (p, l) => ex.ui_set_text(id, p, l)),
     replaceText: (id, str) => withStr(str, (p, l) => ex.ui_replace_text(id, p, l)),
     uploadTexture: (buf, w, h, psm) => withBytes(buf, (p, l) => ex.ui_upload_texture(p, l, w, h, psm)),
+    setMesh: (id, mesh) => ex.ui_set_mesh(id, mesh),
+    freeMesh: handle => ex.ui_free_mesh(handle),
+    uploadMesh: bytes => withBytes(bytes, (p,l) => ex.ui_upload_mesh(p,l)),
     setImage: (id, tex) => ex.ui_set_image(id, tex),
     setCompositorSurface: (id, surface, focused) => {
       if (surface < 0) compositorBindings.delete(id);

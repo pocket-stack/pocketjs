@@ -224,8 +224,9 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
       hits?: readonly number[],
       touchSurfaces?: readonly number[],
       rightAnalog?: number,
+      inputElapsedUs?: number,
     ) => {
-      __advanceClock();
+      __advanceClock(inputElapsedUs);
       __setAnalog(analog, rightAnalog);
       __setTouches(touches, hits, touchSurfaces); // latch contacts + surface-specific hit facts
       runServicePumps();

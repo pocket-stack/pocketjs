@@ -67,6 +67,13 @@ int32_t ui_upload_texture(
   uint32_t height,
   uint32_t pixel_storage
 );
+typedef struct { uint16_t indices[3]; uint32_t color; } PocketMeshTriangle;
+const uint16_t *ui_mesh_vertices(int32_t handle);
+const PocketMeshTriangle *ui_mesh_triangles(int32_t handle);
+uint32_t ui_mesh_triangle_count(int32_t handle);
+int32_t ui_upload_mesh(const uint8_t *bytes, size_t length);
+void ui_free_mesh(int32_t handle);
+void ui_set_mesh(int32_t id, int32_t handle);
 int32_t ui_upload_img_entry(const uint8_t *bytes, size_t length);
 int32_t ui_upload_tileset_tile(const uint8_t *bytes, size_t length, uint32_t index);
 void ui_free_texture(int32_t handle);

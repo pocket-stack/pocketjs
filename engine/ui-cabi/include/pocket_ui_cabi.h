@@ -23,6 +23,9 @@ int32_t ui_upload_texture(
   uint32_t height,
   uint32_t pixel_storage
 );
+int32_t ui_upload_mesh(const uint8_t *bytes, size_t length);
+void ui_free_mesh(int32_t handle);
+void ui_set_mesh(int32_t id, int32_t handle);
 int32_t ui_upload_img_entry(const uint8_t *bytes, size_t length);
 void ui_free_texture(int32_t handle);
 void ui_set_image(int32_t id, int32_t texture);

@@ -28,6 +28,8 @@ fn dimension(name: &str, fallback: u32) -> u32 {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=POCKETJS_OFFLOAD_SLOT");
+    println!("cargo:rustc-env=POCKETJS_OFFLOAD_SLOT={}", env::var("POCKETJS_OFFLOAD_SLOT").unwrap_or_default());
     let legacy_app = env::var("POCKETJS_APP").unwrap_or_default();
     let app = env::var("POCKETJS_APP_OUTPUT").unwrap_or_else(|_| legacy_app.clone());
     let embed_app = match env::var("POCKETJS_EMBED_APP") {

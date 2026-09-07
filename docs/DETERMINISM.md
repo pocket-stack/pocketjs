@@ -77,6 +77,33 @@ Frame-counted APIs (`onFrame` counters, sprite `frameStep`) are per-rate by
 definition — an app that hard-codes "on frame 37" means something different
 at each hz. That is a documented boundary, not a bug; write seconds.
 
+## Sampled input duration
+
+**The seventh frame argument, `inputElapsedUs`, carries elapsed input-sampling
+microseconds as input data.** The 3DS host samples its monotonic counter between
+input frames. Apps can use `inputDeltaSeconds()` from
+`@pocketjs/framework/clock` to integrate controller velocity at a constant
+screen distance per second when presentation misses a vblank:
+
+```ts
+onFrame(() => {
+  camera.step(inputDeltaSeconds(), -analogX() * 320, -analogY() * 320);
+});
+```
+
+**This does not change virtual time, timer deadlines, core ticks or the number
+of resource pumps per frame.** Valid samples are rounded to microseconds and
+bounded to 1–66,666 µs. Missing, zero or invalid samples use `1 / simulationHz()`;
+other hosts and deterministic captures keep that nominal step. A long pause
+therefore advances the camera by at most 66.666 ms on resume, without catch-up
+transactions or a large jump. Frames below 15 Hz cannot preserve real-time
+travel under this bound.
+
+The flight recorder stores the normalized duration in tape v4. Replay uses
+that track and ignores the live host duration; tapes without it use the
+nominal step. Apps still do not read a wall clock: the same recorded input
+and duration sequence produces the same trajectory on another host.
+
 ## The effect shell (`@pocketjs/framework/effects`)
 
 Buttons were already part of `input[n]`. The effect shell makes *everything

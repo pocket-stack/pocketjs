@@ -118,6 +118,7 @@ export interface ClassicSheetProps {
   message?: string;
   actions: readonly { label: string; tone?: ClassicTone; disabled?: boolean; onPress(): void }[];
   cancelLabel?: string;
+  cancelDisabled?: boolean;
   onCancel(): void;
   surface?: SurfaceId;
   /** Includes the closing transition, so callers can also gate hardware input. */
@@ -140,7 +141,7 @@ export function ClassicSheet(props: ClassicSheetProps) {
     style: { posType: 1, insetL: 8, insetR: 8, insetT: 11, textAlign: 1, textColor: "#243955" } });
   const message = Text({ class: "text-xs", get children() { return props.message ?? ""; },
     style: { posType: 1, insetL: 8, insetR: 8, insetT: 32, textAlign: 1, textColor: "#344d6c" } });
-  const buttons = [...props.actions, { get label() { return props.cancelLabel ?? "Cancel"; }, onPress: props.onCancel }].map((action, index) =>
+  const buttons = [...props.actions, { get label() { return props.cancelLabel ?? "Cancel"; }, get disabled() { return props.cancelDisabled; }, onPress: props.onCancel }].map((action, index) =>
     ClassicButton({ get label() { return action.label; }, get tone() { return "tone" in action ? action.tone : "neutral"; },
       get disabled() { return !props.open || ("disabled" in action && action.disabled); },
       surface: props.surface, allowWhenBlocked: true, onPress: () => { if (props.open) action.onPress(); },

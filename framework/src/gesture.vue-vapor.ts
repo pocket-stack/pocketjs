@@ -5,6 +5,7 @@
 // mount, which is why onScopeDispose is called with failSilently.
 
 import { onScopeDispose } from "vue";
+export { createDragFilter, type DragFilterOptions } from "./drag-filter.ts";
 import { attachGesture, type GestureHandle, type GestureOptions } from "./gesture-core.ts";
 
 export type {

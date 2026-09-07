@@ -17,12 +17,15 @@ export interface ResourceBoundaryProps<T> {
 export function ResourceBoundary<T>(props: ResourceBoundaryProps<T>): JSX.Element {
   const state = createMemo(props.state);
   const status = createMemo(() => state().status);
-  const error = createMemo(() => { const value = state(); return value.status === "error" ? value.error : undefined; });
+  const error = createMemo(() => {
+    const value = state();
+    return value.status === "error" ? value.error : undefined;
+  });
   return createMemo(() => {
     const phase = status();
     const reason = phase === "error" ? error() : undefined;
-    if (phase !== "ready") return phase === "error" && props.errorFallback
-      ? props.errorFallback(reason) : props.fallback();
+    if (phase !== "ready")
+      return phase === "error" && props.errorFallback ? props.errorFallback(reason) : props.fallback();
     return untrack(() => {
       return props.children(() => {
         const current = state();
@@ -34,7 +37,11 @@ export function ResourceBoundary<T>(props: ResourceBoundaryProps<T>): JSX.Elemen
 }
 
 /** A decoded/uploaded image, including its texture envelope dimensions. */
-export interface TextureResource { handle: number; width: number; height: number }
+export interface TextureResource {
+  handle: number;
+  width: number;
+  height: number;
+}
 export interface ResourceImageProps extends Pick<ViewProps, "class" | "style" | "debugName"> {
   state: Accessor<ResourceState<TextureResource>>;
   fallback: () => JSX.Element;
@@ -45,9 +52,15 @@ export interface ResourceImageProps extends Pick<ViewProps, "class" | "style" | 
  * It borrows the texture: eviction and freeTexture belong to the resource owner. */
 export function ResourceImage(props: ResourceImageProps): JSX.Element {
   const frame = View({
-    get class() { return props.class; },
-    get style() { return props.style; },
-    get debugName() { return props.debugName; },
+    get class() {
+      return props.class;
+    },
+    get style() {
+      return props.style;
+    },
+    get debugName() {
+      return props.debugName;
+    },
   });
   // Construct the content after the outer primitive has returned. Keeping the
   // lazy subtree inside View's children getter retains its entire synchronous
@@ -56,14 +69,71 @@ export function ResourceImage(props: ResourceImageProps): JSX.Element {
     state: props.state,
     fallback: props.fallback,
     errorFallback: props.errorFallback,
-    children: value => {
+    children: (value) => {
       let node: NodeMirror | undefined;
       const handle = createMemo(() => value().handle);
       const result = Image({
-        ref: n => { node = n; },
-        get style() { return { posType: 1, insetL: 0, insetT: 0, width: value().width, height: value().height }; },
+        ref: (n) => {
+          node = n;
+        },
+        get style() {
+          return { posType: 1, insetL: 0, insetT: 0, width: value().width, height: value().height };
+        },
       });
-      createRenderEffect(() => { if (node) getOps().setImage(node.id, handle()); });
+      createRenderEffect(() => {
+        if (node) getOps().setImage(node.id, handle());
+      });
+      return result;
+    },
+  });
+  insert(frame as unknown as NodeMirror, content);
+  return frame;
+}
+
+/** Borrowed prepared geometry. Coordinates fit the resource's logical envelope. */
+export interface MeshResource {
+  handle: number;
+  width: number;
+  height: number;
+}
+export interface ResourceMeshProps extends Pick<ViewProps, "class" | "style" | "debugName"> {
+  state: Accessor<ResourceState<MeshResource>>;
+  fallback: () => JSX.Element;
+  errorFallback?: (error: unknown) => JSX.Element;
+}
+export function ResourceMesh(props: ResourceMeshProps): JSX.Element {
+  const frame = View({
+    get class() {
+      return props.class;
+    },
+    get style() {
+      return props.style;
+    },
+    get debugName() {
+      return props.debugName;
+    },
+  });
+  const content = ResourceBoundary({
+    state: props.state,
+    fallback: props.fallback,
+    errorFallback: props.errorFallback,
+    children: (value) => {
+      let node: NodeMirror | undefined;
+      const result = View({
+        ref: (n) => {
+          node = n;
+        },
+        get style() {
+          return { posType: 1, insetL: 0, insetT: 0, width: value().width, height: value().height };
+        },
+      });
+      createRenderEffect(() => {
+        if (node) {
+          const ops = getOps();
+          if (!ops.setMesh) throw new Error("Host does not implement meshes");
+          ops.setMesh(node.id, value().handle);
+        }
+      });
       return result;
     },
   });

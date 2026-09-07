@@ -305,7 +305,8 @@ unsafe extern "C" fn js_free_texture(
     argc: i32,
     argv: *mut JSValue,
 ) -> JSValue {
-    ui().free_texture(arg_i32(ctx, argc, argv, 0));
+    let handle=arg_i32(ctx,argc,argv,0);
+    crate::ge::free_texture(ui(),handle);
     JS_UNDEFINED
 }
 
@@ -915,6 +916,98 @@ unsafe extern "C" fn js_audio_poll(
     }
 }
 
+
+unsafe extern "C" fn js_mesh_set(
+    ctx: *mut JSContext,
+    _: JSValue,
+    n: i32,
+    a: *mut JSValue,
+) -> JSValue {
+    ui().set_mesh(arg_i32(ctx, n, a, 0), arg_i32(ctx, n, a, 1));
+    JS_UNDEFINED
+}
+unsafe extern "C" fn js_mesh_free(
+    ctx: *mut JSContext,
+    _: JSValue,
+    n: i32,
+    a: *mut JSValue,
+) -> JSValue {
+    crate::mesh::free(ui(), arg_i32(ctx, n, a, 0));
+    JS_UNDEFINED
+}
+unsafe extern "C" fn js_offload_session(
+    ctx: *mut JSContext,
+    _: JSValue,
+    _: i32,
+    _: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, crate::offload::session())
+}
+unsafe extern "C" fn js_offload_submit(
+    ctx: *mut JSContext,
+    _: JSValue,
+    n: i32,
+    a: *mut JSValue,
+) -> JSValue {
+    if n < 1 {
+        return JS_NewBool(ctx, false);
+    }
+    let mut len = 0;
+    let p = JS_ToCStringLen2(ctx, &mut len, *a, 0);
+    if p.is_null() {
+        return JS_NewBool(ctx, false);
+    }
+    let ok = crate::offload::submit(core::slice::from_raw_parts(p as *const u8, len));
+    JS_FreeCString(ctx, p);
+    if ok {
+        JS_NewBool(ctx, true)
+    } else {
+        JS_NewBool(ctx, false)
+    }
+}
+unsafe extern "C" fn js_offload_take(
+    ctx: *mut JSContext,
+    _: JSValue,
+    _: i32,
+    _: *mut JSValue,
+) -> JSValue {
+    match crate::offload::take() {
+        Some(s) => JS_NewStringLen(ctx, s.as_ptr(), s.len()),
+        None => JS_UNDEFINED,
+    }
+}
+unsafe extern "C" fn js_offload_mesh(
+    ctx: *mut JSContext,
+    _: JSValue,
+    n: i32,
+    a: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(
+        ctx,
+        crate::offload::upload(arg_i32(ctx, n, a, 0) as u32, true, ui()),
+    )
+}
+unsafe extern "C" fn js_offload_image(
+    ctx: *mut JSContext,
+    _: JSValue,
+    n: i32,
+    a: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(
+        ctx,
+        crate::offload::upload(arg_i32(ctx, n, a, 0) as u32, false, ui()),
+    )
+}
+unsafe extern "C" fn js_offload_release(
+    ctx: *mut JSContext,
+    _: JSValue,
+    n: i32,
+    a: *mut JSValue,
+) -> JSValue {
+    crate::offload::release(arg_i32(ctx, n, a, 0) as u32);
+    JS_UNDEFINED
+}
+
 // ---------------------------------------------------------------------------
 // registration
 // ---------------------------------------------------------------------------
@@ -942,6 +1035,21 @@ pub unsafe fn register(
     sprites: &[crate::pak::SpriteReg],
 ) {
     let ui_obj = JS_NewObject(ctx);
+    add_fn(ctx, ui_obj, b"setMesh\0", js_mesh_set, 2);
+    add_fn(ctx, ui_obj, b"freeMesh\0", js_mesh_free, 1);
+    if crate::offload::enabled() {
+        ui().set_mesh_commands(true);
+        crate::offload::start();
+        let io = JS_NewObject(ctx);
+        add_fn(ctx, io, b"session\0", js_offload_session, 0);
+        add_fn(ctx, io, b"submit\0", js_offload_submit, 1);
+        add_fn(ctx, io, b"take\0", js_offload_take, 0);
+        add_fn(ctx, io, b"uploadMesh\0", js_offload_mesh, 1);
+        add_fn(ctx, io, b"uploadImage\0", js_offload_image, 1);
+        add_fn(ctx, io, b"releaseMesh\0", js_offload_release, 1);
+        add_fn(ctx, io, b"releaseImage\0", js_offload_release, 1);
+        JS_SetPropertyStr(ctx, global, b"offload\0".as_ptr() as *const _, io);
+    }
 
     add_fn(ctx, ui_obj, b"createNode\0", js_create_node, 1);
     add_fn(ctx, ui_obj, b"destroyNode\0", js_destroy_node, 1);

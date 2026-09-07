@@ -7,8 +7,8 @@
  * font-atlas caches, and batching by texture and scissor are the same shape,
  * only the state they turn into is citro3d instead of GLES.
  *
- * No clipping happens here. The core's CPU clip stage guarantees every
- * coordinate is inside the viewport and i16-safe before the list is emitted.
+ * Screen-space primitives arrive CPU-clipped. Retained meshes carry an affine
+ * transform and clip rectangle; PICA transforms and clips their immutable VBOs.
  *
  * PICA200 constraints that shape the code:
  *   - Textures are power-of-two, 8..1024 per dimension, and must already be
@@ -46,6 +46,7 @@
 #define DRAW_SCISSOR_POP 6u
 #define DRAW_TRI 7u
 #define DRAW_TEX_TRI 8u
+#define DRAW_MESH 11u
 
 /* contracts/spec/spec.ts GradDir. ToTop is 0 and ToBottom is 1 — swapping the
  * two inverts every vertical gradient, which the other backends cannot hit
@@ -69,10 +70,12 @@
  * batches before submitting either one: the GPU reads this arena
  * asynchronously, so resetting it between screens would corrupt the first.
  */
-#define MAX_VERTICES 32768u
+#define MAX_VERTICES 65536u
 #define MAX_COMMANDS 2048u
 #define MAX_CLIP_DEPTH 64u
 #define MAX_SURFACES 2u
+#define MAX_MESHES 128u
+#define MAX_MESH_BYTES (8u * 1024u * 1024u)
 
 typedef struct {
   float x, y;
@@ -89,7 +92,17 @@ typedef struct {
   uint32_t first;
   uint32_t count;
   Clip clip;
+  Vertex *mesh;
+  float affine[6];
 } Command;
+
+typedef struct {
+  Vertex *vertices;
+  int32_t handle;
+  uint32_t count;
+  size_t bytes;
+  bool live;
+} MeshBuffer;
 
 typedef struct {
   uint32_t command_first;
@@ -145,6 +158,10 @@ static FontTexture *fonts;
 static size_t font_capacity;
 
 static bool initialized;
+static MeshBuffer meshes[MAX_MESHES];
+static MeshBuffer retired_meshes[MAX_MESHES];
+static size_t retired_mesh_count;
+static size_t mesh_bytes;
 
 // ---------------------------------------------------------------------------
 // word decoding
@@ -178,6 +195,56 @@ static inline void unpack_color(uint32_t color, float *out) {
   out[1] = (float)((color >> 8) & 0xffu) / 255.0f;
   out[2] = (float)((color >> 16) & 0xffu) / 255.0f;
   out[3] = (float)((color >> 24) & 0xffu) / 255.0f;
+}
+
+/* Upload happens inside the resource completion budget, before FrameBegin.
+ * Old buffers can still be read by the preceding GPU frame, so replacements
+ * are retired only after that frame's fence in gfx_begin_frame. */
+bool gfx_upload_mesh(int32_t handle) {
+  if (!initialized || handle < 0) return false;
+  const uint16_t *points = ui_mesh_vertices(handle);
+  const PocketMeshTriangle *triangles = ui_mesh_triangles(handle);
+  if (points == NULL || triangles == NULL) return false;
+  MeshBuffer *slot = &meshes[(uint32_t)handle & (MAX_MESHES - 1)];
+  if (slot->live && slot->handle == handle) return true;
+  uint32_t count = ui_mesh_triangle_count(handle) * 3u;
+  if (count > 2048u * 3u) return false;
+  size_t bytes = (size_t)count * sizeof(Vertex);
+  if (bytes > MAX_MESH_BYTES - mesh_bytes ||
+      (slot->live && retired_mesh_count == MAX_MESHES)) return false;
+  Vertex *buffer = count ? linearAlloc(bytes) : NULL;
+  if (count && buffer == NULL) return false;
+  for (uint32_t i = 0; i < count / 3u; i += 1) {
+    float color[4];
+    unpack_color(triangles[i].color, color);
+    for (uint32_t j = 0; j < 3; j += 1) {
+      uint32_t p = (uint32_t)triangles[i].indices[j] * 2u;
+      buffer[i * 3u + j] = (Vertex){
+        points[p] / 16.0f, points[p + 1] / 16.0f, 0, 0,
+        color[0], color[1], color[2], color[3],
+      };
+    }
+  }
+  if (count) GSPGPU_FlushDataCache(buffer, bytes);
+  if (slot->live) retired_meshes[retired_mesh_count++] = *slot;
+  *slot = (MeshBuffer){buffer, handle, count, bytes, true};
+  mesh_bytes += bytes;
+  return true;
+}
+
+static void release_mesh(MeshBuffer *mesh) {
+  if (!mesh->live) return;
+  if (mesh->vertices) linearFree(mesh->vertices);
+  mesh_bytes -= mesh->bytes;
+  memset(mesh, 0, sizeof *mesh);
+}
+
+static void collect_meshes(void) {
+  for (size_t i = 0; i < retired_mesh_count; i += 1) release_mesh(&retired_meshes[i]);
+  retired_mesh_count = 0;
+  for (size_t i = 0; i < MAX_MESHES; i += 1) {
+    if (meshes[i].live && ui_mesh_vertices(meshes[i].handle) == NULL) release_mesh(&meshes[i]);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -555,6 +622,7 @@ static void flush(C3D_Tex *texture, Clip clip, uint32_t *start) {
       command->first = *start;
       command->count = vertex_count - *start;
       command->clip = clip;
+      command->mesh = NULL;
     } else {
       dropped_commands += 1;
     }
@@ -739,6 +807,26 @@ static void build(
         index += 12;
         break;
       }
+      case DRAW_MESH: {
+        if (index + 10 > length) return;
+        flush(texture, clip, &start);
+        int32_t handle = (int32_t)words[index + 1];
+        MeshBuffer *mesh = &meshes[(uint32_t)handle & (MAX_MESHES - 1)];
+        if (mesh->live && mesh->handle == handle && mesh->count) {
+          if (command_count < MAX_COMMANDS) {
+            Command *command = &commands[command_count++];
+            command->texture = &white;
+            command->first = 0;
+            command->count = mesh->count;
+            command->mesh = mesh->vertices;
+            command->clip = (Clip){word_x(words[index + 8]), word_y(words[index + 8]),
+              word_w(words[index + 9]), word_h(words[index + 9])};
+            for (size_t i = 0; i < 6; i += 1) command->affine[i] = word_float(words[index + 2 + i]);
+          } else dropped_commands += 1;
+        }
+        index += 10;
+        break;
+      }
       case DRAW_TRI: {
         if (index + 7 > length) return;
         if (texture != &white) {
@@ -830,6 +918,7 @@ static bool apply_clip(Clip clip, uint32_t viewport_width, uint32_t viewport_hei
 
 void gfx_begin_frame(void) {
   if (!initialized) return;
+  collect_meshes();
   sync_resources();
   vertex_count = 0;
   command_count = 0;
@@ -908,6 +997,8 @@ void gfx_draw_surface(uint32_t surface) {
   for (int stage = 1; stage < 6; stage += 1) C3D_TexEnvInit(C3D_GetTexEnv(stage));
 
   C3D_Tex *bound = NULL;
+  Vertex *bound_buffer = NULL;
+  bool mesh_projection = false;
   bool scissored = false;
   uint32_t end = batch->command_first + batch->command_count;
   for (uint32_t index = batch->command_first; index < end; index += 1) {
@@ -929,6 +1020,26 @@ void gfx_draw_surface(uint32_t surface) {
     } else {
       if (!apply_clip(command->clip, batch->width, batch->height)) continue;
       scissored = true;
+    }
+    Vertex *wanted_buffer = command->mesh ? command->mesh : vertices;
+    if (bound_buffer != wanted_buffer) {
+      C3D_BufInfo *buffer = C3D_GetBufInfo();
+      BufInfo_Init(buffer);
+      if (BufInfo_Add(buffer, wanted_buffer, sizeof(Vertex), 3, 0x210) < 0) continue;
+      bound_buffer = wanted_buffer;
+    }
+    if (command->mesh) {
+      const float *a = command->affine;
+      C3D_Mtx model, projection;
+      Mtx_Identity(&model);
+      model.r[0] = FVec4_New(a[0], a[2], 0, a[4]);
+      model.r[1] = FVec4_New(a[1], a[3], 0, a[5]);
+      Mtx_Multiply(&projection, &batch->projection, &model);
+      C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, projection_uniform, &projection);
+      mesh_projection = true;
+    } else if (mesh_projection) {
+      C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, projection_uniform, &batch->projection);
+      mesh_projection = false;
     }
     C3D_DrawArrays(GPU_TRIANGLES, (int)command->first, (int)command->count);
   }
@@ -988,6 +1099,9 @@ bool gfx_init(uint32_t logical_width, uint32_t logical_height) {
 
 void gfx_reset_resources(void) {
   if (!initialized) return;
+  for (size_t slot = 0; slot < MAX_MESHES; slot += 1) release_mesh(&meshes[slot]);
+  for (size_t slot = 0; slot < retired_mesh_count; slot += 1) release_mesh(&retired_meshes[slot]);
+  retired_mesh_count = 0;
   for (size_t slot = 0; slot < image_capacity; slot += 1) release_image(&images[slot]);
   for (size_t slot = 0; slot < font_capacity; slot += 1) release_font(&fonts[slot]);
   free(images);

@@ -10,6 +10,7 @@ import {
   ticksPerFrame,
   virtualFrame,
   virtualNow,
+  inputDeltaSeconds,
 } from "../framework/src/clock.ts";
 import {
   __drainEffects,
@@ -31,6 +32,22 @@ describe("normalizeHz", () => {
     expect(normalizeHz(-3)).toBe(60);
     expect(normalizeHz(Number.NaN)).toBe(60);
   });
+});
+
+test("sampled input duration is bounded frame data and does not alter virtual time", () => {
+  g.__simHz = 60; resetClock();
+  expect(inputDeltaSeconds()).toBe(1 / 60);
+  __advanceClock(33333);
+  expect(inputDeltaSeconds()).toBe(0.033333);
+  __advanceClock(16667);
+  expect(inputDeltaSeconds()).toBe(0.016667);
+  expect(virtualNow()).toBe(1 / 60);
+  __advanceClock(5000000);
+  expect(inputDeltaSeconds()).toBe(0.066666);
+  for (const sample of [undefined, 0, -100, NaN, Infinity]) {
+    __advanceClock(sample); expect(inputDeltaSeconds()).toBe(1 / 60);
+  }
+  resetClock(); expect(inputDeltaSeconds()).toBe(1 / 60);
 });
 
 describe("virtual clock", () => {

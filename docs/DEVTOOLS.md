@@ -235,3 +235,13 @@ pairs as `analog`. **Absent right-stick samples replay as centered**, including
 when live hardware moves during replay. The recorder allocates this track only
 after the first noncenter sample. The sixth frame argument carries the raw right
 stick; the touch, hit and surface arguments keep their existing positions.
+
+## Input duration track (v4)
+
+The optional `inputElapsedUs` RLE track records the seventh frame argument:
+`[microseconds, repeatCount]`, bounded to 1–66,666 µs, with zero meaning the
+nominal simulation step. The recorder allocates this track on the first
+nonzero sample. Replay owns the duration along with buttons, sticks and
+touch: **live host timing cannot alter a recorded trajectory**. Tapes without
+this track retain nominal simulation time. `inputDeltaSeconds()` exposes the
+latched sample to apps; virtual timers and core ticks remain frame-based.

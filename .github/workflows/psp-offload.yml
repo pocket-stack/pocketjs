@@ -1,0 +1,46 @@
+name: PSP USB offload
+on:
+  pull_request:
+    paths:
+      - 'hosts/psp/src/**'
+      - 'hosts/psp/build.rs'
+      - 'tools/psp.ts'
+      - 'contracts/spec/platforms.ts'
+      - 'tests/platform-contracts.test.ts'
+      - 'tools/offload-usb-provider.ts'
+      - 'tools/offload-process.ts'
+      - 'tools/offload-provider.ts'
+      - 'tools/offload-wire.ts'
+      - 'tests/offload-usb.test.ts'
+      - 'tests/fixtures/offload-usb/**'
+      - '.github/workflows/psp-offload.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'hosts/psp/src/**'
+      - 'hosts/psp/build.rs'
+      - 'tools/psp.ts'
+      - 'contracts/spec/platforms.ts'
+      - 'tests/platform-contracts.test.ts'
+      - 'tools/offload-usb-provider.ts'
+      - 'tools/offload-process.ts'
+      - 'tools/offload-provider.ts'
+      - 'tools/offload-wire.ts'
+      - 'tests/offload-usb.test.ts'
+      - 'tests/fixtures/offload-usb/**'
+      - '.github/workflows/psp-offload.yml'
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun test tests/offload-usb.test.ts tests/platform-contracts.test.ts
+      - run: rustc --test hosts/psp/src/offload_packet.rs -o /tmp/usb-packet-test && /tmp/usb-packet-test
+      - run: rustc --test hosts/psp/src/analog.rs -o /tmp/psp-analog-test && /tmp/psp-analog-test

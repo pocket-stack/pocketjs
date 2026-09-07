@@ -531,7 +531,7 @@ unsafe fn run_guest(
     static mut DBG_PROBED: bool = false;
     if !DBG_PROBED {
         DBG_PROBED = true;
-        if dbg::init() {
+        if !pocketjs_psp::offload::enabled() && dbg::init() {
             trace("run: devtools mailbox active");
         }
     }
@@ -613,6 +613,9 @@ unsafe fn run_guest(
     // frame — and it spans guest swaps (see its doc). `guest_frame` is only
     // this guest's boot-trace / bench / present-skip counter.
     let mut guest_frame: u32 = 0;
+    let mut input_tick = 0u32;
+    #[cfg(not(feature = "capture"))]
+    let mut nub = pocketjs_psp::analog::Analog::new();
     loop {
         #[cfg(feature = "bench")]
         let bench_frame_start = bench_now_us();
@@ -649,14 +652,23 @@ unsafe fn run_guest(
         // Analog nub packed (x << 8) | y, each axis 0..255 with 128 = center
         // (spec.ts "frame(buttons, analog)"; SceCtrlData names the axes lx/ly).
         #[cfg(not(feature = "capture"))]
-        let analog = (((pad.lx as u32) << 8) | pad.ly as u32) as i32;
+        let analog = if pocketjs_psp::offload::enabled() {
+            nub.sample(pad.lx, pad.ly, mask & spec::btn::SELECT as i32 != 0,
+                mask as u32 & !spec::btn::SELECT) as i32
+        } else { (((pad.lx as u32) << 8) | pad.ly as u32) as i32 };
         // The baked input script has no analog track: pin the nub to center
         // so scripted PPSSPPHeadless captures stay deterministic.
         #[cfg(feature = "capture")]
         let analog = pocketjs_core::spec::ANALOG_CENTER as i32;
 
-        let mut args = [JS_NewInt32(ctx, mask), JS_NewInt32(ctx, analog)];
-        let r = JS_Call(ctx, frame_fn, global, 2, args.as_mut_ptr());
+        let now = sys::sceKernelGetSystemTimeLow();
+        let elapsed = if input_tick == 0 || cfg!(feature = "capture") { 0 }
+            else { now.wrapping_sub(input_tick).min(66666) };
+        input_tick = now;
+        pocketjs_psp::offload::frame(mask as u32,analog as u32);
+        let mut args = [JS_NewInt32(ctx, mask), JS_NewInt32(ctx, analog),
+            JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED, JS_NewInt32(ctx, elapsed as i32)];
+        let r = JS_Call(ctx, frame_fn, global, 7, args.as_mut_ptr());
         #[cfg(feature = "bench")]
         let bench_after_js = bench_now_us();
         if guest_frame == 0 {
@@ -670,6 +682,7 @@ unsafe fn run_guest(
             trace("frame 0: JS return freed");
         }
 
+        let after_js = sys::sceKernelGetSystemTimeLow();
         host::drain_jobs(rt);
         // Arena-pressure GC (post-profiler-stub this WORKS: the guest's
         // per-frame cycles are collectable once no WeakMap pins them, and the
@@ -738,11 +751,14 @@ unsafe fn run_guest(
         // guest's eval instead of flashing the two-frames-stale draw buffer.
         // Cold boot (GLOBAL_FRAME == 0) keeps the original present-first
         // behavior so single-app builds are bit-identical to before.
+        let cpu_before_present = sys::sceKernelGetSystemTimeLow().wrapping_sub(now);
         let present = GLOBAL_FRAME == 0 || guest_frame > 0;
         #[cfg(feature = "bench")]
         let bench_before_sync = bench_now_us();
         if present {
+            let sync_start = sys::sceKernelGetSystemTimeLow();
             sys::sceGuSync(GuSyncMode::Finish, GuSyncBehavior::Wait);
+            pocketjs_psp::offload::gpu_wait(sys::sceKernelGetSystemTimeLow().wrapping_sub(sync_start));
             #[cfg(feature = "bench")]
             bench_record_gpu(guest_frame, bench_now_us().saturating_sub(bench_before_sync));
             if guest_frame == 0 {
@@ -782,6 +798,9 @@ unsafe fn run_guest(
             vid::close(ffi::ui()); // stops audio, frees the plane (Ui alive)
             audio_mod::reset(); // guest-scoped streams die with their guest
             svc::reset();
+            pocketjs_psp::offload::reset();
+            pocketjs_psp::mesh::reset();
+            ge::retire_textures();
             JS_FreeValue(ctx, frame_fn);
             JS_FreeValue(ctx, global);
             JS_FreeContext(ctx);
@@ -795,7 +814,10 @@ unsafe fn run_guest(
         // arena [R] and open frame N's list. The video plane commits its
         // staged frame here too — the ONLY window where the GE is not
         // sampling the texture it overwrites in place (vid.rs).
+        let render_start = sys::sceKernelGetSystemTimeLow();
         ge::reset_pool();
+        pocketjs_psp::mesh::retire();
+        ge::retire_textures();
         vid::present(ffi::ui());
         if guest_frame == 0 {
             trace("frame 0: pool reset ok");
@@ -821,6 +843,10 @@ unsafe fn run_guest(
         if guest_frame == 0 {
             trace("frame 0: rendered");
         }
+        pocketjs_psp::offload::stages(after_js.wrapping_sub(now),
+            cpu_before_present.saturating_sub(after_js.wrapping_sub(now)),
+            sys::sceKernelGetSystemTimeLow().wrapping_sub(render_start));
+        pocketjs_psp::offload::timing(cpu_before_present + sys::sceKernelGetSystemTimeLow().wrapping_sub(render_start));
         sys::sceGuFinish(); // kick list N — the GE draws while frame N+1's CPU runs
         if guest_frame == 0 {
             trace("frame 0: gu finish (kicked) ok");

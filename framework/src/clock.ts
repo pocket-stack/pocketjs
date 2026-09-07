@@ -1,4 +1,4 @@
-// The virtual clock — the runtime's ONLY notion of time (docs/DETERMINISM.md).
+// Virtual clock and recorded input-sampling durations (docs/DETERMINISM.md).
 //
 // PocketJS time is not the wall clock. It is a frame counter: every host
 // drives one `globalThis.frame(buttons)` call per VIRTUAL frame, and the
@@ -50,6 +50,18 @@ function divisorsOf(n: number): number[] {
 }
 
 let hz = TICKS_PER_SECOND;
+let inputSeconds = 1 / hz;
+
+/** Bounded elapsed input-sampling time, supplied by the host as frame data.
+ * Missing samples use the nominal simulation step. This does not advance the
+ * virtual clock or run catch-up frames; recordings include the elapsed lane. */
+export function inputDeltaSeconds(): number { return inputSeconds; }
+
+/** Zero denotes an absent sample; resumes cannot inject an unbounded step. */
+export function __normalizeInputElapsed(us: number | undefined): number {
+  return typeof us === "number" && Number.isFinite(us) && us > 0
+    ? Math.max(1, Math.min(66666, Math.round(us))) : 0;
+}
 let frame = -1; // advanced to 0 on the first pump; -1 = "before boot frame"
 let timerSeq = 0;
 interface Timer {
@@ -114,6 +126,7 @@ export function after(seconds: number, cb: () => void): () => void {
 export function resetClock(): void {
   const raw = (globalThis as { __simHz?: unknown }).__simHz;
   hz = typeof raw === "number" ? normalizeHz(raw) : TICKS_PER_SECOND;
+  inputSeconds = 1 / hz;
   frame = -1;
   timers = [];
   timerSeq = 0;
@@ -124,7 +137,9 @@ export function resetClock(): void {
  * order. Called by the frame pump FIRST, before effect delivery and app
  * hooks — "time reached t" happens before anything scheduled at t observes t.
  */
-export function __advanceClock(): void {
+export function __advanceClock(inputElapsedUs?: number): void {
+  const elapsed = __normalizeInputElapsed(inputElapsedUs);
+  inputSeconds = elapsed ? elapsed / 1_000_000 : 1 / hz;
   frame = frame < 0 ? 0 : frame + 1;
   if (timers.length === 0) return;
   const due = timers.filter((t) => t.at <= frame).sort((a, b) => a.at - b.at || a.seq - b.seq);

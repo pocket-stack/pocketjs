@@ -37,6 +37,7 @@ import { resetInput } from "../framework/src/input.ts";
 import { resetPack } from "../framework/src/pak.ts";
 import { AuxiliarySurface, Named, Text, View } from "../framework/src/components.ts";
 import { BTN, ROOT_ID } from "../contracts/spec/spec.ts";
+import { inputDeltaSeconds } from "../framework/src/clock.ts";
 
 // ---------------------------------------------------------------------------
 // Mock host with the DevTools ops + an in-process transport
@@ -116,6 +117,23 @@ function frame(buttons = 0): void {
 }
 
 const g = globalThis as Record<string, unknown>;
+
+test("elapsed input samples round-trip through recording; old tapes ignore live timing", () => {
+  const seen: number[] = [];
+  mountApp(() => { onFrame(() => seen.push(inputDeltaSeconds())); return View({}); });
+  const frame = g.frame as (...args: unknown[]) => void;
+  for (const us of [0, 16667, 33333, 9000000]) frame(0, 0xff80, [], [], [], 0x8080, us);
+  const api = g.__pocketDevtools as { dumpTape(): Tape; replay(tape: Tape): void };
+  const tape = api.dumpTape(), recorded = seen.slice();
+  expect(tape.v).toBe(4);
+  expect(tape.inputElapsedUs).toEqual([[0, 1], [16667, 1], [33333, 1], [66666, 1]]);
+  api.replay(tape);
+  for (let i = 0; i < 4; i++) frame(0, 0, [], [], [], 0, 50000);
+  expect(seen.slice(4)).toEqual(recorded);
+  api.replay({ v: 1, frames: 2, masks: [[0, 2]] });
+  frame(0, 0, [], [], [], 0, 50000); frame(0, 0, [], [], [], 0, 50000);
+  expect(seen.slice(8)).toEqual([1 / 60, 1 / 60]);
+});
 
 beforeEach(() => {
   host = makeDevHost();

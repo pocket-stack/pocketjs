@@ -3906,3 +3906,16 @@ fn clearing_native_measure_restores_baked_goldens_path() {
     assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0);
     assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 1);
 }
+
+#[test]
+fn retiring_texture_invalidates_handle_before_gpu_owner_drops() {
+    let mut ui = Ui::new();
+    let old = ui.upload_texture(&[3u8; 16 * 16 * 2], 16, 16, spec::psm::PSM_5650);
+    let owner = ui.take_texture(old).unwrap();
+    assert!(ui.texture(old).is_none());
+    let next = ui.upload_texture(&[9u8; 16 * 16 * 2], 16, 16, spec::psm::PSM_5650);
+    assert_ne!(old, next);
+    assert_eq!(owner.view().pixels[0], 3);
+    assert_eq!(ui.texture(next).unwrap().pixels[0], 9);
+    assert!(ui.take_texture(old).is_none());
+}

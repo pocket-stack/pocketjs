@@ -277,8 +277,9 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
       hits?: readonly number[],
       touchSurfaces?: readonly number[],
       rightAnalog?: number,
+      inputElapsedUs?: number,
     ) => {
-      __advanceClock(); // virtual frame++, fire due after() timers
+      __advanceClock(inputElapsedUs); // virtual frame++, fire due after() timers
       __setAnalog(analog, rightAnalog); // latch the nub before any app code reads it
       __setTouches(touches, hits, touchSurfaces); // latch contacts + surface-specific hit facts
       runServicePumps(); // only modules with pending async work register here
