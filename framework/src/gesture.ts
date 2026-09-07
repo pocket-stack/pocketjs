@@ -5,6 +5,7 @@
 // gesture.vue-vapor.ts instead (the compiler's framework-variant rule).
 
 import { onCleanup } from "solid-js";
+export { createDragFilter, type DragFilterOptions } from "./drag-filter.ts";
 import { attachGesture, type GestureHandle, type GestureOptions } from "./gesture-core.ts";
 
 export type {

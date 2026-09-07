@@ -17,6 +17,9 @@ export interface ResourceCacheOptions<I, R extends ResourceBytes, T> {
   load: ResourceLoad<I, R>;
   /** Bounded decoding/upload only; executed by step(), never by a transport callback. */
   materialize(raw: R, input: I): T;
+  /** Releases external staging owned by a response, after materialize (also
+   * on failure), or when cancellation/late delivery prevents materialization. */
+  releaseResponse?(raw: R): void;
   dispose?(value: NoInfer<T>): void;
   changed?(input: I): void;
   maxAgeFrames?: number;
@@ -71,7 +74,9 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
         if (entry.charged) entry.attempts--;
         entry.charged = false; entry.busy = false; active--;
       }
-      const cancel = entry.cancel; entry.cancel = undefined; entry.result = undefined;
+      const cancel = entry.cancel; const result = entry.result;
+      entry.cancel = undefined; entry.result = undefined;
+      if (result?.ok) config.releaseResponse?.(result.value);
       cancel?.();
     }
     function drop(entry: Entry) {
@@ -89,13 +94,15 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
           if (!dead && entry.busy && entry.generation === generation && !entry.result) {
             const bytes = result.ok ? typeof result.value === "string" ? result.value.length * 2
               : result.value instanceof Uint8Array ? result.value.byteLength : Infinity : 0;
+            if (bytes > config.maxResponseBytes && result.ok) config.releaseResponse?.(result.value);
             entry.result = bytes <= config.maxResponseBytes ? result : { ok: false, error: "Resource response exceeds budget" };
             entry.resultOrder = completionOrder++;
-          }
+          } else if (result.ok && !(entry.result?.ok && entry.result.value === result.value)) config.releaseResponse?.(result.value);
         });
         if (!task) { stop(entry); entry.declinedAt = frame; return false; }
         entry.cancel = task.cancel; entry.attempts++; entry.charged = true; notify(entry); return true;
       } catch (error) {
+        if (entry.result?.ok) config.releaseResponse?.(entry.result.value);
         entry.result = { ok: false, error }; entry.resultOrder = completionOrder++;
         entry.attempts++; entry.charged = true; return true;
       }
@@ -123,7 +130,11 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
         return { order: entry.resultOrder, run() {
           const result = entry.result!; entry.result = undefined; entry.cancel = undefined; entry.busy = false; entry.charged = false; active--;
           let next: ResourceState<T>;
-          try { if (!result.ok) throw result.error; next = ready(config.materialize(result.value, entry.input)); }
+          try {
+            if (!result.ok) throw result.error;
+            try { next = ready(config.materialize(result.value, entry.input)); }
+            finally { config.releaseResponse?.(result.value); }
+          }
           catch (error) {
             entry.error = error; entry.stale = true;
             entry.retryAt = frame + Math.min(retry.maxDelayFrames, retry.delayFrames * 2 ** Math.min(20, entry.attempts - 1));
@@ -228,13 +239,15 @@ export function createResourceScheduler(options: ResourceSchedulerOptions) {
             if (candidate && (!chosen || candidate.priority < chosen.priority || candidate.priority === chosen.priority && candidate.order < chosen.order)) chosen = candidate;
           }
           if (!chosen) break;
+          // Do not discard useful in-flight prefetch if the replacement cannot
+          // even enter the transport. Sent offload cancellation retains credit.
+          if (options.available && !options.available()) break;
           if (active >= options.maxConcurrent) {
             let worst: ReturnType<Collection["speculative"]>;
             for (const collection of collections) { const candidate = collection.speculative(); if (candidate && (!worst || candidate.priority > worst.priority)) worst = candidate; }
             if (!worst || worst.priority <= chosen.priority) break;
             worst.cancel();
           }
-          if (options.available && !options.available()) break;
           if (chosen.start()) n++;
         }
       } finally { stepping = false; }

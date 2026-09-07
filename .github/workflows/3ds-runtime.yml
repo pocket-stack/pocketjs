@@ -1,10 +1,10 @@
 name: 3DS runtime contracts
 on:
   pull_request:
-    paths: ['hosts/3ds/**', 'contracts/**', 'tools/3ds*.ts', 'tests/3ds*.test.ts', 'tests/fixtures/3ds-*', 'tests/fixtures/3ds-*/**', '.github/workflows/3ds-runtime.yml']
+    paths: ['hosts/3ds/**', 'contracts/**', 'framework/src/offload.ts', 'framework/src/resource*.ts', 'framework/src/tile-viewport.ts', 'framework/src/drag-filter.ts', 'framework/src/gesture*.ts', 'tools/offload-*.ts', 'tools/3ds*.ts', 'tests/offload*.test.ts', 'tests/resource*.test.ts', 'tests/tile-viewport.test.ts', 'tests/3ds*.test.ts', 'tests/fixtures/offload*', 'tests/fixtures/offload*/**', 'tests/fixtures/3ds-*', 'tests/fixtures/3ds-*/**', '.github/workflows/3ds-runtime.yml']
   push:
     branches: [main]
-    paths: ['hosts/3ds/**', 'contracts/**', 'tools/3ds*.ts', 'tests/3ds*.test.ts', 'tests/fixtures/3ds-*', 'tests/fixtures/3ds-*/**', '.github/workflows/3ds-runtime.yml']
+    paths: ['hosts/3ds/**', 'contracts/**', 'framework/src/offload.ts', 'framework/src/resource*.ts', 'framework/src/tile-viewport.ts', 'framework/src/drag-filter.ts', 'framework/src/gesture*.ts', 'tools/offload-*.ts', 'tools/3ds*.ts', 'tests/offload*.test.ts', 'tests/resource*.test.ts', 'tests/tile-viewport.test.ts', 'tests/3ds*.test.ts', 'tests/fixtures/offload*', 'tests/fixtures/offload*/**', 'tests/fixtures/3ds-*', 'tests/fixtures/3ds-*/**', '.github/workflows/3ds-runtime.yml']
 permissions:
   contents: read
 jobs:
@@ -18,3 +18,4 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - run: bun test tests/3ds-profile.test.ts tests/3ds-runtime-state.test.ts tests/3ds-runtime-wire.test.ts tests/3ds-soc.test.ts
+      - run: bun test --conditions=browser tests/offload.test.ts tests/offload-images.test.ts tests/offload-provider.test.ts tests/tile-viewport.test.ts tests/resource-cache.test.ts tests/resource-view.test.ts

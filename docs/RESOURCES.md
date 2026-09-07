@@ -182,6 +182,91 @@ can use a companion transport or an on-device worker without changing cache or
 UI code. It must provide the same nonwaiting admission/cancellation contract and
 bounded immutable response ownership. It must not execute IO on the UI thread.
 
+### Remote images and tile viewports
+
+The image adapter defines transport, staging release and texture disposal once:
+
+```tsx
+import { createResourceRuntime, createResourceView } from "@pocketjs/framework/resource-view";
+import { createOffloadImageCollection } from "@pocketjs/framework/resource-offload";
+import { ResourceImage } from "@pocketjs/framework/resource";
+import { offload } from "@pocketjs/framework/offload";
+
+const io = offload();
+const runtime = createResourceRuntime({
+  maxConcurrent: 3, startsPerFrame: 1, completionsPerFrame: 1,
+  maxCollections: 1, available: io.connected,
+});
+const tiles = createOffloadImageCollection(runtime, io, {
+  key: (tile: TileAddress) => `${tile.source}/${tile.z}/${tile.x}/${tile.y}`,
+  method: "map.tile", payload: JSON.stringify,
+  width: 256, height: 256, maxEntries: 40, maxViews: 2,
+  maxDemandsPerView: 16,
+});
+const view = createResourceView(tiles, { demand: visibleTileDemand });
+
+// Component setup: input is an accessor for this tile's domain address.
+<ResourceImage state={() => view.state(input())}
+  fallback={() => <TileSkeleton />}
+  errorFallback={() => <UnavailableTile />} />;
+```
+
+**Component reads do not initiate requests.** Two view owners can demand the
+same key and share one request and one texture. Removing the old zoom layer
+withdraws its demand without releasing a texture still used by the new layer.
+`ResourceImage` borrows its texture; the collection owns eviction and cleanup.
+
+The lower-level `releaseResponse(raw)` cache hook releases external staging
+after materialization, including failure, or when cancellation or late delivery
+prevents materialization. It is separate from `dispose(value)`, which releases
+an adopted value. Both hooks must be bounded and must not throw.
+
+`@pocketjs/framework/tile-viewport` supplies `createTileCamera`, `visibleTiles`
+`createTileIntent` and `planTileWindow`.
+The camera stores level-zero pixel coordinates, integrates screen-space velocity
+and inertia, and keeps the world point beneath an anchor fixed during zoom.
+`visibleTiles` returns a near-first window and rejects an excessive window
+before enumeration. `planTileWindow` returns separate visible and look-ahead
+arrays, with an extra-tile cap and screen-pixel margins / directional lead.
+With `directional: true`, extras occupy a forward corridor; they do not form a
+ring behind the camera. `createTileIntent` accumulates screen-space camera
+travel in constant space, preserving direction across separate gestures. Its
+confidence holds through three seconds of rest, then decays; sustained turns
+replace the earlier direction. Reset it on a teleport or coordinate change.
+**The application selects look-ahead policy and priority.** These functions
+perform no IO and contain no geographic projection.
+
+```ts
+const window = planTileWindow({ ...camera.view(), level, width: 400, height: 240,
+  maxTiles: 12, margin: 128, leadX: predictedX, leadY: predictedY,
+  directional: confidence > 0.45, maxExtra: 4 });
+const demand = [
+  ...window.visible.map(tile => ({ input: address(tile), priority: tile.priority, pin: true })),
+  ...window.lookAhead.map(tile => ({ input: address(tile), priority: 1000 + tile.priority, pin: false })),
+];
+```
+
+`camera.view().targetZoom` exposes the final level during a zoom animation.
+An application can use it to demand a bounded next-level viewport after a zoom
+input, subject to its source policy. These entries belong in the same collection
+and concurrency budget as current tiles. `camera.setWorld({ minZoom, maxZoom,
+bounds })` validates new limits before applying them, stops previous motion and
+clamps the camera. It supports metadata received after a source opens without
+replacing the camera object or resource owners.
+
+The extra entries share cache and concurrency budgets with visible entries.
+Retaining an unused ready value costs residency but creates no new request.
+A lower-priority read in flight still occupies its slot until completion or
+cancellation; priority does not preempt a network request.
+
+[Pocket Map](https://github.com/pocket-stack/pocket-map) supplies Mercator
+projection, wrapped tile identities, source selection, explicit place searches
+and viewport demand. Its Mac worker owns HTTP caching, PNG decoding and label
+rasterization. Its demand includes at most four nearby look-ahead tiles; a
+previous zoom layer retains loaded tiles until the new layer fills. The native image
+transport and resource APIs also apply to document pages, photo renditions and
+other tile pyramids.
+
 ### Freshness and recovery
 
 `invalidate(predicate)` fences outstanding reads and marks matching entries
@@ -260,3 +345,45 @@ scan of file labels and editor text. Framework subscriptions notify consumers by
 key. Deduplication, generation checks, retries, admission, eviction and texture
 release share the same scheduler implementation. Documents, SQLite drafts, Markdown layout and rasterization remain in
 the Mac provider. No renderer ABI or companion protocol changes are required.
+
+### Desktop executor isolation
+
+`connectOffloadProvider` accepts `isolation: "process"` for capabilities that
+use network clients, SQLite or native image codecs. **The connection manager
+and capability executor occupy different OS processes.** The provider module
+keeps its `self.onmessage` / `self.postMessage` interface. Bun IPC carries
+structured replies, including typed image planes; pairing keys remain in the
+connection manager.
+
+```ts
+import { connectOffloadProvider } from "@pocketjs/framework/offload/provider";
+connectOffloadProvider({ address, key, worker: new URL("./worker.ts", import.meta.url),
+  isolation: "process", data: providerConfig, log: console.log });
+```
+
+Process mode kills and reaps the executor on connection loss or a nine-second
+request deadline. Its exit cannot terminate the connection manager. A new
+connection starts a new executor after the old process exits; request IDs and
+late replies stay scoped to their connection. Sent commands are not replayed.
+Connect attempts have a five-second timeout. Logs record the session, process
+exit, request deadline or socket failure without request payloads.
+
+The default `"thread"` mode retains the existing Web Worker behavior. A native
+fault in that mode can terminate the whole host daemon; use process mode when
+fault containment is required. Process mode adds an OS process and IPC copies
+on the desktop. Guest budgets and the 3DS wire protocol remain unchanged.
+
+### Transmission credit and cancellation
+
+**Cancelling a sent request removes UI interest, not its transmission credit.**
+`offload().pending()` includes those reservations until a reply arrives or the
+connection generation changes. A sent request that times out delivers one
+error, drops its callback and retains the reservation. Late image replies
+return staging credit without a texture upload. Unsent cancellation releases
+its reservation because no remote work exists.
+
+The desktop transport pauses input at eight admitted requests or while output
+waits for `drain`. It retains the unconsumed suffix of one input chunk, the
+bounded frame decoder and at most eight admitted results. A slow receiver
+pauses progress instead of triggering a backlog disconnect. This keeps rapid
+viewport cancellation from creating an unbounded queue of remote image work.

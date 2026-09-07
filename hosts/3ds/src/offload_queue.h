@@ -6,21 +6,24 @@
 #include <string.h>
 #define OFFLOAD_BYTES 4096
 #define OFFLOAD_SLOTS 8
-typedef struct { uint32_t generation, length; char bytes[OFFLOAD_BYTES]; } OffloadRecord;
+typedef struct { uint32_t generation, length, image_token; char bytes[OFFLOAD_BYTES]; } OffloadRecord;
 /* Single producer, single consumer. Neither endpoint waits on the other.
  * A published slot is immutable until its consumer releases it. */
 typedef struct {
   _Atomic uint32_t read, write;
   OffloadRecord slots[OFFLOAD_SLOTS];
 } OffloadQueue;
-static inline bool offload_push(OffloadQueue *q, const char *p, uint32_t n, uint32_t generation) {
+static inline bool offload_push_ticket(OffloadQueue *q, const char *p, uint32_t n, uint32_t generation, uint32_t image_token) {
   uint32_t w = atomic_load_explicit(&q->write, memory_order_relaxed);
   uint32_t r = atomic_load_explicit(&q->read, memory_order_acquire);
   if (n == 0 || n > OFFLOAD_BYTES || w - r >= OFFLOAD_SLOTS) return false;
   OffloadRecord *s = &q->slots[w % OFFLOAD_SLOTS];
-  s->length = n; s->generation = generation; memcpy(s->bytes, p, n);
+  s->length = n; s->generation = generation; s->image_token = image_token; memcpy(s->bytes, p, n);
   atomic_store_explicit(&q->write, w + 1, memory_order_release);
   return true;
+}
+static inline bool offload_push(OffloadQueue *q, const char *p, uint32_t n, uint32_t generation) {
+  return offload_push_ticket(q, p, n, generation, 0);
 }
 static inline bool offload_pop(OffloadQueue *q, OffloadRecord *out) {
   uint32_t r = atomic_load_explicit(&q->read, memory_order_relaxed);

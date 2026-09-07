@@ -498,6 +498,7 @@ mask. Its `active` property uses the blue header palette, and `headerHeight`
 defaults to 27 logical pixels.
 
 `ClassicSheet` accepts `open`, `title`, `message`, up to four `actions`,
+`cancelDisabled` for a command awaiting confirmation,
 `cancelLabel` and `onCancel`. Each action supplies a label, tone and callback.
 **The host animates the panel translation and backdrop opacity.** The component
 keeps its fixed action subtree mounted and blocks other touch gestures until

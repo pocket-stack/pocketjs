@@ -50,7 +50,7 @@
 #define POCKETJS_JS_STACK_SIZE (384 * 1024)
 
 typedef enum {
-  HostOffloadSession, HostOffloadSubmit, HostOffloadTake, HostOffloadCoverage,
+  HostOffloadSession, HostOffloadSubmit, HostOffloadTake, HostOffloadCoverage, HostOffloadImage, HostOffloadReleaseImage,
   HostCreateNode,
   HostDestroyNode,
   HostInsertBefore,
@@ -107,6 +107,7 @@ static char debug_poll_buffer[32 * 1024];
 static char svc_poll_buffer[8192 + 1];
 static uint8_t coverage_pixels[512 * 16 * 4];
 static bool coverage_used;
+static bool image_used;
 
 static void set_error(const char *message) {
   size_t length = message == NULL ? 0 : strlen(message);
@@ -493,6 +494,16 @@ static JSValue host_operation(
       unsigned padded_height = 8; while (padded_height < (unsigned)height) padded_height *= 2;
       return JS_NewInt32(ctx, ui_upload_texture(coverage_pixels, envelope * padded_height * 4, envelope, padded_height, 3));
     }
+    case HostOffloadImage: {
+      if (image_used) return JS_NewInt32(ctx, -1);
+      unsigned width, height;
+      const uint8_t *pixels = offload_image((uint32_t)argument_int(ctx, argc, argv, 0), &width, &height);
+      if (!pixels) return JS_NewInt32(ctx, -1);
+      image_used = true;
+      return JS_NewInt32(ctx, ui_upload_img_entry(pixels - 8, width * height * 2 + 8));
+    }
+    case HostOffloadReleaseImage:
+      offload_release_image((uint32_t)argument_int(ctx, argc, argv, 0)); return JS_UNDEFINED;
     case HostOffloadSession: return JS_NewInt32(ctx, offload_session());
     case HostOffloadSubmit: {
       if (argc < 1 || !JS_IsString(argv[0])) return JS_FALSE;
@@ -574,6 +585,8 @@ static void install_host(void) {
 #ifdef POCKETJS_OFFLOAD
   JSValue offload = JS_NewObject(context);
   add_operation(offload, "uploadCoverage", 6, HostOffloadCoverage);
+  add_operation(offload, "uploadImage", 1, HostOffloadImage);
+  add_operation(offload, "releaseImage", 1, HostOffloadReleaseImage);
   add_operation(offload, "session", 0, HostOffloadSession);
   add_operation(offload, "submit", 1, HostOffloadSubmit);
   add_operation(offload, "take", 0, HostOffloadTake);
@@ -793,6 +806,7 @@ bool qjs_frame(
   if (context == NULL) return false;
   offload_frame();
   coverage_used = false;
+  image_used = false;
   JSValue arguments[6] = {
     JS_NewInt32(context, buttons),
     JS_NewInt32(context, analog),
@@ -834,6 +848,7 @@ const char *qjs_last_error(void) {
 }
 
 void qjs_shutdown(void) {
+  offload_reset();
   if (context != NULL) {
     JS_FreeValue(context, frame_function);
     JS_FreeValue(context, global);
