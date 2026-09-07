@@ -123,9 +123,8 @@ impl Input {
                     if let Some(k) = named {
                         self.edits.push(k);
                     } else if let Some(text) = &event.text {
-                        self.edits.extend(
-                            text.chars().filter(|c| !c.is_control()).map(EditKey::Char),
-                        );
+                        self.edits
+                            .extend(text.chars().filter(|c| !c.is_control()).map(EditKey::Char));
                     }
                 } else if matches!(&event.logical_key, Key::Named(NamedKey::Super)) {
                     self.super_down = false;
@@ -347,9 +346,7 @@ mod tests {
         });
         input.on_window_event(&WindowEvent::MouseWheel {
             device_id: winit::event::DeviceId::dummy(),
-            delta: MouseScrollDelta::PixelDelta(
-                winit::dpi::PhysicalPosition::new(3.25, -7.5),
-            ),
+            delta: MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(3.25, -7.5)),
             phase: winit::event::TouchPhase::Moved,
         });
         assert_eq!(input.scroll(), Vec2::new(33.25, -47.5));

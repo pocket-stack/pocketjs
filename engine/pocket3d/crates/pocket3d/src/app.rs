@@ -224,11 +224,20 @@ impl<G: Game> WinitApp<G> {
         state
             .renderer
             .render(&state.gpu, &view, size, scene, camera, hud);
-        let mut encoder = state
-            .gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("overlay") });
-        self.game.overlay(&state.gpu, &mut encoder, &view, state.surface_config.format, size);
+        let mut encoder =
+            state
+                .gpu
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("overlay"),
+                });
+        self.game.overlay(
+            &state.gpu,
+            &mut encoder,
+            &view,
+            state.surface_config.format,
+            size,
+        );
         state.gpu.queue.submit([encoder.finish()]);
         state.window.pre_present_notify();
         frame.present();
