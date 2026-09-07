@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createTileCamera, visibleTiles, planTileWindow } from "../framework/src/tile-viewport.ts";
+import { createTileCamera, visibleTiles, planTileWindow, createTileIntent } from "../framework/src/tile-viewport.ts";
 import { createDragFilter } from "../framework/src/drag-filter.ts";
 const options = { width: 400, height: 240, x: 128, y: 128, zoom: 10, minZoom: 1, maxZoom: 18 };
 test("opening a finite atlas replaces wrapping and zoom limits without replacing the camera", () => {
@@ -71,4 +71,28 @@ test("drag tracks total travel within a pixel budget at both sample rates and st
     expect(x).toBeCloseTo(299, 4); expect(filter.velocity().x).toBe(0);
     filter.reset(); expect(filter.update(0, 0, 1 / hz).dx).toBe(0);
   }
+});
+
+test("direction history spans repeated strokes, decays at rest and turns without a reverse tail", () => {
+  for (const hz of [30, 60]) {
+    const intent = createTileIntent();
+    for (let stroke = 0; stroke < 5; stroke++) {
+      for (let i = 0; i < hz / 2; i++) intent.sample(120 / hz, -120 / hz, 1 / hz);
+      for (let i = 0; i < hz / 2; i++) intent.sample(0, 0, 1 / hz);
+    }
+    const lead = intent.predict(512); expect(lead.x).toBeGreaterThan(350); expect(lead.y).toBeLessThan(-350);
+    const p = { x: 128, y: 128, zoom: 5, level: 5, width: 400, height: 240, maxTiles: 12, margin: 256, leadX: lead.x, leadY: lead.y, directional: true, maxExtra: 12 };
+    const w = planTileWindow(p); expect(w.visible).toEqual(visibleTiles(p)); expect(w.lookAhead.length).toBeGreaterThan(3);
+    expect(w.lookAhead.every(t => (t.column + .5 - 16) * lead.x + (t.row + .5 - 16) * lead.y > 0)).toBe(true);
+    for (let i = 0; i < hz; i++) intent.sample(-180 / hz, 0, 1 / hz);
+    expect(intent.predict(512).x).toBeLessThan(-490);
+    for (let i = 0; i < hz * 9; i++) intent.sample(0, 0, 1 / hz);
+    expect(intent.predict(512).confidence).toBe(0);
+    intent.sample(200, 0, 1 / hz); expect(intent.predict(512).confidence).toBe(0);
+  }
+});
+test("zoom intent exposes the final level throughout repeated animated inputs", () => {
+  const c = createTileCamera(options); c.zoomBy(1); c.step(1 / 60); c.zoomBy(1);
+  expect(c.view().zoom).toBeLessThan(12); expect(c.view().targetZoom).toBe(12);
+  c.stop(); expect(c.view().targetZoom).toBe(c.view().zoom);
 });

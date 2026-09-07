@@ -31,7 +31,7 @@ export function createTileCamera(options: TileCameraOptions) {
   }
   constrain();
   return {
-    view: () => ({ x, y, zoom, scale: 2 ** zoom, moving: dragging || !!tween || Math.abs(vx) + Math.abs(vy) > 1 }),
+    view: () => ({ x, y, zoom, scale: 2 ** zoom, targetZoom: tween?.end ?? zoom, moving: dragging || !!tween || Math.abs(vx) + Math.abs(vy) > 1 }),
     stop() { vx = vy = 0; dragging = false; tween = undefined; },
     /** Replace the admitted world's bounds when an asynchronous source opens. */
     setWorld(world: Pick<TileCameraOptions, "minZoom" | "maxZoom" | "bounds">) {
@@ -87,7 +87,7 @@ export interface TileWindowOptions {
 /** Explicit, bounded look-ahead, returned separately from visible demand.
  * Margins and prediction are screen pixels; callers decide whether their
  * source permits look-ahead and give these entries a lower load priority. */
-export function planTileWindow(options: TileWindowOptions & { margin: number; leadX?: number; leadY?: number; maxExtra: number }) {
+export function planTileWindow(options: TileWindowOptions & { margin: number; leadX?: number; leadY?: number; directional?: boolean; maxExtra: number }) {
   const { margin, maxExtra } = options, leadX = options.leadX ?? 0, leadY = options.leadY ?? 0;
   finite(margin, leadX, leadY, maxExtra);
   if (margin < 0 || margin > 512 || Math.abs(leadX) > 512 || Math.abs(leadY) > 512 || !Number.isSafeInteger(maxExtra) || maxExtra < 0 || maxExtra > 16) throw new Error("Invalid tile look-ahead");
@@ -95,7 +95,21 @@ export function planTileWindow(options: TileWindowOptions & { margin: number; le
   if (!maxExtra) return { visible, lookAhead: [] as VisibleTile[] };
   const expanded = visibleTiles({ ...options, x: options.x + leadX / 2 / 2 ** options.zoom, y: options.y + leadY / 2 / 2 ** options.zoom,
     width: options.width + 2 * margin + Math.abs(leadX), height: options.height + 2 * margin + Math.abs(leadY), maxTiles: 256 });
-  return { visible, lookAhead: expanded.filter(t => !visible.some(v => v.column === t.column && v.row === t.row)).slice(0, maxExtra) };
+  let extras = expanded.filter(t => !visible.some(v => v.column === t.column && v.row === t.row));
+  const length = Math.hypot(leadX, leadY);
+  if (options.directional && length > 1) {
+    const ux = leadX / length, uy = leadY / length, pixelScale = 2 ** (options.zoom - options.level), size = options.tileSize ?? 256;
+    const corridor = (Math.abs(uy) * options.width + Math.abs(ux) * options.height) / 2;
+    extras = extras.flatMap(t => {
+      const dx = ((t.column + 0.5) * size - options.x * 2 ** options.level) * pixelScale;
+      const dy = ((t.row + 0.5) * size - options.y * 2 ** options.level) * pixelScale;
+      const along = dx * ux + dy * uy, across = Math.abs(dx * uy - dy * ux);
+      // A forward corridor, not a growing ring around the viewport.
+      return along > 0 && across <= corridor + along * 0.35
+        ? [{ ...t, priority: along + across * 2 }] : [];
+    }).sort((a, b) => a.priority - b.priority);
+  }
+  return { visible, lookAhead: extras.slice(0, maxExtra) };
 }
 /** Current viewport only, near-first. Large/invalid windows throw before any
  * enumeration. The app maps columns/rows to domain keys (including wrap). */
@@ -113,4 +127,32 @@ export function visibleTiles(options: TileWindowOptions): VisibleTile[] {
   const tiles: VisibleTile[] = [], cx = x * scale / size - 0.5, cy = y * scale / size - 0.5;
   for (let row = y0; row <= y1; row++) for (let column = x0; column <= x1; column++) tiles.push({ column, row, priority: (column - cx) ** 2 + (row - cy) ** 2 });
   return tiles.sort((a, b) => a.priority - b.priority);
+}
+
+/** Constant-space history of camera travel in screen pixels. Finger lifts do
+ * not reset intent. Call reset for teleports or a source/coordinate change. */
+export function createTileIntent() {
+  let x = 0, y = 0, distance = 0, age = 0;
+  return {
+    reset() { x = y = distance = age = 0; },
+    sample(dx: number, dy: number, seconds: number) {
+      finite(dx, dy, seconds);
+      if (seconds <= 0 || seconds > 1 / 15 + 1e-8) throw new Error("Tile intent step exceeds budget");
+      const travel = Math.hypot(dx, dy);
+      if (travel > 128) { x = y = distance = age = 0; return; }
+      age += seconds;
+      if (age > 8) x = y = distance = 0;
+      if (travel < 0.05) return;
+      // Weight distance rather than frame count, preserving intent across lifts
+      // while allowing a sustained turn to outweigh the earlier direction.
+      const weight = 1 - Math.exp(-travel / 32);
+      x += (dx / travel - x) * weight; y += (dy / travel - y) * weight;
+      distance = Math.min(128, distance + travel); age = 0;
+    },
+    predict(maxLead: number) {
+      finite(maxLead); if (maxLead < 0 || maxLead > 512) throw new Error("Invalid tile prediction range");
+      const length = Math.hypot(x, y), confidence = length * Math.min(1, distance / 64) * Math.exp(-Math.max(0, age - 3) / 1.2);
+      return { x: length ? x / length * maxLead * confidence : 0, y: length ? y / length * maxLead * confidence : 0, confidence };
+    },
+  };
 }
