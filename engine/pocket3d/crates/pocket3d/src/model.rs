@@ -587,7 +587,7 @@ impl ModelAsset {
     pub fn palette_from_globals(&self, globals: &[Mat4], out: &mut Vec<Mat4>) {
         out.clear();
         for skin in &self.skins {
-            out.extend(skin.matrices(globals, Mat4::IDENTITY));
+            out.extend(skin.matrices(globals, None));
         }
         if out.is_empty() {
             out.push(Mat4::IDENTITY);
@@ -1146,7 +1146,7 @@ impl ModelAsset {
             let rest_palette: Vec<Mat4> = node_skin
                 .map(|si| {
                     let s = &skins[si];
-                    s.matrices(&rest_globals, Mat4::IDENTITY).collect()
+                    s.matrices(&rest_globals, None).collect()
                 })
                 .unwrap_or_default();
 

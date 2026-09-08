@@ -75,7 +75,7 @@ impl MeshAsset {
         globals: &'a [Mat4],
         model: Mat4,
     ) -> impl ExactSizeIterator<Item = (Mat4, bool)> + 'a {
-        self.skin.matrices(globals, model).map(|m| {
+        self.skin.matrices(globals, Some(model)).map(|m| {
             let visible = m
                 .x_axis
                 .truncate()

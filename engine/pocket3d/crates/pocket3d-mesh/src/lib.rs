@@ -18,20 +18,24 @@ pub struct Skin {
 
 impl Skin {
     /// Evaluate in joint order without allocating. `model` maps the skeleton
-    /// into the caller's output space; use identity for object-space palettes.
+    /// into the caller's output space. `None` keeps object-space palettes and
+    /// skips model multiplication; `Some` preserves (model * global) * bind.
     ///
     /// Bindings must have equal lengths and every joint must index `globals`.
     /// Loaders validate these invariants; callers constructing skins must too.
     pub fn matrices<'a>(
         &'a self,
         globals: &'a [Mat4],
-        model: Mat4,
+        model: Option<Mat4>,
     ) -> impl ExactSizeIterator<Item = Mat4> + 'a {
         assert_eq!(self.joints.len(), self.inverse_bind.len());
         self.joints
             .iter()
             .zip(&self.inverse_bind)
-            .map(move |(&node, bind)| model * globals[node] * *bind)
+            .map(move |(&node, bind)| {
+                let global = globals[node];
+                model.map_or(global, |model| model * global) * *bind
+            })
     }
 }
 
@@ -69,10 +73,7 @@ mod tests {
                     inverse_bind: vec![globals[1].inverse()],
                 },
             ];
-            for matrix in skins
-                .iter()
-                .flat_map(|s| s.matrices(&globals, Mat4::IDENTITY))
-            {
+            for matrix in skins.iter().flat_map(|s| s.matrices(&globals, None)) {
                 assert!(matrix.abs_diff_eq(Mat4::IDENTITY, 1e-6));
             }
             // Move only the last node in world X. The first palette entry must
@@ -82,7 +83,7 @@ mod tests {
                 Quat::from_rotation_z(core::f32::consts::FRAC_PI_2),
                 Vec3::X * 7.,
             );
-            let palette: Vec<_> = skins[0].matrices(&globals, model).collect();
+            let palette: Vec<_> = skins[0].matrices(&globals, Some(model)).collect();
             assert!(
                 palette[0]
                     .transform_point3(Vec3::ZERO)
