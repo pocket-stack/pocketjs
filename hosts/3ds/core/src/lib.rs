@@ -38,6 +38,13 @@ mod heap;
 
 static mut UI: Option<Ui> = None;
 
+/// Worker-safe: borrowed package metadata only, no UI or allocator access.
+#[no_mangle]
+pub unsafe extern "C" fn pocket_package_same_app(a: *const u8, a_len: usize, b: *const u8, b_len: usize) -> bool {
+    if a.is_null() || b.is_null() { return false; }
+    pocketjs_core::package::compatible_guest(bytes(a, a_len), bytes(b, b_len), "3ds-dev")
+}
+
 /// Snapshot of the most recent `ui_draw`. The core's `Vec<u32>` reallocates as
 /// a frame's op count changes, so this is refreshed per build rather than
 /// cached by the caller across frames.

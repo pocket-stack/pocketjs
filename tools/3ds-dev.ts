@@ -209,19 +209,30 @@ async function pair(): Promise<void> {
   const port = configuredPort;
   const keyPath = keyPathFor(host, port);
   mkdirSync(keyDirectory, { recursive: true });
-  let token: Uint8Array;
-  if (existsSync(keyPath) && !has("--rotate")) {
-    token = tokenAt(keyPath);
-  } else {
-    token = crypto.getRandomValues(new Uint8Array(32));
-    writeFileSync(keyPath, `${Buffer.from(token).toString("hex")}\n`, { mode: 0o600 });
-  }
-  chmodSync(keyPath, 0o600);
   const ftpPort = Number(value("--ftp-port") ?? 5000);
   if (!Number.isInteger(ftpPort) || ftpPort <= 0 || ftpPort > 65535) {
     usage("--ftp-port is invalid");
   }
   const url = `ftp://${host}:${ftpPort}/pocketjs/runtime/dev.key`;
+  let token: Uint8Array;
+  if (!has("--rotate")) {
+    // A new checkout must adopt the device-wide key, preserving other Pocket
+    // apps and Macs already paired with this console. Never rotate on timeout.
+    const existing = Bun.spawnSync(["curl", "--silent", "--show-error", "--fail", "--ftp-method", "nocwd",
+      "--connect-timeout", "3", "--max-time", "15", url]);
+    if (existing.exitCode === 0) {
+      token = parsePocketRuntimeToken(existing.stdout.toString());
+      writeFileSync(keyPath, `${Buffer.from(token).toString("hex")}\n`, { mode: 0o600 });
+      chmodSync(keyPath, 0o600);
+      console.log(`paired ${host}:${port} — adopted existing device key`);
+      console.log(`local key:  ${keyPath}`);
+      return;
+    }
+    if (existing.exitCode !== 78) throw new Error(existing.stderr.toString().trim() || "cannot read device pairing key");
+  }
+  token = existsSync(keyPath) && !has("--rotate") ? tokenAt(keyPath) : crypto.getRandomValues(new Uint8Array(32));
+  writeFileSync(keyPath, `${Buffer.from(token).toString("hex")}\n`, { mode: 0o600 });
+  chmodSync(keyPath, 0o600);
   const upload = Bun.spawnSync([
     "curl",
     "--silent",

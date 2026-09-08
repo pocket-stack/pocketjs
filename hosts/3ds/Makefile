@@ -106,7 +106,7 @@ LDFLAGS := -specs=3dsx.specs $(ARCH) -Wl,--gc-sections -Wl,-Map,$(BUILD)/pocketj
 LIBPATHS := -L$(DEVKITPRO)/libctru/lib -L$(DEVKITPRO)/portlibs/3ds/lib
 LIBS := -lcitro3d -lctru -lz -lm
 
-OBJECTS := $(BUILD)/main.o $(BUILD)/asset_pack.o $(BUILD)/offload.o $(BUILD)/soc.o $(BUILD)/svcwire.o $(BUILD)/runtime.o $(BUILD)/dev_protocol.o $(BUILD)/devserver.o $(BUILD)/devmenu.o $(BUILD)/gfx.o $(BUILD)/qjs.o $(BUILD)/input.o $(BUILD)/vshader_shbin.o
+OBJECTS := $(BUILD)/main.o $(BUILD)/asset_pack.o $(BUILD)/offload.o $(BUILD)/soc.o $(BUILD)/svcwire.o $(BUILD)/runtime.o $(BUILD)/dev_protocol.o $(BUILD)/devserver.o $(BUILD)/dev_transport.o $(BUILD)/devmenu.o $(BUILD)/gfx.o $(BUILD)/qjs.o $(BUILD)/input.o $(BUILD)/vshader_shbin.o
 ELF := $(BUILD)/pocketjs-3ds.elf
 SMDH := $(BUILD)/pocketjs-3ds.smdh
 
@@ -149,6 +149,10 @@ $(FLAGS_STAMP): $(FLAGS_STAMP).probe ;
 
 $(BUILD)/%.o: $(SOURCE)/%.c $(BUILD)/vshader_shbin.h $(FLAGS_STAMP) | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/devserver.o $(BUILD)/dev_transport.o: CFLAGS += -Werror=frame-larger-than=8192
+
+$(BUILD)/devserver.o $(BUILD)/dev_transport.o $(BUILD)/main.o: $(SOURCE)/devserver.h $(SOURCE)/dev_transport.h $(SOURCE)/runtime.h
 
 $(BUILD)/offload.o: $(SOURCE)/offload.h $(SOURCE)/offload_queue.h $(SOURCE)/offload_image.h
 $(BUILD)/qjs.o: $(SOURCE)/offload.h $(SOURCE)/offload_coverage.h
