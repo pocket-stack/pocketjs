@@ -10,15 +10,15 @@ the resulting state into any renderer.
 
 Each call to `World::step` performs the same ordered phases:
 
-1. Consume queued cuts, impulses, ignition, and water inputs.
-2. Synchronize attached entities with their parents.
+1. Synchronize attached entities with their parents.
+2. Consume queued cuts, impulses, ignition, water packets, and precipitation.
 3. Integrate environmental exchange, heat transfer, evaporation, and fuel.
 4. Integrate dynamic bodies, advance kinematic locomotion, and solve contacts.
 5. Apply contact damage, resynchronize attachments, and commit fractures.
 6. Return ordered events and the state hash.
 
 **Stable entity IDs, deferred structural changes, and a seeded RNG determine
-the result.** A seed, configuration, initial snapshot, and interaction stream
+the result.** A seed, configuration, initial snapshot, environment samples, and interaction stream
 replay to the same state hash on the same target and build.
 
 ## Heat, water, and fuel
@@ -33,6 +33,59 @@ temperature. Evaporation removes the water's sensible heat plus
 `fuel_consumed * ReactiveMaterial::heat_output`; the configured local fraction
 stays in the source and the remaining fixed budget is divided among nearby
 receivers. Adding receivers cannot duplicate emitted energy.
+
+## Exposure and transported water
+
+`TransportSurface` adds an oriented box volume with separate radiant-heat and
+liquid-water transmission coefficients. Its shape follows the entity transform,
+including rotation and scale. **Transport geometry is independent of rigid-body
+collision geometry.** A volume affects exposure; adding it does not add a solid
+body or change character movement.
+
+`World::exposure` returns ordered intersections and their combined transmission.
+Reaction steps use a compact list of transport surfaces. Contact conduction uses
+sphere/capsule surface distance and `thermal_contact_tolerance`, rather than the
+previous 0.35 metre proximity range. A separating barrier interrupts that path.
+Radiant packets pay their original share of the combustion budget before
+occlusion. Reactive barriers receive intercepted energy; inert barriers export it
+out of the simulated thermal system. A blocked receiver's share is not reassigned
+as extra heat to another receiver.
+
+`Interaction::Water(WaterEmission)` queues a finite packet following an authored
+polyline. The engine resolves sphere/capsule receivers and transformed transport
+volumes in path order. The emitter may exclude its own volume. Each object is
+encountered once per packet, even if a bent path crosses it again. Received water
+uses the same heat mixing and saturation rule as `Douse`. Water crossing a porous
+surface remains available downstream; intercepted excess becomes runoff.
+`World::water_path_distance` lets a renderer trim a stream at the same impermeable
+impact used by the solver.
+
+`Environment::rainfall` supplies an optional bounded precipitation volume. A
+horizontal grid assigns `rate * cell_area * fixed_dt` water to each vertical path.
+Resolution is capped at 128 cells per axis while preserving total covered area.
+**Adding overlapping receivers cannot create more rain.** The first receiver or
+barrier consumes its fraction of the existing packet. Rain is an external water
+and energy input, sampled again on each fixed turn.
+
+`surface_evaporation_rate` enables drying below boiling. Humidity and wind affect
+the transfer rate; `evaporative_cooling_range_c` bounds cooling below ambient.
+Both boiling and surface evaporation pay sensible and latent heat. The default
+surface rate is zero to preserve the existing boiling-only configuration.
+
+**Transported water obeys emitted = retained + runoff + escaped.**
+`StepReport::transport` records these quantities, evaporation, per-object water
+delivery and radiant heat interception. Runoff and escaped water leave this
+compact model; persistent puddles and lateral surface flow are future mechanisms.
+Legacy targeted `Douse` inputs and ambient absorption are outside this transport
+ledger. `World::ignition_status` explains the current fuel, moisture and temperature
+conditions without changing reaction state.
+
+Transport components and queued packets are part of snapshots and state hashes.
+Environment implementations remain caller-owned and must be replayed with the
+same inputs. New optional components deserialize as absent in older snapshots.
+Exposure tests cover two collider/material configurations, moving and rotated
+barriers, porous transmission, saturation, fixed rain budgets, energy-funded
+drying, contact distance and snapshot replay.
 
 ## Solver changes
 
