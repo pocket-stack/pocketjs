@@ -116,6 +116,8 @@
     "engine/pocket3d/crates/pocket3d-gles2/src",
     "engine/pocket3d/crates/pocket3d-gles2/Cargo.toml",
     "engine/pocket3d/crates/pocket3d-gles2/Cargo.lock",
+    "engine/pocket3d/crates/pocket3d-anim/src",
+    "engine/pocket3d/crates/pocket3d-anim/Cargo.toml",
     "engine/pocket3d/crates/pocket3d/src",
     "engine/pocket3d/crates/pocket3d/Cargo.toml",
     "engine/pocket3d/crates/pocket3d-cook/src",

@@ -67,6 +67,7 @@ static uint32_t upload_expected;
 static uint32_t upload_received;
 static uint64_t upload_hash;
 static bool upload_ready;
+static bool packages_allowed = true;
 
 static bool screenshot_requested;
 static bool screenshot_ready;
@@ -584,6 +585,10 @@ static void handle_package_begin(const uint8_t *payload, size_t length) {
     abort_upload("invalid package begin frame");
     return;
   }
+  if (!packages_allowed) {
+    devserver_report_install("rejected", begin.footer_hash, "This native host does not accept .pocket guest packages");
+    return;
+  }
   close_upload();
   upload_ready = false;
   upload_file = fopen(POCKET_RUNTIME_UPLOAD, "wb");
@@ -595,6 +600,12 @@ static void handle_package_begin(const uint8_t *payload, size_t length) {
   upload_received = 0;
   upload_hash = begin.footer_hash;
   devserver_report_install("receiving", upload_hash, "binary package transfer started");
+}
+
+void devserver_allow_packages(bool allowed) {
+  packages_allowed = allowed;
+  if (!allowed && (upload_file != NULL || upload_ready))
+    abort_upload("guest package admission disabled by host");
 }
 
 static void handle_package_chunk(const uint8_t *payload, size_t length) {

@@ -151,6 +151,8 @@ describe("published npm artifacts", () => {
       "engine/pocket3d/crates/pocket3d-gles2/src",
       "engine/pocket3d/crates/pocket3d-gles2/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-gles2/Cargo.lock",
+      "engine/pocket3d/crates/pocket3d-anim/src",
+      "engine/pocket3d/crates/pocket3d-anim/Cargo.toml",
       "engine/pocket3d/crates/pocket3d/src",
       "engine/pocket3d/crates/pocket3d/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-cook/src",
@@ -175,6 +177,10 @@ describe("published npm artifacts", () => {
   test("framework tarball contains every locked native and standalone Pocket3D input", async () => {
     const files = packedFiles(root);
     expect(files).toEqual(expect.arrayContaining([
+      "engine/pocket3d/crates/pocket3d-anim/Cargo.toml",
+      "engine/pocket3d/crates/pocket3d-anim/src/lib.rs",
+      "engine/pocket3d/crates/pocket3d-anim/src/mesh.rs",
+      "tools/3ds-toolchain.ts",
       "assets/brand/pocketjs-avatar-white-minimal.png",
       "apps/hero/app.tsx",
       "apps/iphone2g-demo/pocket.json",

@@ -16,6 +16,20 @@ whose gameplay rules are QuickJS mods and whose HUD is a PocketJS app.
 
 ![status](https://img.shields.io/badge/status-v0.1_experiment-orange)
 
+## Native handheld consumers
+
+**`pocket3d-anim` shares skeletal sampling and bounded rigid-mesh decoding**
+between desktop and handheld hosts. The [citro3d backend](backends/citro3d/README.md)
+provides resident indexed GPU skinning on Nintendo 3DS, with caller-owned lights,
+poses, targets and frame boundaries. Its folding-prop example is independent of
+any application runtime.
+
+[**Pocket Island**](https://github.com/pocket-stack/pocket-island) is a separate
+application repository. Movement and gait policy, expressions, chat, camera,
+scene resources, QuickJS commands and performance scenarios belong to its
+specialized runtime. It pins PocketJS as a submodule instead of carrying a copy
+of Pocket3D. Reusable fixes enter this repository before the app updates its pin.
+
 ## Layout
 
 ```

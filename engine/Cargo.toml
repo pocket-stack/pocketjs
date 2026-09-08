@@ -21,6 +21,7 @@ members = [
     "crates/pocket-vrm",
     "crates/pocket-widget",
     "pocket3d/crates/pocket3d",
+    "pocket3d/crates/pocket3d-anim",
     "pocket3d/crates/pocket3d-bsp",
     "pocket3d/crates/pocket3d-cook",
     "pocket3d/crates/pocket3d-world",
@@ -47,6 +48,7 @@ repository = "https://github.com/pocket-stack/pocketjs"
 
 [workspace.dependencies]
 pocket3d = { path = "pocket3d/crates/pocket3d" }
+pocket3d-anim = { path = "pocket3d/crates/pocket3d-anim" }
 pocket3d-bsp = { path = "pocket3d/crates/pocket3d-bsp" }
 pocket3d-world = { path = "pocket3d/crates/pocket3d-world" }
 pocket-db = { path = "crates/pocket-db" }
