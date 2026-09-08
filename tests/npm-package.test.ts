@@ -187,6 +187,7 @@ describe("published npm artifacts", () => {
       "engine/pocket3d/crates/pocket3d-mesh/src/colored.rs",
       "engine/pocket3d/crates/pocket3d-mesh/src/rigid.rs",
       "tools/3ds-toolchain.ts",
+      "tools/native-source.ts",
       "assets/brand/pocketjs-avatar-white-minimal.png",
       "apps/hero/app.tsx",
       "apps/iphone2g-demo/pocket.json",

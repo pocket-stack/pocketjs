@@ -450,3 +450,16 @@ The New 3DS C-stick is exposed as the optional right analog lane. Applications
 read `rightAnalogX()` / `rightAnalogY()` from the framework lifecycle API, using
 the same normalized axes and deadzone as the left stick. Older hardware returns
 centered values. IRRST scanning stays in the host input adapter.
+
+## Native QuickJS sources
+
+`tools/3ds-toolchain.ts` prepares a verified QuickJS checkout through
+`tools/native-source.ts`, shared with the BlackBerry native hosts. The 3DS pin
+specifies a repository, full commit and source version. **Source preparation
+does not resolve the PSP Cargo dependency graph.** `ensureQuickJs` calls this
+preparation step before checking its compiler/source/image cache stamp.
+
+Standalone native hosts can import `ensureQuickJsSources` to prepare the C
+sources before a build. It has no guest compiler or package-manifest dependency.
+The default checkout is `~/.cache/pocketjs/sources/quickjs-<revision>`; an existing
+directory with a different revision, version or modified files is rejected.

@@ -7,11 +7,14 @@ import { join, resolve as resolvePath } from "node:path";
 const repository = fileURLToPath(new URL("..", import.meta.url));
 export const THREE_DS_CONTAINER_IMAGE =
   "devkitpro/devkitarm@sha256:116afba8df8453961de2936ffab20dd441edf4d682856c1ec8b0e53d7ed0bbf5";
-// The QuickJS revision hosts/psp/Cargo.toml pins, unpacked by cargo into the
-// git checkout cache. libquickjs-sys's build.rs is bypassed: it would need the
-// `cc` crate to find a 3DS-capable compiler on macOS, and there is none.
-const QUICKJS_CHECKOUT =
-  "git/checkouts/quickjs-rs-1bf011a924d415f9/ba5bdd0/libquickjs-sys/embed/quickjs";
+import { ensureQuickJsCheckout, quickJsCheckout, type QuickJsPin } from "./native-source.ts";
+
+// Pin native C sources without resolving another device's Rust dependencies.
+export const THREE_DS_QUICKJS_PIN: QuickJsPin = {
+  repository: "https://github.com/pocket-stack/quickjs-rs.git",
+  revision: "ba5bdd0dc013518768e76cd9e05cd30ed53dd35b",
+  version: "2026-06-04",
+};
 const QUICKJS_SOURCES = [
   "quickjs.c",
   "cutils.c",
@@ -138,14 +141,13 @@ export async function runContainer(
   }
 }
 
-function quickJsSourceDirectory(): string {
-  const pinned = join(process.env.CARGO_HOME ?? join(homedir(), ".cargo"), QUICKJS_CHECKOUT);
-  if (existsSync(join(pinned, "quickjs.c"))) return pinned;
-  throw new Error(
-    `PocketJS 3ds: the pinned QuickJS sources are absent at ${pinned}. ` +
-      "They arrive with the PSP host's dependencies — run `cargo fetch` in hosts/psp/ " +
-      "(or `bun run bootstrap`) and retry.",
-  );
+/** Prepare the same verified checkout mechanism used by other native hosts. */
+export function ensureQuickJsSources(
+  checkout = join(homedir(), ".cache", "pocketjs", "sources", `quickjs-${THREE_DS_QUICKJS_PIN.revision}`),
+): string {
+  const root = resolvePath(checkout);
+  ensureQuickJsCheckout("PocketJS 3ds", root, THREE_DS_QUICKJS_PIN);
+  return quickJsCheckout(root).source;
 }
 
 /**
@@ -158,7 +160,7 @@ export async function ensureQuickJs(
   imageId: string,
   mounts: readonly Mount[],
 ): Promise<void> {
-  const sources = quickJsSourceDirectory();
+  const sources = ensureQuickJsSources();
   const files = [...QUICKJS_SOURCES, ...QUICKJS_HEADERS];
   const digest = createHash("sha256");
   digest.update(imageId);
@@ -210,4 +212,3 @@ export async function ensureQuickJs(
   }
   writeFileSync(stampPath, `${stamp}\n`);
 }
-
