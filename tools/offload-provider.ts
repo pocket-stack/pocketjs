@@ -29,6 +29,7 @@ export function connectOffloadProvider(options: {
       worker.onerror = () => socket.destroy();
       worker.onmessage = (event: MessageEvent<OffloadReply>) => {
         const reply = event.data;
+        if ((reply as OffloadReply & {ready?:boolean}).ready === true) return;
         if (!pending.delete(reply.id)) return socket.destroy();
         clearTimeout(deadlines.get(reply.id)); deadlines.delete(reply.id);
         try {

@@ -27,11 +27,28 @@ hosts, the PSP GE walker, the ESP32-P4 PPA and Symbian GLES2 ports.
   runtime (system-font rasterization + `loadFontAtlas` reload, note-widget's
   cjk.rs) add `text.glyphs.runtime`.
 
-## The gpui backend
+## The portable desktop host
+
+`hosts/desktop` now uses winit and softbuffer for window/input/pixel presentation.
+QuickJS guests, flex layout, software rasterization and the shared
+`engine/core/src/compositor.rs` painter execute on a runtime worker. Each
+AppInstance has an independent text worker through `io.offload`.
+`text.layout.offload` wraps, shapes and rasterizes text using explicit package
+fonts in Rust, including through the same engine compiled to WASM. PSP requires
+a paired companion for this capability. See [TEXT-OFFLOAD.md](TEXT-OFFLOAD.md)
+for bounded records, incremental edits, first-page delivery and benchmarks.
+
+The native host no longer links gpui or platform text libraries. Core atlas
+measurements for baked UI remain available. Apps that need document reflow
+should use the asynchronous text service; the stock Note's legacy baked editor
+and specialized widget hosts retain their existing pipeline.
+
+## The legacy gpui backend
 
 `engine/backends/gpui` (`pocket-ui-gpui`) paints the same DrawList through
-[gpui](https://gpui.rs) — Zed's native GPU renderer — and is embedded by
-`hosts/desktop`, the stock host of the `macos-app` and `linux-app` targets. Boxes, gradients
+[gpui](https://gpui.rs) — Zed's native GPU renderer. This retained optional
+crate is no longer used by the stock desktop host. The following describes its
+legacy contract. Boxes, gradients
 and images become antialiased vector quads instead of upscaled raster;
 text can come from the host text system.
 
@@ -104,23 +121,21 @@ resolves density 1. Fixed-viewport console apps run size-locked and
 letterboxed with their baked glyph pipeline intact.
 
 ```
-bun run macos note        # dynamic viewport, native text, svc editor protocol
+bun run macos note        # dynamic viewport, baked text, svc editor protocol
 bun run macos hero        # fixed 480x272, size-locked, baked glyphs
 bun run macos note --proof
 ```
 
 `tools/macos.ts` resolves the manifest against `macos-app`, writes the
 plan, builds the bundle + pak, and derives the capability-shaped host flags
-(`--fixed`, `--native-text`, `--companions`) from the resolved plan. If the
+(`--fixed`, `--companions`) from the resolved plan. If the
 selected app directory also contains `pocket.system.json`, the tool
 resolves every installed package and starts the host with one complete
 `ResolvedSystemPlan`; it does not project child plans into command-line
 viewport or title fields.
 `--editor` is NOT a capability: it enables the note's companion svc adapter
 (an app protocol — the profile deliberately registers no
-pointer/text/IME/clipboard ids, see contracts/spec/platforms.ts). On exit
-the host prints its governor receipt (`pocket-desktop-host: N ticks, M frames
-rendered`); a settled app shows M ≪ N.
+pointer/text/IME/clipboard ids, see contracts/spec/platforms.ts). The host renders only when the DrawList or retained raster revision changes.
 
 ## Browser System host
 
@@ -131,7 +146,7 @@ derives the package catalog, surface handles and lifecycle policy from one
 focus and visible painter order determine scheduling.
 
 The wasm software compositor retains each visible child framebuffer and
-replaces `SURFACE_QUAD` with a texture quad only during the host render.
+paints it at each `SURFACE_QUAD` position during the host render.
 Full bounds determine the child coordinate origin, clip bounds constrain the
 visible pixels, and the instruction remains at its original DrawList offset.
 Shell chrome emitted after the surface therefore stays above the child. A
@@ -147,8 +162,8 @@ intent that sets the window's pointer shape, and a `{t:"paste-req"}` guest
 intent the host answers with a paste line (menu-driven Paste). ⌘Q quits
 and ⌘V pastes host-side; every other ⌘ chord reaches the guest, so the
 compositor owns its shortcuts (⌘W close, ⌘M minimize, ⌘` cycle windows,
-⌘Esc Start menu, ⌘A/C/X editing). Plain typing arrives only through the
-IME input handler (`insertText:` → one `ch` line per keypress). **This
+⌘Esc Start menu, ⌘A/C/X editing). Plain typing and IME commits arrive through winit input events as `ch` lines;
+preedit remains separate from committed text. **This
 companion carries shell UI input, clipboard requests and cursor intents. It
 does not carry package lifecycle, focus, per-frame visibility or button
 routing.**
@@ -164,11 +179,11 @@ applications resolve without the System UI-only compositor capability.**
   does not expose that implementation.** The host contains no product catalog
   or package-name rules. Live `<CompositorSurface package>` bindings create
   one AppInstance with its own `Guest`, QuickJS `Runtime`, QuickJS `Context`,
-  `UiSurface` and `GpuiRenderer` inside the existing process. Their globals,
+  `UiSurface` and retained Rust raster inside the existing process. Their globals,
   node trees, textures, clocks and button state are isolated.
 - **Compositor surfaces use `SURFACE_QUAD`, not `TEX_QUAD`.** The instruction
   carries the package-surface handle, unclipped bounds, clipped visible bounds
-  and focused state. GPUI invokes the native compositor at that exact DrawList
+  and focused state. The Rust compositor paints the child at that exact DrawList
   position, so shell content before and after it keeps its painter order and
   clipping never changes the child coordinate origin.
 - **AppInstance lifecycle and scheduling come from the shell core's live
@@ -187,9 +202,9 @@ X,Y[,d|u|r]@TICK` (drags, right clicks), `--key
 
 ## Choosing a backend
 
-|                    | portable                                                         | gpui                                        |
+|                    | portable                                                         | legacy gpui                                        |
 | ------------------ | ---------------------------------------------------------------- | ------------------------------------------- |
-| hosts              | PSP, Vita, PocketBook, ESP32-P4, Symbian, web, sim, macOS widget | macOS and Linux (`hosts/desktop`)           |
+| hosts              | PSP, Vita, PocketBook, ESP32-P4, Symbian, web, sim, macOS widget, macOS/Linux desktop | optional crate, no stock host           |
 | text measurement   | core, atlas advance tables                                       | gpui platform text system, per-app opt-in   |
 | codepoint coverage | baked charset (+ runtime extension)                              | OS fallback chain, color emoji              |
 | pixel determinism  | byte-exact across hosts                                          | per-host; transactions still deterministic  |

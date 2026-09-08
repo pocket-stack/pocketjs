@@ -44,6 +44,7 @@ pub mod layout;
 pub mod package;
 pub mod pak;
 pub mod raster;
+pub mod compositor;
 pub mod spec;
 pub mod stream;
 pub mod stream_rx;

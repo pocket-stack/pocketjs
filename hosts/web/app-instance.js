@@ -4,6 +4,7 @@
 // object; package code never receives another realm or framebuffer.
 
 import { createWasmUi } from "./wasm-ops.js";
+import { createWorkerOffload } from "./offload-worker.js";
 
 async function requiredFetch(url, kind) {
   const response = await fetch(url);
@@ -41,6 +42,8 @@ export async function create(options) {
   globalThis.__pocketApp = options.packageId;
   const pak = await fetch(options.pakUrl);
   globalThis.__pak = pak.ok ? await pak.arrayBuffer() : undefined;
+  const textWorker=createWorkerOffload({workerUrl:new URL("./text-worker.js",import.meta.url),wasmUrl:new URL("./pocket_text.wasm",import.meta.url),pak:globalThis.__pak});
+  globalThis.offload=textWorker.ops;
   const source = await (await requiredFetch(options.bundleUrl, "Pocket app bundle")).text();
   new Function(`${source}\n//# sourceURL=${options.packageId}.js`)();
   if (typeof globalThis.frame !== "function") {
@@ -55,6 +58,7 @@ export async function create(options) {
     // passes only buttons keeps the button-only contract — `undefined`
     // touches clear the contact snapshot, exactly as a host with no panel.
     step(buttons = 0, touches, hits, touchSurfaces) {
+      textWorker.beginFrame();
       globalThis.frame(buttons, 0x8080, touches, hits, touchSurfaces);
       wasm.tick();
     },
@@ -104,6 +108,7 @@ export async function create(options) {
       return outgoing.splice(0);
     },
     dispose() {
+      textWorker.dispose();
       incoming.length = 0;
       outgoing.length = 0;
       globalThis.frame = undefined;

@@ -137,7 +137,10 @@
     "engine/pocket3d/crates/pocket3d-world/src",
     "pocket.config.ts",
     "pocket.json",
-    "tsconfig.json"
+    "tsconfig.json",
+    "engine/crates/pocket-text/src",
+    "engine/crates/pocket-text/Cargo.toml",
+    "engine/crates/pocket-text/Cargo.lock"
   ],
   "publishConfig": {
     "access": "public"
@@ -147,8 +150,10 @@
     "./animation": "./framework/src/animation.ts",
     "./classic": "./framework/src/classic.ts",
     "./offload/provider": "./tools/offload-provider.ts",
+    "./offload/usb-provider": "./tools/offload-usb-provider.ts",
     "./offload/capabilities": "./tools/offload-capabilities.ts",
     "./offload": "./framework/src/offload.ts",
+    "./text-layout": "./framework/src/text-layout.ts",
     "./resource-state": "./framework/src/resource-state.ts",
     "./resource-cache": "./framework/src/resource-cache.ts",
     "./resource-offload": "./framework/src/resource-offload.ts",
@@ -189,6 +194,7 @@
     "./vue-vapor": "./framework/src/index-vue-vapor.ts",
     "./vue-vapor/animation": "./framework/src/animation.ts",
     "./vue-vapor/offload": "./framework/src/offload.ts",
+    "./vue-vapor/text-layout": "./framework/src/text-layout.ts",
     "./vue-vapor/resource-state": "./framework/src/resource-state.ts",
     "./vue-vapor/resource-cache": "./framework/src/resource-cache.ts",
     "./vue-vapor/resource-offload": "./framework/src/resource-offload.ts",
@@ -208,6 +214,7 @@
     "./octane": "./framework/src/index-octane.ts",
     "./octane/animation": "./framework/src/animation.ts",
     "./octane/offload": "./framework/src/offload.ts",
+    "./octane/text-layout": "./framework/src/text-layout.ts",
     "./octane/resource-state": "./framework/src/resource-state.ts",
     "./octane/resource-cache": "./framework/src/resource-cache.ts",
     "./octane/resource-offload": "./framework/src/resource-offload.ts",
