@@ -111,6 +111,8 @@ describe("published npm artifacts", () => {
       "engine/crates/pocket-mod/Cargo.toml",
       "engine/crates/pocket-net/src",
       "engine/crates/pocket-net/Cargo.toml",
+      "engine/crates/pocket-sim/src",
+      "engine/crates/pocket-sim/Cargo.toml",
       "engine/crates/pocket-ui-surface/src",
       "engine/crates/pocket-ui-surface/Cargo.toml",
       "engine/crates/pocket-ui-wgpu/src",
@@ -181,6 +183,8 @@ describe("published npm artifacts", () => {
     expect(files).toEqual(expect.arrayContaining([
       "engine/pocket3d/crates/pocket3d-anim/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-anim/src/lib.rs",
+      "engine/crates/pocket-sim/src/lib.rs",
+      "tools/companion-session.ts",
       "engine/pocket3d/crates/pocket3d-mesh/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-mesh/src/lib.rs",
       "engine/pocket3d/crates/pocket3d-mesh/src/p3m.rs",
