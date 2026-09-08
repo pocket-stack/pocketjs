@@ -165,6 +165,8 @@
     "./fs": "./framework/src/fs-api.ts",
     "./gesture": "./framework/src/gesture.ts",
     "./host": "./framework/src/host.ts",
+    "./overlay-host": "./framework/src/overlay-host.ts",
+    "./themes/desktop": "./framework/src/themes/desktop.ts",
     "./lifecycle": "./framework/src/lifecycle.ts",
     "./hot": "./framework/src/hot.ts",
     "./input": "./framework/src/input-api.ts",

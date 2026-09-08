@@ -404,9 +404,8 @@ impl UiRenderer {
                 ((w >> 16) as u16 as i16) as f32 * s,
             )
         };
-        let wh = |w: u32| -> (f32, f32) {
-            ((w & 0xffff) as f32 * s, ((w >> 16) & 0xffff) as f32 * s)
-        };
+        let wh =
+            |w: u32| -> (f32, f32) { ((w & 0xffff) as f32 * s, ((w >> 16) & 0xffff) as f32 * s) };
 
         let quad = |verts: &mut Vec<UiVertex>,
                     p0: [f32; 2],
@@ -731,7 +730,11 @@ impl UiRenderer {
         // Wider grids for big (CJK-extended) atlases keep the texture under
         // dimension limits: 16 cols x 3500 density-2 cells would be ~8000 px
         // tall; 64 cols stays square-ish.
-        let max_cols = if atlas.glyph_count > 512 { 64u32 } else { 16u32 };
+        let max_cols = if atlas.glyph_count > 512 {
+            64u32
+        } else {
+            16u32
+        };
         let cols = max_cols.min(atlas.glyph_count.max(1) as u32);
         let rows = (atlas.glyph_count as u32).div_ceil(cols).max(1);
         let tex_w = cols * cov_w;
@@ -804,7 +807,14 @@ impl UiRenderer {
         }
     }
 
-    fn upload_image(&self, gpu: &Gpu, rgba: &[u8], w: u32, h: u32, linear: bool) -> wgpu::BindGroup {
+    fn upload_image(
+        &self,
+        gpu: &Gpu,
+        rgba: &[u8],
+        w: u32,
+        h: u32,
+        linear: bool,
+    ) -> wgpu::BindGroup {
         let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("pocket-ui image"),
             size: wgpu::Extent3d {
@@ -852,29 +862,6 @@ impl UiRenderer {
                 },
             ],
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{image_cache_hit, ImageVersion};
-
-    #[test]
-    fn image_cache_decision_reuploads_in_place_content_revision() {
-        let cached = ImageVersion { handle: 7, revision: 4 };
-        assert!(image_cache_hit(
-            Some(cached),
-            ImageVersion { handle: 7, revision: 4 },
-        ));
-        assert!(!image_cache_hit(
-            Some(cached),
-            ImageVersion { handle: 7, revision: 5 },
-        ));
-        assert!(!image_cache_hit(
-            Some(cached),
-            ImageVersion { handle: 8, revision: 4 },
-        ));
-        assert!(!image_cache_hit(None, cached));
     }
 }
 
@@ -934,5 +921,40 @@ fn to_rgba8(view: &TexView) -> Option<Vec<u8>> {
             Some(out)
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ImageVersion, image_cache_hit};
+
+    #[test]
+    fn image_cache_decision_reuploads_in_place_content_revision() {
+        let cached = ImageVersion {
+            handle: 7,
+            revision: 4,
+        };
+        assert!(image_cache_hit(
+            Some(cached),
+            ImageVersion {
+                handle: 7,
+                revision: 4
+            },
+        ));
+        assert!(!image_cache_hit(
+            Some(cached),
+            ImageVersion {
+                handle: 7,
+                revision: 5
+            },
+        ));
+        assert!(!image_cache_hit(
+            Some(cached),
+            ImageVersion {
+                handle: 8,
+                revision: 4
+            },
+        ));
+        assert!(!image_cache_hit(None, cached));
     }
 }

@@ -1823,10 +1823,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytemuck",
+ "pocket-mod",
  "pocket-ui-surface",
  "pocket3d",
  "pocketjs-core",
+ "serde_json",
  "wgpu",
+ "winit",
 ]
 
 [[package]]
