@@ -5,6 +5,8 @@ on:
     paths:
       - '.github/workflows/pocket3d.yml'
       - 'engine/pocket3d/crates/pocket3d/**'
+      - 'engine/pocket3d/crates/pocket3d-anim/**'
+      - 'engine/pocket3d/crates/pocket3d-mesh/**'
       - 'engine/pocket3d/crates/pocket3d-world/**'
       - 'engine/pocket3d/crates/pocket3d-bsp/**'
       - 'engine/Cargo.toml'
@@ -14,6 +16,8 @@ on:
     paths:
       - '.github/workflows/pocket3d.yml'
       - 'engine/pocket3d/crates/pocket3d/**'
+      - 'engine/pocket3d/crates/pocket3d-anim/**'
+      - 'engine/pocket3d/crates/pocket3d-mesh/**'
       - 'engine/pocket3d/crates/pocket3d-world/**'
       - 'engine/pocket3d/crates/pocket3d-bsp/**'
       - 'engine/Cargo.toml'

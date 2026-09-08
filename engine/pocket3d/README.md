@@ -18,7 +18,8 @@ whose gameplay rules are QuickJS mods and whose HUD is a PocketJS app.
 
 ## Native handheld consumers
 
-**`pocket3d-anim` shares skeletal sampling and bounded rigid-mesh decoding**
+**`pocket3d-anim` shares skeletal sampling and pose interpolation.**
+**`pocket3d-mesh` shares skin bindings, palette evaluation and portable mesh data**
 between desktop and handheld hosts. The [citro3d backend](backends/citro3d/README.md)
 provides resident indexed GPU skinning on Nintendo 3DS, with caller-owned lights,
 poses, targets and frame boundaries. Its folding-prop example is independent of
@@ -35,14 +36,16 @@ of Pocket3D. Reusable fixes enter this repository before the app updates its pin
 ```
 engine/pocket3d/
 ├── crates/
-│   ├── engine/pocket3d/          # the 3D substrate
+│   ├── pocket3d/          # desktop wgpu runtime
 │   │   ├── gpu            #   device bootstrap, offscreen targets + PNG readback
 │   │   ├── renderer       #   forward renderer: world / models / sprites / viewmodel / HUD passes
-│   │   ├── world          #   lightmapped static world (format-agnostic upload)
-│   │   ├── model, anim    #   glTF assets, multi-skin characters, clips, joint palettes
+│   │   ├── geometry       #   static lightmapped GPU geometry; world is a compatibility alias
+│   │   ├── model, anim    #   glTF GPU assets and shared animation re-exports
 │   │   ├── collide        #   TraceWorld trait + Quake-style character controller
 │   │   ├── camera, input, time, hud, scene, texture
 │   │   └── app            #   winit loop (fixed-step sim, mouse capture, overlay hook)
+│   ├── pocket3d-anim/     # skeletal sampling and local-pose interpolation
+│   ├── pocket3d-mesh/     # skin bindings, colored assets, P3M1 and native packing
 │   ├── pocket3d-bsp/      # GoldSrc BSP v30 + WAD3: geometry, lightmaps,
 │   │                      # entities, clipnode hull tracing (no GPU deps)
 │   ├── pocket3d-world/    # renderer-free fixed-step bodies, structures,
@@ -59,12 +62,33 @@ engine/pocket3d/
     └── note-widget/       # a markdown sticky note — the flat pocket-widget form
 ```
 
-Dependency shape: `pocket3d-bsp` knows nothing about rendering; `pocket3d`
-integrates it behind the (default) `bsp` feature (`WorldModel::from_bsp`,
-`TraceWorld for MapCollision`). Games depend on `pocket3d` and stay
-renderer-agnostic — a `Scene` is plain data. `pocket-mod` and
-`pocket-ui-wgpu` are the shared mechanism every specialized runtime reuses
-(docs/RUNTIMES.md); neither knows anything about FPS games.
+## Ownership and dependencies
+
+| Component | Owns | Does not own |
+| --- | --- | --- |
+| `pocket3d-anim` | TRS channels, hierarchy evaluation, pose interpolation | Meshes, rendering, movement policy |
+| `pocket3d-mesh` | Shared `Skin`, palette evaluation, colored assets and packing | Window/GPU lifecycle, clip selection |
+| `pocket3d` | Desktop glTF loading, wgpu resources, rendering and window loop | A second animation or skin-binding implementation |
+| `pocket3d-world` | Fixed-turn entities, contacts, locomotion and material reactions | Render geometry, model assets, animation |
+| Application | Input mapping, gait/clip choices, camera, scene composition | Copies of shared animation or mesh mechanisms |
+
+`pocket3d` depends on `pocket3d-mesh` and `pocket3d-anim`; `pocket3d-mesh`
+depends on `pocket3d-anim`. `pocket3d-world` is independent of all three. An app
+can connect its simulation snapshots to a renderer. **`pocket3d::geometry`
+contains static render geometry; `pocket3d::world` is an alias for that module.**
+Neither is the `pocket3d-world` simulation crate.
+
+Movement models have different contracts. `pocket3d-bsp::collide` owns the
+trace-based Quake controller shared by desktop and PSP. `pocket3d-world` owns
+contact-constrained sphere/capsule locomotion and material-dependent grip.
+Island owns its bounded walk region and obstacle policy. Changes to one model
+do not add game-name branches to another solver. Shared solver changes must
+preserve their physical invariant across multiple geometries/materials.
+
+Desktop `pocket3d::anim`, `pocket3d::model::Skin` and `pocket3d::world` import
+paths remain available through re-exports. The experimental handheld mesh
+imports move from `pocket3d_anim::mesh` to
+[`pocket3d_mesh::{colored, rigid}`](crates/pocket3d-mesh/README.md).
 
 ## uihost — the PSP UI runtime on the desktop
 

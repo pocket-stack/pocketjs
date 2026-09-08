@@ -1,7 +1,7 @@
 # Pocket3D citro3d backend
 
 This backend draws **colored triangle streams and indexed rigid skins on the
-PICA200**. It accepts geometry and affine bone matrices from `pocket3d-anim`,
+PICA200**. It accepts geometry and affine bone matrices from `pocket3d-mesh`,
 with no application state, character names or controller assumptions. C owns
 citro3d calls; Rust owns animation sampling and skeleton interpolation.
 

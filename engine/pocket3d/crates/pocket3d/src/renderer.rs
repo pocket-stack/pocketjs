@@ -6,12 +6,12 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 
 use crate::camera::Camera;
+use crate::geometry::{WorldBatchKind, WorldVertex};
 use crate::gpu::{DEPTH_FORMAT, DepthTarget, Gpu};
 use crate::hud::{ATLAS_H, ATLAS_W, Hud, HudVertex, build_font_atlas};
 use crate::model::{MaterialAlphaMode, ModelAsset, ModelInstance, ModelVertex};
 use crate::scene::Scene;
 use crate::texture::{GpuTexture, Samplers, create_rgba_texture};
-use crate::world::{WorldBatchKind, WorldVertex};
 
 fn finite_or(value: f32, fallback: f32) -> f32 {
     if value.is_finite() { value } else { fallback }
@@ -93,7 +93,7 @@ impl Renderer {
         });
 
         // --- world pipelines ---------------------------------------------
-        let world_material_layout = crate::world::WorldModel::material_layout(gpu);
+        let world_material_layout = crate::geometry::WorldModel::material_layout(gpu);
         let world_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("world.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/world.wgsl").into()),

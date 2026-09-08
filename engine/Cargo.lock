@@ -1868,6 +1868,7 @@ dependencies = [
  "png",
  "pocket3d-anim",
  "pocket3d-bsp",
+ "pocket3d-mesh",
  "pollster",
  "serde_json",
  "wgpu",
@@ -1898,6 +1899,14 @@ dependencies = [
  "env_logger",
  "log",
  "pocket3d-bsp",
+]
+
+[[package]]
+name = "pocket3d-mesh"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "pocket3d-anim",
 ]
 
 [[package]]

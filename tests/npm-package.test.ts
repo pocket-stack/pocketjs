@@ -153,6 +153,8 @@ describe("published npm artifacts", () => {
       "engine/pocket3d/crates/pocket3d-gles2/Cargo.lock",
       "engine/pocket3d/crates/pocket3d-anim/src",
       "engine/pocket3d/crates/pocket3d-anim/Cargo.toml",
+      "engine/pocket3d/crates/pocket3d-mesh/src",
+      "engine/pocket3d/crates/pocket3d-mesh/Cargo.toml",
       "engine/pocket3d/crates/pocket3d/src",
       "engine/pocket3d/crates/pocket3d/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-cook/src",
@@ -179,7 +181,11 @@ describe("published npm artifacts", () => {
     expect(files).toEqual(expect.arrayContaining([
       "engine/pocket3d/crates/pocket3d-anim/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-anim/src/lib.rs",
-      "engine/pocket3d/crates/pocket3d-anim/src/mesh.rs",
+      "engine/pocket3d/crates/pocket3d-mesh/Cargo.toml",
+      "engine/pocket3d/crates/pocket3d-mesh/src/lib.rs",
+      "engine/pocket3d/crates/pocket3d-mesh/src/p3m.rs",
+      "engine/pocket3d/crates/pocket3d-mesh/src/colored.rs",
+      "engine/pocket3d/crates/pocket3d-mesh/src/rigid.rs",
       "tools/3ds-toolchain.ts",
       "assets/brand/pocketjs-avatar-white-minimal.png",
       "apps/hero/app.tsx",
@@ -317,6 +323,8 @@ describe("published npm artifacts", () => {
       expect(packages).toContain("pocket-mod");
       expect(packages).toContain("pocket-ui-surface");
       expect(packages).toContain("pocket3d-world");
+      expect(packages).toContain("pocket3d-anim");
+      expect(packages).toContain("pocket3d-mesh");
       expect(existsSync(join(scratch, "package/engine/core/Cargo.toml"))).toBe(true);
     } finally {
       rmSync(scratch, { recursive: true, force: true });

@@ -6,6 +6,11 @@ attachments, structural damage, heat, retained water, fuel, and combustion.
 Games submit interactions, advance one turn, consume ordered events, and map
 the resulting state into any renderer.
 
+`pocket3d::geometry` (also available as the legacy `pocket3d::world` alias)
+contains static GPU geometry. It is separate from this simulation. Animation
+sampling lives in `pocket3d-anim`; model data and skin bindings live in
+`pocket3d-mesh`. This crate depends on neither.
+
 ## Fixed turn
 
 Each call to `World::step` performs the same ordered phases:

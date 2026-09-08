@@ -12,6 +12,7 @@ bsp = ["dep:pocket3d-bsp"]
 
 [dependencies]
 pocket3d-anim = { workspace = true }
+pocket3d-mesh = { workspace = true }
 pocket3d-bsp = { workspace = true, optional = true }
 
 wgpu = { workspace = true }

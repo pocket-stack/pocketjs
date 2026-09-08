@@ -254,11 +254,7 @@ pub struct ModelLoadOptions {
     pub max_texture_dim: Option<u32>,
 }
 
-pub struct Skin {
-    /// Node index per joint.
-    pub joints: Vec<usize>,
-    pub inverse_bind: Vec<Mat4>,
-}
+pub use pocket3d_mesh::Skin;
 
 /// One morph target of a primitive, stored sparse: only vertices the target
 /// actually displaces. Deltas are in object space (bake transform applied).
@@ -591,9 +587,7 @@ impl ModelAsset {
     pub fn palette_from_globals(&self, globals: &[Mat4], out: &mut Vec<Mat4>) {
         out.clear();
         for skin in &self.skins {
-            for (i, &node) in skin.joints.iter().enumerate() {
-                out.push(globals[node] * skin.inverse_bind[i]);
-            }
+            out.extend(skin.matrices(globals, Mat4::IDENTITY));
         }
         if out.is_empty() {
             out.push(Mat4::IDENTITY);
@@ -1152,11 +1146,7 @@ impl ModelAsset {
             let rest_palette: Vec<Mat4> = node_skin
                 .map(|si| {
                     let s = &skins[si];
-                    s.joints
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &n)| rest_globals[n] * s.inverse_bind[i])
-                        .collect()
+                    s.matrices(&rest_globals, Mat4::IDENTITY).collect()
                 })
                 .unwrap_or_default();
 

@@ -4,7 +4,6 @@
 extern crate alloc;
 use alloc::{string::String, vec::Vec};
 
-pub mod mesh;
 pub use glam;
 
 use glam::{Mat4, Quat, Vec3};
@@ -25,6 +24,23 @@ impl NodeTrs {
 
     pub fn matrix(&self) -> Mat4 {
         Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.translation)
+    }
+
+    /// Blend local poses with linear translation/scale and spherical rotation.
+    /// The caller supplies a finite fraction in [0, 1] and owns which channels
+    /// participate (for example, discrete visibility may override the scale).
+    pub fn interpolate(self, other: Self, fraction: f32) -> Self {
+        if fraction == 0. {
+            return self;
+        }
+        if fraction == 1. {
+            return other;
+        }
+        Self {
+            translation: self.translation.lerp(other.translation, fraction),
+            rotation: self.rotation.slerp(other.rotation, fraction),
+            scale: self.scale.lerp(other.scale, fraction),
+        }
     }
 }
 
@@ -220,6 +236,23 @@ impl AnimState {
 mod tests {
     use super::*;
     use alloc::vec;
+
+    #[test]
+    fn pose_blending_preserves_endpoints_and_rotates_through_the_short_arc() {
+        let a = NodeTrs::IDENTITY;
+        let b = NodeTrs {
+            translation: Vec3::new(2., 4., 6.),
+            rotation: Quat::from_rotation_z(core::f32::consts::FRAC_PI_2),
+            scale: Vec3::splat(3.),
+        };
+        assert_eq!(a.interpolate(b, 0.).matrix(), a.matrix());
+        assert_eq!(a.interpolate(b, 1.).matrix(), b.matrix());
+        let middle = a.interpolate(b, 0.5);
+        assert_eq!(middle.translation, Vec3::new(1., 2., 3.));
+        assert_eq!(middle.scale, Vec3::splat(2.));
+        let direction = middle.rotation * Vec3::X;
+        assert!((direction.x - direction.y).abs() < 1e-6 && direction.x > 0.7);
+    }
 
     #[test]
     fn hierarchy_sampling_supports_distinct_rigs_and_negative_loop_time() {

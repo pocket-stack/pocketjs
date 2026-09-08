@@ -12,6 +12,7 @@ pub mod anim;
 pub mod app;
 pub mod camera;
 pub mod collide;
+pub mod geometry;
 pub mod gpu;
 pub mod hud;
 pub mod input;
@@ -20,7 +21,8 @@ pub mod renderer;
 pub mod scene;
 pub mod texture;
 pub mod time;
-pub mod world;
+/// Compatibility name for static render geometry. Simulation lives in pocket3d-world.
+pub use geometry as world;
 
 pub use anyhow;
 pub use glam;
@@ -37,6 +39,7 @@ pub mod prelude {
     pub use crate::collide::{
         CharacterState, HullKind, MoveInput, MoveParams, Trace, TraceWorld, step_character,
     };
+    pub use crate::geometry::WorldModel;
     pub use crate::gpu::{DEPTH_FORMAT, Gpu, OFFSCREEN_FORMAT, OffscreenTarget};
     pub use crate::hud::Hud;
     pub use crate::input::Input;
@@ -45,6 +48,5 @@ pub mod prelude {
     pub use crate::scene::Scene;
     pub use crate::scene::{Beam, Sprite};
     pub use crate::time::FixedTimestep;
-    pub use crate::world::WorldModel;
     pub use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 }
