@@ -269,6 +269,20 @@ pub fn select_guest<'a>(
     })
 }
 
+/// Compare already hash-verified packages against the embedded native contract.
+/// Package identity and the resolved native plan cannot change through JS reload.
+pub fn compatible_guest(a: &[u8], b: &[u8], target: &str) -> bool {
+    fn check(a: &[u8], b: &[u8], target: &str) -> Result<bool, PackageError> {
+        let a = Package::parse(a, true)?;
+        let b = Package::parse(b, true)?;
+        let (Some(a), Some(b)) = (a.find_variant(target)?, b.find_variant(target)?) else { return Ok(false) };
+        let (Some(ai), Some(bi)) = (a.identity()?, b.identity()?) else { return Ok(false) };
+        Ok(ai.id == bi.id && ai.output == bi.output && a.host_abi == b.host_abi &&
+            a.section(section::PLAN)? == b.section(section::PLAN)?)
+    }
+    check(a, b, target).unwrap_or(false)
+}
+
 impl<'a> Variant<'a> {
     /// A section payload by kind (unknown kinds are simply never asked for —
     /// forward compatible by construction).
@@ -372,6 +386,30 @@ mod tests {
         let widget = pkg.find_variant("macos-widget").unwrap().unwrap();
         assert_eq!(widget.section(section::PAK).unwrap().unwrap()[0], 30);
         assert_eq!(widget.host_abi, 3);
+    }
+
+    #[test]
+    fn reload_keeps_app_and_native_plan_but_allows_guest_asset_changes() {
+        // This comparator runs only AFTER select_guest verifies the footer.
+        assert!(compatible_guest(FIXTURE, FIXTURE, "psp"));
+        assert!(!compatible_guest(FIXTURE, FIXTURE, "3ds-dev"));
+        assert!(!compatible_guest(FIXTURE, &FIXTURE[..100], "psp"));
+        let pkg = Package::parse(FIXTURE, false).unwrap();
+        let variant = pkg.find_variant("psp").unwrap().unwrap();
+        for (kind, allowed) in [(section::JS, true), (section::PAK, true), (section::PLAN, false)] {
+            let section = variant.section(kind).unwrap().unwrap();
+            let offset = section.as_ptr() as usize - FIXTURE.as_ptr() as usize;
+            let mut changed = FIXTURE.to_vec();
+            changed[offset] ^= 1;
+            assert_eq!(compatible_guest(FIXTURE, &changed, "psp"), allowed);
+        }
+        let identity = variant.identity().unwrap().unwrap();
+        for field in [identity.id, identity.output] {
+            let offset = field.as_ptr() as usize - FIXTURE.as_ptr() as usize;
+            let mut changed = FIXTURE.to_vec();
+            changed[offset] = b'Z';
+            assert!(!compatible_guest(FIXTURE, &changed, "psp"));
+        }
     }
 
     #[test]

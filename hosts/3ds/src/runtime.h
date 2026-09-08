@@ -20,6 +20,8 @@
 #define POCKET_RUNTIME_PENDING POCKET_RUNTIME_APP_ROOT "/pending.pocket"
 #define POCKET_RUNTIME_UPLOAD POCKET_RUNTIME_APP_ROOT "/network-upload.pocket"
 #define POCKET_RUNTIME_DEV_KEY POCKET_RUNTIME_ROOT "/dev.key"
+/* At most one prepared candidate is transferred to the UI at a time. */
+#define POCKET_RUNTIME_UPDATE_MAX_BYTES (8u * 1024u * 1024u)
 
 typedef struct {
   uint8_t *bytes;

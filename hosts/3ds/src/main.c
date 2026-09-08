@@ -372,12 +372,12 @@ static void fail(const char *message) {
 
 typedef struct {
   PocketRuntimePackage *package;
-  /* 0 names the ROMFS recovery package; stored packages use their footer hash. */
-  uint64_t state_hash;
-  bool commit_on_accept;
-  uint64_t next_active_hash;
-  uint64_t next_last_good_hash;
+  PocketRuntimePackage *previous;
   uint32_t submitted_frames;
+  /* 1 awaits a retired GPU frame; 2 awaits the worker's durable commit. */
+  unsigned pending;
+  bool failed;
+  uint64_t rejected_hash;
 } GuestChoice;
 
 static bool boot_guest(
@@ -389,6 +389,8 @@ static bool boot_guest(
     snprintf(error, error_length, "guest package has no JavaScript");
     return false;
   }
+  /* Failed eval also gets a distinct control generation before recovery. */
+  devserver_reset_guest();
   ui_init(POCKETJS_RASTER_DENSITY);
   ui_set_viewport((float)VIEW_W, (float)VIEW_H);
   if (ui_create_auxiliary_surface((float)AUX_VIEW_W, (float)AUX_VIEW_H) == 0) {
@@ -421,6 +423,7 @@ static void teardown_guest(void) {
   ui_shutdown();
   /* The svc reset contract: the next guest never sees this guest's lines. */
   svcwire_reset();
+  devserver_reset_guest();
 }
 
 static void release_choice(GuestChoice *choice, PocketRuntimePackage *embedded) {
@@ -428,146 +431,6 @@ static void release_choice(GuestChoice *choice, PocketRuntimePackage *embedded) 
     runtime_package_free(choice->package);
   }
   memset(choice, 0, sizeof *choice);
-}
-
-static GuestChoice package_choice(
-  PocketRuntimePackage *package,
-  uint64_t state_hash,
-  const PocketRuntimeState *state
-) {
-  GuestChoice choice = {
-    .package = package,
-    .state_hash = state_hash,
-    .commit_on_accept = state_hash != state->active_hash,
-    .next_active_hash = state_hash,
-    .next_last_good_hash = state_hash == state->active_hash ? state->last_good_hash : state->active_hash,
-    .submitted_frames = 0,
-  };
-  return choice;
-}
-
-static GuestChoice recovery_choice(
-  const PocketRuntimeState *state,
-  PocketRuntimePackage *embedded,
-  PocketRuntimeFailureLineage *failures
-) {
-  for (;;) {
-    uint64_t hash = runtime_recovery_hash(state, failures);
-    if (hash == 0) break;
-    char error[256] = {0};
-    PocketRuntimePackage *package = runtime_package_load_hash(hash, error, sizeof error);
-    if (package != NULL) {
-      GuestChoice choice = package_choice(package, hash, state);
-      /* A rollback never keeps the rejected artifact as last-good. */
-      if (choice.commit_on_accept) choice.next_last_good_hash = 0;
-      return choice;
-    }
-    runtime_write_error("load-recovery", error);
-    if (!runtime_failure_lineage_add(failures, hash)) {
-      runtime_write_error("load-recovery", "recovery failure lineage exhausted");
-      break;
-    }
-  }
-  GuestChoice choice = package_choice(embedded, 0, state);
-  if (choice.commit_on_accept) choice.next_last_good_hash = 0;
-  return choice;
-}
-
-static GuestChoice startup_choice(
-  PocketRuntimeState *state,
-  PocketRuntimePackage *embedded,
-  PocketRuntimeFailureLineage *failures
-) {
-#ifdef POCKETJS_CAPTURE
-  (void)failures;
-  return package_choice(embedded, 0, state);
-#else
-  char error[256] = {0};
-  PocketRuntimePackage *pending = NULL;
-  RuntimePendingResult pending_result = runtime_prepare_pending(
-    &pending,
-    error,
-    sizeof error
-  );
-  if (pending_result == RUNTIME_PENDING_READY) {
-    return package_choice(pending, pending->guest.package_hash, state);
-  }
-  if (pending_result == RUNTIME_PENDING_ERROR) {
-    runtime_write_error("prepare-pending", error);
-  }
-  if (state->active_hash != 0) {
-    PocketRuntimePackage *active = runtime_package_load_hash(
-      state->active_hash,
-      error,
-      sizeof error
-    );
-    if (active != NULL) return package_choice(active, state->active_hash, state);
-    runtime_write_error("load-active", error);
-    if (!runtime_failure_lineage_add(failures, state->active_hash)) {
-      return package_choice(embedded, 0, state);
-    }
-    return recovery_choice(state, embedded, failures);
-  }
-  return package_choice(embedded, 0, state);
-#endif
-}
-
-static bool boot_with_recovery(
-  GuestChoice *choice,
-  PocketRuntimeState *state,
-  PocketRuntimePackage *embedded,
-  PocketRuntimeFailureLineage *failures,
-  char *fatal,
-  size_t fatal_length
-) {
-  /* pending + active + last-good + embedded recovery are four distinct
-   * artifacts in the longest failure chain. */
-  for (uint32_t attempt = 0; attempt < 4; attempt += 1) {
-    char error[256] = {0};
-    if (boot_guest(choice->package, error, sizeof error)) {
-      runtime_write_status(state, choice->package, choice->commit_on_accept ? "candidate" : "booted");
-      return true;
-    }
-    runtime_write_error("boot-guest", error);
-    snprintf(fatal, fatal_length, "%s", error);
-    uint64_t rejected = choice->state_hash;
-    bool embedded_failed = choice->package == embedded;
-    release_choice(choice, embedded);
-    if (embedded_failed) return false;
-    if (!runtime_failure_lineage_add(failures, rejected)) {
-      snprintf(fatal, fatal_length, "recovery failure lineage exhausted");
-      return false;
-    }
-    *choice = recovery_choice(state, embedded, failures);
-  }
-  snprintf(fatal, fatal_length, "guest recovery attempts exhausted");
-  return false;
-}
-
-static void accept_guest(
-  GuestChoice *choice,
-  PocketRuntimeState *state,
-  PocketRuntimeFailureLineage *failures,
-  uint32_t frame
-) {
-  if (!choice->commit_on_accept || choice->submitted_frames == 0) return;
-  uint64_t accepted_hash = choice->next_active_hash;
-  char error[256] = {0};
-  if (!runtime_commit(
-        state,
-        choice->next_active_hash,
-        choice->next_last_good_hash,
-        error,
-        sizeof error
-      )) {
-    runtime_write_error("accept-guest", error);
-    fail(error);
-  }
-  choice->commit_on_accept = false;
-  runtime_failure_lineage_reset(failures);
-  runtime_write_status(state, choice->package, "accepted");
-  devserver_set_runtime(state, choice->package, "accepted", frame);
-  devserver_report_install("accepted", accepted_hash, "first PICA command list retired");
 }
 
 static void begin_frame_wait(uint32_t run_frame) {
@@ -597,72 +460,91 @@ static void begin_frame_wait(uint32_t run_frame) {
 #endif
 }
 
-static void recover_running_guest(
-  GuestChoice *choice,
-  PocketRuntimeState *state,
-  PocketRuntimePackage *embedded,
-  PocketRuntimeFailureLineage *failures,
-  uint32_t run_frame,
-  const char *phase,
-  const char *message
-) {
-  runtime_write_error(phase, message);
-  if (choice->package == embedded) fail(message);
-  uint64_t rejected = choice->state_hash;
-  bool candidate = choice->commit_on_accept;
-  if (!runtime_failure_lineage_add(failures, rejected)) {
-    fail("recovery failure lineage exhausted");
+#ifndef POCKETJS_CAPTURE
+static void release_package(PocketRuntimePackage *package, PocketRuntimePackage *embedded) {
+  if (package != NULL && package != embedded) runtime_package_free(package);
+}
+
+/* All callers own a GPU-idle frame. The prior accepted buffer stays resident
+ * until commit finishes, so restoring it never performs SD IO on this thread. */
+static void restore_guest(GuestChoice *choice, PocketRuntimePackage *embedded, const char *message, bool initialized) {
+  uint64_t rejected = choice->package->guest.package_hash;
+  if (initialized) teardown_guest();
+  release_package(choice->package, embedded);
+  choice->package = choice->previous ? choice->previous : embedded;
+  choice->previous = NULL;
+  choice->submitted_frames = 0;
+  char error[256] = {0};
+  if (!boot_guest(choice->package, error, sizeof error)) {
+    if (choice->package == embedded) fail(error);
+    uint64_t failed = choice->package->guest.package_hash;
+    release_package(choice->package, embedded);
+    choice->package = embedded;
+    if (!boot_guest(embedded, error, sizeof error)) fail(error);
+    devserver_recover(failed, message);
   }
+  choice->failed = true;
+  choice->rejected_hash = rejected;
+  devserver_set_runtime(NULL, choice->package, "recovered", 0);
+}
+
+static void recover_running_guest(GuestChoice *choice, PocketRuntimePackage *embedded,
+  uint32_t run_frame, const char *message) {
+  if (choice->package == embedded && !choice->pending) fail(message);
   begin_frame_wait(run_frame);
-  teardown_guest();
-  release_choice(choice, embedded);
-  *choice = recovery_choice(state, embedded, failures);
-  char fatal[256] = {0};
-  if (!boot_with_recovery(choice, state, embedded, failures, fatal, sizeof fatal)) fail(fatal);
-  devserver_set_runtime(state, choice->package, "recovered", run_frame);
-  devserver_report_install(
-    candidate ? "rejected" : "recovered",
-    rejected,
-    message
-  );
+  if (choice->pending == 1) {
+    devserver_finish_candidate(false, message);
+    choice->pending = 2;
+  } else if (!choice->pending) {
+    devserver_recover(choice->package->guest.package_hash, message);
+  }
+  restore_guest(choice, embedded, message, true);
   C3D_FrameEnd(0);
 }
 
-/* Swap a fully admitted candidate inside a GPU-idle C3D frame. This is the
- * one path used by the boot-time FTP chord and the in-process TCP transport. */
-static void install_candidate(
-  GuestChoice *choice,
-  PocketRuntimeState *state,
-  PocketRuntimePackage *embedded,
-  PocketRuntimeFailureLineage *failures,
-  PocketRuntimePackage *candidate,
-  uint32_t *run_frame,
-  char *error,
-  size_t error_length
-) {
-  uint64_t candidate_hash = candidate->guest.package_hash;
-  begin_frame_wait(*run_frame);
-  accept_guest(choice, state, failures, *run_frame);
-  teardown_guest();
-  release_choice(choice, embedded);
-  runtime_failure_lineage_reset(failures);
-  *choice = package_choice(candidate, candidate_hash, state);
-  if (!boot_with_recovery(choice, state, embedded, failures, error, error_length)) fail(error);
-  if (choice->state_hash == candidate_hash) {
-    if (choice->commit_on_accept) {
-      devserver_set_runtime(state, choice->package, "candidate", *run_frame);
-      devserver_report_install("staged", candidate_hash, "guest booted; waiting for retired frame");
-    } else {
-      devserver_set_runtime(state, choice->package, "booted", *run_frame);
-      devserver_report_install("accepted", candidate_hash, "package already active; guest restarted");
+static bool update_guest(GuestChoice *choice, PocketRuntimePackage *embedded, uint32_t run_frame) {
+  bool committed;
+  if (devserver_take_outcome(&committed)) {
+    if (committed && choice->failed) {
+      /* A failure during fsync cannot cancel a generation already committed.
+       * The worker appends a recovery generation after a fallback retires. */
+      devserver_recover(choice->rejected_hash, "guest failed during commit");
     }
-  } else {
-    devserver_set_runtime(state, choice->package, "recovered", *run_frame);
-    devserver_report_install("rejected", candidate_hash, error);
+    choice->pending = 0;
+    if (!committed && !choice->failed) {
+      begin_frame_wait(run_frame);
+      restore_guest(choice, embedded, "could not commit update", true);
+      C3D_FrameEnd(0);
+      return true;
+    }
+    release_package(choice->previous, embedded);
+    choice->previous = NULL;
+    devserver_set_runtime(NULL, choice->package, committed ? "accepted" : "recovered", run_frame);
   }
-  C3D_FrameEnd(0);
-  *run_frame += 1;
+  PocketRuntimePackage *candidate = NULL;
+  if (!choice->pending && devserver_take_candidate(&candidate)) {
+    begin_frame_wait(run_frame);
+    teardown_guest();
+    choice->previous = choice->package;
+    choice->package = candidate ? candidate : embedded;
+    choice->submitted_frames = 0;
+    choice->pending = 1;
+    choice->failed = false;
+    char error[256] = {0};
+    if (!boot_guest(choice->package, error, sizeof error)) {
+      devserver_finish_candidate(false, error);
+      choice->pending = 2;
+      restore_guest(choice, embedded, error, false);
+    } else {
+      devserver_set_runtime(NULL, choice->package, "candidate", run_frame);
+      devserver_report_install("staged", choice->package->guest.package_hash, "guest booted; awaiting first GPU frame");
+    }
+    C3D_FrameEnd(0);
+    return true;
+  }
+  return false;
 }
+#endif
 
 // ---------------------------------------------------------------------------
 // boot
@@ -709,55 +591,19 @@ int main(void) {
   if (embedded == NULL) fail(runtime_error);
   snprintf(embedded->origin, sizeof embedded->origin, "romfs:/app.pocket (recovery)");
 
-  PocketRuntimeState runtime_state = {0};
-#if !defined(POCKETJS_CAPTURE) && !defined(POCKETJS_OFFLOAD)
-  if (!runtime_storage_init(&runtime_state, runtime_error, sizeof runtime_error)) {
-    fail(runtime_error);
-  }
-  DevserverInitResult devserver_result = devserver_init(
-    &runtime_state,
-    runtime_error,
-    sizeof runtime_error
-  );
-  if (devserver_result == DEVSERVER_ERROR) {
-    /* Pairing/network failure must not make the accepted guest unbootable.
-     * Persist it for the next FTP inspection and continue without DevTools.
-     * The main loop retries: socInit fails transiently when the app starts
-     * while WiFi is still re-associating (e.g. right after ftpd exits). */
-    runtime_write_error("devserver-init", runtime_error);
-  }
-#endif
-  PocketRuntimeFailureLineage failures = {0};
   input_init();
 #ifdef POCKETJS_ASSET_PACK
   asset_pack_start();
 #endif
 #ifdef POCKETJS_OFFLOAD
-  GuestChoice guest = package_choice(embedded, 0, &runtime_state);
-  guest.commit_on_accept = false;
   offload_start();
-  if (!boot_guest(embedded, runtime_error, sizeof runtime_error)) fail(runtime_error);
-#else
-  GuestChoice guest = startup_choice(&runtime_state, embedded, &failures);
-  if (!boot_with_recovery(
-        &guest,
-        &runtime_state,
-        embedded,
-        &failures,
-        runtime_error,
-        sizeof runtime_error
-      )) {
-    fail(runtime_error);
-  }
-#ifndef POCKETJS_CAPTURE
-  devserver_set_runtime(
-    &runtime_state,
-    guest.package,
-    guest.commit_on_accept ? "candidate" : "booted",
-    0
-  );
 #endif
-#endif /* ordinary recovery boot */
+  GuestChoice guest = { .package = embedded };
+#ifndef POCKETJS_CAPTURE
+  devserver_set_runtime(NULL, embedded, "booted", 0);
+  if (!devserver_start(embedded)) fail("development worker creation failed");
+#endif
+  if (!boot_guest(embedded, runtime_error, sizeof runtime_error)) fail(runtime_error);
 
 #ifdef POCKETJS_CAPTURE
   mkdir(CAPTURE_DIR, 0777);
@@ -780,29 +626,12 @@ int main(void) {
     int32_t right_analog = ANALOG_CENTER;
     uint32_t touch = 0;
     size_t touch_count = scripted_touch(frame, &touch);
-#elif defined(POCKETJS_OFFLOAD)
-    if (input_offload_exit_requested()) break;
-    int32_t buttons = input_buttons();
-    int32_t analog = input_analog();
-    int32_t right_analog = input_right_analog();
-    uint32_t touch = 0;
-    size_t touch_count = input_touch(&touch);
 #else
     if (input_exit_requested()) break;
-    if (devserver_result == DEVSERVER_ERROR && run_frame % 300 == 299) {
-      /* One retry every ~5 s until the transient boot-time failure clears. */
-      devserver_result = devserver_init(&runtime_state, runtime_error, sizeof runtime_error);
-      if (devserver_result == DEVSERVER_READY) {
-        devserver_set_runtime(
-          &runtime_state,
-          guest.package,
-          guest.commit_on_accept ? "candidate" : "booted",
-          run_frame
-        );
-      }
-    }
     devserver_poll();
+#ifndef POCKETJS_OFFLOAD
     svcwire_pump();
+#endif
     if (input_devmenu_toggle_requested()) devmenu_toggle();
     if (devmenu_visible() && input_devmenu_close_requested()) devmenu_hide();
     if (devmenu_visible() && input_devmenu_screenshot_requested()) {
@@ -811,64 +640,8 @@ int main(void) {
       );
     }
     bool devmenu_blocks_guest = input_devmenu_blocks_guest(devmenu_visible());
-    uint64_t upload_hash = 0;
-    if (devserver_take_upload(&upload_hash)) {
-      PocketRuntimePackage *uploaded = NULL;
-      RuntimePendingResult result = runtime_prepare_file(
-        POCKET_RUNTIME_UPLOAD,
-        upload_hash,
-        &uploaded,
-        runtime_error,
-        sizeof runtime_error
-      );
-      if (result != RUNTIME_PENDING_READY) {
-        if (result == RUNTIME_PENDING_NONE) {
-          snprintf(
-            runtime_error,
-            sizeof runtime_error,
-            "%s disappeared before package admission",
-            POCKET_RUNTIME_UPLOAD
-          );
-        }
-        runtime_write_error("network-package", runtime_error);
-        devserver_report_install("rejected", upload_hash, runtime_error);
-      } else {
-        install_candidate(
-          &guest,
-          &runtime_state,
-          embedded,
-          &failures,
-          uploaded,
-          &run_frame,
-          runtime_error,
-          sizeof runtime_error
-        );
-        continue;
-      }
-    }
-    if (!devmenu_blocks_guest && input_reload_requested()) {
-      PocketRuntimePackage *pending = NULL;
-      RuntimePendingResult result = runtime_prepare_pending(
-        &pending,
-        runtime_error,
-        sizeof runtime_error
-      );
-      if (result == RUNTIME_PENDING_ERROR) {
-        runtime_write_error("manual-reload", runtime_error);
-      } else if (result == RUNTIME_PENDING_READY) {
-        install_candidate(
-          &guest,
-          &runtime_state,
-          embedded,
-          &failures,
-          pending,
-          &run_frame,
-          runtime_error,
-          sizeof runtime_error
-        );
-        continue;
-      }
-    }
+    if (!devmenu_blocks_guest && input_reload_requested()) devserver_reload();
+    if (update_guest(&guest, embedded, run_frame)) { run_frame += 1; continue; }
     int32_t buttons = devmenu_blocks_guest ? 0 : input_buttons();
     int32_t analog = devmenu_blocks_guest ? ANALOG_CENTER : input_analog();
     int32_t right_analog = devmenu_blocks_guest ? ANALOG_CENTER : input_right_analog();
@@ -896,19 +669,11 @@ int main(void) {
     );
     if (hit_count != touch_count) fail("auxiliary touch hit resolution failed");
     if (!qjs_frame(buttons, analog, &touch, &touch_hit, touch_count, right_analog, input_elapsed_us)) {
-#if defined(POCKETJS_CAPTURE) || defined(POCKETJS_OFFLOAD)
+#ifdef POCKETJS_CAPTURE
       fail(qjs_last_error());
 #else
       snprintf(runtime_error, sizeof runtime_error, "%s", qjs_last_error());
-      recover_running_guest(
-        &guest,
-        &runtime_state,
-        embedded,
-        &failures,
-        run_frame,
-        "guest-frame",
-        runtime_error
-      );
+      recover_running_guest(&guest, embedded, run_frame, runtime_error);
       run_frame += 1;
       continue;
 #endif
@@ -933,11 +698,12 @@ int main(void) {
       run_frame
 #endif
     );
-#if !defined(POCKETJS_CAPTURE) && !defined(POCKETJS_OFFLOAD)
-    /* Reaching the next FrameBegin proves the candidate's first submitted list
-     * retired without tripping the GPU watchdog. Only now does it become the
-     * active generation on SD. */
-    accept_guest(&guest, &runtime_state, &failures, run_frame);
+#ifndef POCKETJS_CAPTURE
+    /* FrameBegin retired the candidate's previous GPU submission. */
+    if (guest.pending == 1 && guest.submitted_frames > 0) {
+      devserver_finish_candidate(true, NULL);
+      guest.pending = 2;
+    }
 #endif
     offload_cpu_start = svcGetSystemTick();
     gfx_begin_frame();
@@ -949,19 +715,11 @@ int main(void) {
           AUX_VIEW_W,
           AUX_VIEW_H
         )) {
-#if defined(POCKETJS_CAPTURE) || defined(POCKETJS_OFFLOAD)
+#ifdef POCKETJS_CAPTURE
       fail("PICA200 surface preparation failed");
 #else
       C3D_FrameEnd(0);
-      recover_running_guest(
-        &guest,
-        &runtime_state,
-        embedded,
-        &failures,
-        run_frame + 1,
-        "guest-render",
-        "PICA200 surface preparation failed"
-      );
+      recover_running_guest(&guest, embedded, run_frame + 1, "PICA200 surface preparation failed");
       run_frame += 2;
       continue;
 #endif
@@ -984,7 +742,7 @@ int main(void) {
       (unsigned)(offload_ui_ticks * 1000000 / SYSCLOCK_ARM11),
       (unsigned)((offload_prepared_at - offload_cpu_start) * 1000000 / SYSCLOCK_ARM11),
       (unsigned)((svcGetSystemTick() - offload_prepared_at) * 1000000 / SYSCLOCK_ARM11));
-#if !defined(POCKETJS_CAPTURE) && !defined(POCKETJS_OFFLOAD)
+#ifndef POCKETJS_CAPTURE
     guest.submitted_frames += 1;
     devserver_set_frame_stats(
       run_frame,
@@ -1019,9 +777,6 @@ int main(void) {
         devserver_report_log("error", "screenshot: linear buffer allocation failed");
       }
     }
-    run_frame += 1;
-#endif
-#if defined(POCKETJS_OFFLOAD) && !defined(POCKETJS_CAPTURE)
     run_frame += 1;
 #endif
 
@@ -1065,11 +820,14 @@ int main(void) {
   input_shutdown();
   teardown_guest();
   C3D_FrameEnd(0);
+#ifndef POCKETJS_CAPTURE
+  devserver_shutdown();
+  release_package(guest.previous, embedded);
+#endif
   release_choice(&guest, embedded);
   runtime_package_free(embedded);
 #ifndef POCKETJS_CAPTURE
   svcwire_shutdown();
-  devserver_shutdown();
   soc_shutdown();
   devmenu_shutdown();
 #endif

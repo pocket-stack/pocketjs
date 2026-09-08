@@ -13,6 +13,7 @@
  */
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 /* Verified target variant borrowed from a caller-owned `.pocket` buffer. */
@@ -26,6 +27,9 @@ typedef struct {
   uint64_t package_hash;
   uint64_t variant_hash;
 } PocketGuestPackage;
+
+/* No UI state or allocation: compare admitted package identity sections. */
+bool pocket_package_same_app(const uint8_t *a, size_t a_len, const uint8_t *b, size_t b_len);
 
 /* 0 = admitted. The package footer, target, host ABI, identity, plan and
  * NUL-terminated JS section are all checked before success. */

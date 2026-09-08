@@ -152,7 +152,7 @@ PocketRuntimePackage *runtime_package_load(
     return NULL;
   }
   long raw_length = ftell(file);
-  if (raw_length <= 0 || (unsigned long)raw_length > MAX_PACKAGE_BYTES ||
+  if (raw_length <= 0 || (unsigned long)raw_length > (strncmp(path, "romfs:/", 7) == 0 ? MAX_PACKAGE_BYTES : POCKET_RUNTIME_UPDATE_MAX_BYTES) ||
       fseek(file, 0, SEEK_SET) != 0) {
     set_error(error, error_length, "%s has invalid package size %ld", path, raw_length);
     fclose(file);
@@ -244,6 +244,26 @@ RuntimePendingResult runtime_prepare_pending(
   return runtime_prepare_file(POCKET_RUNTIME_PENDING, 0, out, error, error_length);
 }
 
+/* Compare an existing blob with the already verified candidate in bounded
+ * chunks. A duplicate upload must not allocate a second whole package. */
+static bool matches_package(const char *path, const PocketRuntimePackage *package) {
+  FILE *file = fopen(path, "rb");
+  if (file == NULL) return false;
+  uint8_t chunk[4096];
+  bool same = true;
+  for (size_t offset = 0; offset < package->length;) {
+    size_t count = package->length - offset;
+    if (count > sizeof chunk) count = sizeof chunk;
+    if (fread(chunk, 1, count, file) != count || memcmp(chunk, package->bytes + offset, count) != 0) {
+      same = false; break;
+    }
+    offset += count;
+  }
+  if (same) same = fgetc(file) == EOF && !ferror(file);
+  if (fclose(file) != 0) same = false;
+  return same;
+}
+
 RuntimePendingResult runtime_prepare_file(
   const char *path,
   uint64_t expected_hash,
@@ -285,18 +305,11 @@ RuntimePendingResult runtime_prepare_file(
   char destination[192];
   blob_path(pending->guest.package_hash, destination, sizeof destination);
   if (stat(destination, &info) == 0) {
-    char duplicate_error[192] = {0};
-    PocketRuntimePackage *existing = runtime_package_load_hash(
-      pending->guest.package_hash,
-      duplicate_error,
-      sizeof duplicate_error
-    );
-    if (existing == NULL) {
-      set_error(error, error_length, "existing blob is invalid: %s", duplicate_error);
+    if (!matches_package(destination, pending)) {
+      set_error(error, error_length, "existing blob is invalid or differs from the admitted package");
       runtime_package_free(pending);
       return RUNTIME_PENDING_ERROR;
     }
-    runtime_package_free(existing);
     if (remove(path) != 0) {
       set_error(error, error_length, "remove duplicate staged package failed (%d)", errno);
       runtime_package_free(pending);

@@ -28,7 +28,8 @@ core/                 pocketjs-3ds-core: the ui_* C ABI over pocketjs-core
 include/pocket_core.h the C header for the above
 src/main.c            process boot, reusable guest lifecycle, frame loop
 src/runtime.c         .pocket admission, immutable storage, active/rollback state
-src/devserver.c       discovery, paired TCP pump, uploads, screenshots, receipts
+src/devserver.c       background worker, bounded UI mailboxes, update transactions
+src/dev_transport.c   worker-owned discovery, paired TCP, uploads and screenshots
 src/dev_protocol.c    byte-order-safe development wire encoding and admission
 src/devmenu.c         Runtime-owned bottom-screen development menu
 src/gfx.c             the DrawList -> citro3d walker
@@ -85,8 +86,11 @@ curl --ftp-create-dirs -T dist/3ds/pocket3ds-demo-main.pocket \
   ftp://<device>/pocketjs/runtime/apps/<runtime-slot>/pending.pocket
 ```
 
-The runtime verifies the package footer, exact `3ds-dev` target, host ABI,
-identity, resolved plan and NUL-terminated JS section before it can boot. A
+The worker verifies the package footer, exact `3ds-dev` target, host ABI and
+NUL-terminated JS section before it can boot. **Application id, output name and
+resolved native plan must match the embedded package.** SD updates are limited
+to **8 MiB per package**; changes to native capabilities or build configuration
+require installing a new `.3dsx`. A
 complete pending package is renamed to
 `sdmc:/pocketjs/runtime/apps/<runtime-slot>/packages/<hash>.pocket`; package
 blobs are immutable.
@@ -110,7 +114,8 @@ loads the previous active package, then last-good, then the embedded ROMFS
 recovery package. Power loss before the generation marker leaves the previous
 generation active.
 
-`L+R+X` requests the same package check at a GPU-idle frame boundary. The full
+`L+R+X` requests the same package check on the background worker. A verified
+candidate moves to the UI at a GPU-idle frame boundary. The full
 chord is removed from the application's button mask. This supports an emulator
 or direct SD writer; a separate 3DS ftpd cannot run concurrently with Pocket
 Runtime.
@@ -162,9 +167,10 @@ Pair once while ftpd is running, then restart Pocket Runtime:
 bun run 3ds:dev pair --host <device-ip> --ftp-port 5000
 ```
 
-**The pairing command generates a random 32-byte key, stores the local copy
-under `.pocket/3ds/devices/`, uploads the device copy, and verifies the FTP
-readback byte for byte.** The Runtime does not open a listener without the key,
+**The pairing command adopts an existing device key into
+`.pocket/3ds/devices/`.** If the device has no key, it installs a random 32-byte
+key and verifies the FTP readback byte for byte. Only `--rotate` replaces an
+existing device key, preserving pairings across separate application checkouts. The Runtime does not open a listener without the key,
 and a client must prove the complete key before any command or package byte is
 accepted.
 
@@ -214,9 +220,49 @@ active guest.
 **The connection updates the guest `.pocket`, not the running `.3dsx` or CIA
 host binary.** A native host or ABI change still requires deploying a new
 `.3dsx`/CIA and restarting it; the embedded `.pocket` remains its final recovery
-guest. Keeping that boundary lets ordinary app, asset and resolved-plan changes
-use the in-process loop without letting a guest replace the process that admits
-and rolls it back.
+guest. App JS and baked assets can change within the embedded native plan; a
+different plan requires a native reinstall.
+
+**Development updates work alongside `io.offload` and SD resource packs.**
+A dedicated native worker owns development sockets, pairing-file reads, package
+uploads, hashing, immutable-blob preparation and generation-marker writes. The
+UI thread copies bounded mailboxes, boots the admitted guest and renders. An
+upload or `fsync` cannot make it wait for the development worker. Offload and
+asset-pack workers continue independently; deterministic capture builds leave
+the development worker disabled.
+
+**Guest replacement restarts QuickJS and the UI tree.** It does not preserve
+component state. Replacement happens after the previous GPU submission retires;
+shutdown fences old offload and SD requests before freeing the old JS context
+and GPU resources. Debug control records carry a guest generation so queued
+commands cannot execute against the next guest. The old accepted package stays
+resident until the new guest's first GPU frame retires and the worker commits
+its generation. Commit failure restores that resident package without a UI
+thread SD read. Later guest failures load last-good asynchronously, with the
+embedded guest available during recovery.
+
+The mailboxes hold **four 16 KiB input records and four 64 KiB output records**,
+plus one runtime snapshot and one candidate transaction. A screenshot uses one
+pair of UI-owned linear buffers; the worker borrows them until transmission or
+disconnect completes. Large screenshot scratch storage stays outside the
+worker's **32 KiB stack**; the build rejects individual worker stack frames over
+8 KiB.
+
+To exercise a running console or emulator, use an already paired, compatible
+production package. The test temporarily installs diagnostic variants and
+restores the supplied package:
+
+```sh
+bun tests/e2e/3ds-hot-update.ts --host <device-ip> \
+  --key .pocket/3ds/devices/<device-ip>-8131.key \
+  --package dist/3ds/<output>.pocket --out dist/3ds/update-qa
+```
+
+It checks frame advancement during a deliberately slow upload, native-plan and
+hash rejection, eval and first-frame rejection, recovery after a later frame
+fails, and an authenticated two-screen screenshot. Host tests additionally
+stall admission and commit, force commit failure, and check queue, screenshot
+and buffer ownership with ASan/UBSan.
 
 Two build-time facts are load-bearing:
 
@@ -235,8 +281,9 @@ Two build-time facts are load-bearing:
 `src/svcwire.c` implements spec ops 30..32 (`svcOpen`/`svcPoll`/`svcSend`)
 over the **SVC WIRE (PKNT) protocol** (`contracts/spec/spec.ts`,
 `engine/core/src/wire.rs`) — the transport the Vita host speaks in
-`hosts/vita/src/net.rs`, reduced to the devserver.c shape: non-blocking
-sockets pumped once per frame by the main thread, no threads. The device
+`hosts/vita/src/net.rs`. This legacy channel uses non-blocking sockets pumped
+by the main thread in builds without `io.offload`; the offload capability uses
+its own native worker instead. The device
 listens for the companion's once-a-second UDP beacon on port 8621 (or reads a
 `sdmc:/pocketjs/host.txt` override, one line `a.b.c.d[:port]`, for
 broadcast-hostile networks — a failed override alternates back to beacon
