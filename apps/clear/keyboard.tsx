@@ -11,6 +11,10 @@
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate, jump } from "@pocketjs/framework/animation";
 import { shallowRef } from "vue";
+import { remoteText, hasCompanion } from "./remote-text.tsx";
+import type { ImeState } from "@pocketjs/framework/ime";
+import { SCREEN_H } from "./metrics.ts";
+import { IME_BAR_H } from "./keyboard-metrics.ts";
 import { KB_GAP, KB_H, KB_PAD, KB_ROW_H, KB_W } from "./keyboard-metrics.ts";
 import { KB_LAYERS, kbKeyAt, type KbKey, type KbLayerName } from "./kb-layout.ts";
 
@@ -39,12 +43,19 @@ export interface KeyboardHandlers {
   onInsert(ch: string): void;
   onBackspace(): void;
   onEnter(): void;
+  onMode?(): void;
+  onCandidate?(index: number): void;
+  onPage?(direction: number): void;
+  onCaret?(direction: number): void;
+  onCancelComposition?(): void;
 }
 
 const LAYER_NAMES: readonly KbLayerName[] = ["lower", "upper", "numbers", "symbols"];
 
 export interface Keyboard {
   view: JSX.Element;
+  height(): number;
+  setIme(state: ImeState, chinese: boolean): void;
   /** Dock/undock the panel (animated). */
   setOpen(open: boolean): void;
   isOpen(): boolean;
@@ -72,6 +83,10 @@ const CAP_COLORS: Record<CapKind, [string, string, string, string]> = {
 };
 
 export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
+  const imeHeight = hasCompanion() ? IME_BAR_H : 0;
+  const imeStatus = shallowRef("EN");
+  const preedit = shallowRef("");
+  const candidates = Array.from({ length: 5 }, () => shallowRef(""));
   const layerNodes = new Map<KbLayerName, NodeMirror>();
   const keyNodes = new Map<string, NodeMirror>();
   let panel: NodeMirror | null = null;
@@ -138,7 +153,8 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
         handlers.onEnter();
         break;
       case "globe":
-        break; // one keyboard only — the flash is the whole effect
+        handlers.onMode?.();
+        break;
     }
   }
 
@@ -219,9 +235,17 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
         if (node) panel = node;
       }}
       class="absolute left-0 right-0 bottom-0 z-40 bg-gradient-to-b from-[#17191d] to-[#0d0f12]"
-      style={{ height: KB_H, translateY: KB_H + POPUP_H + 8 }}
+      style={{ height: KB_H, translateY: KB_H + POPUP_H + IME_BAR_H + 8 }}
     >
       <View class="absolute left-0 right-0 top-0 bg-[#000000]" style={{ height: 1 }} />
+      {imeHeight > 0 ? <View class="absolute left-0 right-0 bg-[#1a1d21]" style={{ insetT: -imeHeight, height: imeHeight }}>
+        <Text class="absolute left-[6] top-[4] text-sm text-[#b3bbc6]">{imeStatus.value}</Text>
+        <View class="absolute left-[42] top-[4]">{remoteText(() => preedit.value, KB_W - 140, 16)}</View>
+        <Text class="absolute right-[5] top-[4] text-sm text-white">{"x    <  >"}</Text>
+        {candidates.map((candidate, i) => <View class="absolute overflow-hidden" style={{ insetL: 4 + i * (KB_W - 8) / 5, insetT: 30, width: 60, height: 28 }}>
+          {remoteText(() => candidate.value, 60, 16)}
+        </View>)}
+      </View> : null}
       {LAYER_NAMES.map((name) => renderLayer(name))}
       <View
         nodeRef={(node) => {
@@ -246,20 +270,36 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
 
   return {
     view,
+    height: () => KB_H + imeHeight,
+    setIme(state, chinese) {
+      imeStatus.value = chinese ? "PY" : "EN";
+      preedit.value = !chinese ? "" : !state.connected ? "Offline (queued)" : state.error ? "Retry / x to clear" :
+        state.preedit ? `${state.preedit.slice(0, state.caret)}|${state.preedit.slice(state.caret)}${state.pending ? "..." : ""}` : state.pending ? "..." : "Pinyin";
+      for (let i = 0; i < 5; i++) candidates[i].value = chinese && !state.pending ? state.candidates[i] ?? "" : "";
+    },
     setOpen(next: boolean): void {
       if (next === open) return;
       open = next;
       if (open) applyLayer("lower");
       if (popupNode) jump(popupNode, "opacity", 0);
       if (panel) {
-        animate(panel, "translateY", open ? 0 : KB_H + POPUP_H + 8, { dur: 200, easing: "out" });
+        animate(panel, "translateY", open ? 0 : KB_H + POPUP_H + IME_BAR_H + 8, { dur: 200, easing: "out" });
       }
     },
     isOpen: () => open,
     rect() {
-      return open ? { x: 0, y: 480 - KB_H, w: KB_W, h: KB_H } : null;
+      return open ? { x: 0, y: SCREEN_H - KB_H - imeHeight, w: KB_W, h: KB_H + imeHeight } : null;
     },
     pressAt(x: number, y: number, screenH: number): void {
+      const barY = y - (screenH - KB_H - imeHeight);
+      if (imeHeight && barY >= 0 && barY < imeHeight) {
+        if (barY >= 28) handlers.onCandidate?.(Math.max(0, Math.min(4, Math.floor((x - 4) / ((KB_W - 8) / 5)))));
+        else if (x > KB_W - 50) handlers.onPage?.(x < KB_W - 24 ? -1 : 1);
+        else if (x > KB_W - 96) handlers.onCancelComposition?.();
+        else if (x < 45) handlers.onMode?.();
+        else handlers.onCaret?.(x < 158 ? -1 : 1);
+        return;
+      }
       const pos = kbKeyAt(KB_LAYERS[layer], x, y - (screenH - KB_H));
       if (pos) press(pos.row, pos.col);
     },

@@ -19,6 +19,10 @@
 void pocket_bench_stage(int stage);
 #endif
 
+#ifdef POCKET_OFFLOAD_POSIX
+void pocket_runtime_offload_key(const char *path);
+#endif
+
 int pocket_runtime_boot(
   const char *java_script,
   size_t java_script_length,

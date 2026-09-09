@@ -549,7 +549,7 @@ export default () => {
     region: {
       rect: () =>
         screenName === "todos" && editor.editing()
-          ? { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H - KB_H }
+          ? { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H - kb.height() }
           : null,
     },
     onTap: () => editor.close(true),
@@ -595,6 +595,7 @@ export default () => {
   }
 
   onFrame(() => {
+    editor.step();
     if (screenName === "todos") {
       scroller.step();
       const off = scroller.offset();

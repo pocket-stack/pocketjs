@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-09-09T17:41:39.030938+00:00",
+  "devices": {
+    "ipodtouch4": {
+      "model": "iPod4,1",
+      "os": "6.1.6 (10B500)",
+      "build": {
+        "schema": 1,
+        "buildId": "a7550da58c6494e6f8770f35ec7698d2",
+        "bundleId": "dev.pocket-stack.clear",
+        "target": "ipodtouch4-dev",
+        "hostAbi": 8,
+        "deploymentTarget": "6.0",
+        "files": {
+          "PocketJSiPodTouch4": "5f2b1cd5e97f1991a24b1692ae9149064eab9aa784b5688d39111be116811bb1",
+          "Info.plist": "9abdfd5f61da1714034db59e273541bde902d38f3f0cb9894ac55320ebdebc76",
+          "PkgInfo": "82502191c9484b04d685374f9879a0066069c49b8acae7a04b01d38d07e8eca0",
+          "PocketClassic-User-v7.png": "a77ed6a31b834eaabbd786306d18d587564ec23f94e4851a533b148788cb362a",
+          "PocketClassic-User-v7@2x.png": "e2085f9870ea14526396b417bbe1d96268679f85401be437e7103a4161dbdfa7",
+          "Default@2x.png": "eb9c2db2b5af9daaaa668351e2605f699d6eadc24b5ed074455eadcf805c7b8e",
+          "Default-568h@2x.png": "6a2b5e6a609381490c4d47f1ff9179784d9091aa34d3ba332eb38c13850db882"
+        },
+        "viewport": {
+          "logical": [
+            320,
+            480
+          ],
+          "physical": [
+            640,
+            960
+          ],
+          "rasterDensity": 2
+        }
+      },
+      "installReadback": true,
+      "runtime": {
+        "schema": 2,
+        "build_id": "a7550da58c6494e6f8770f35ec7698d2",
+        "state": "running",
+        "pid": 1447,
+        "written_at": 1788975396,
+        "heartbeat": 340,
+        "guest_frames": 18919,
+        "completed_touch_sequences": 32,
+        "action_name": "clear_gesture",
+        "action_value": 2,
+        "action_sequence": 2,
+        "renderer": "gles1",
+        "clock": "displaylink",
+        "raster_density": 2,
+        "drawable_width": 640,
+        "drawable_height": 960,
+        "error": ""
+      }
+    },
+    "moto-g-play": {
+      "model": "Moto G Play 2024 (fogona)",
+      "os": "Android 14",
+      "apk": {
+        "path": "dist/moto-g-play/pocket-clear.apk",
+        "bytes": 950983,
+        "sha256": "025957c2e8c9dccc912ac4429125d13788ba847ffc39210bb1d14389f652b7f3"
+      },
+      "viewport": {
+        "logical": [
+          360,
+          800
+        ],
+        "physical": [
+          720,
+          1600
+        ],
+        "presentation": "native",
+        "rasterDensity": 2
+      },
+      "install": {
+        "packageId": "dev.pocket_stack.clear",
+        "apkSha256": "025957c2e8c9dccc912ac4429125d13788ba847ffc39210bb1d14389f652b7f3",
+        "readback": true
+      },
+      "runtime": {
+        "state": "running",
+        "renderer": "gles2",
+        "frames": "7260",
+        "touch_sequences": "34",
+        "logical_width": "360",
+        "logical_height": "800",
+        "surface_width": "720",
+        "surface_height": "1600",
+        "action_name": "clear_gesture",
+        "action_value": "4"
+      }
+    }
+  },
+  "interaction": {
+    "method": {
+      "ipodtouch4": "GraphicsServices events delivered through UIKit",
+      "moto-g-play": "ADB input events delivered through Android MotionEvent"
+    },
+    "composition": [
+      "clear the seed title",
+      "type ni",
+      "stop the Mac companion",
+      "type hao while offline",
+      "restart the companion",
+      "observe ni hao and candidate 你好",
+      "select first candidate",
+      "observe exactly one 你好 in the title",
+      "press Return to close editor"
+    ],
+    "fingerTest": false
+  },
+  "screenshots": {
+    "ipod-commit.png": "c29071c86365f212fbbf74dc2a44d3869fdee756fd70d0da7603f9e8362c1898",
+    "moto-commit.png": "b69afa2b0660ac7c25347f011319691951d8bb8e398c8a0731ac1c455810af7b",
+    "ipod-candidates.png": "4f9f046d03efc356d6ab4198a7605a5999a54c5d33962fbbd9e840b7aa2747dc",
+    "moto-candidates.png": "7bffd228f62288ce5c2d718a211d27c9101224e7a690d595cd0676376ed56330",
+    "ipod-offline.png": "0805d1b9eb0eb17bd0ab094a037abc9a38d8e6907cf685e0d3f79852a6b31969",
+    "moto-offline.png": "72cc738a8cad8920277f8a492b0cd7cdee4ebae42182b0026cac8b836bc60f1b"
+  }
+}

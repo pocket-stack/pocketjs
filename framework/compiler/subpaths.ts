@@ -58,6 +58,7 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
   classic: { file: { solid: "framework/src/classic.ts" } },
   "offload/provider": { file: "tools/offload-provider.ts" },
   "offload/capabilities": { file: "tools/offload-capabilities.ts" },
+  ime: { file: "framework/src/ime.ts", aliases: TWINS },
   offload: { file: "framework/src/offload.ts", aliases: TWINS },
   "resource-state": { file: "framework/src/resource-state.ts", aliases: TWINS },
   "resource-cache": { file: "framework/src/resource-cache.ts", aliases: TWINS },

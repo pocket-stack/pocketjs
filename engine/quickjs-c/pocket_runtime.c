@@ -10,6 +10,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#ifdef POCKET_OFFLOAD_POSIX
+#include "offload_qjs.h"
+#endif
 
 #ifndef POCKETJS_TARGET_ID
 #error "POCKETJS_TARGET_ID must come from the verified ResolvedBuildPlan"
@@ -488,6 +491,9 @@ static int add_host_operation(
 }
 
 static int install_host(int width, int height) {
+#ifdef POCKET_OFFLOAD_POSIX
+  if (!install_offload(context, global)) return 0;
+#endif
   JSValue ui = JS_NewObject(context);
   if (JS_IsException(ui)) return 0;
   if (!add_host_operation(context, ui, "createNode", 1, HostCreateNode) ||
@@ -575,6 +581,9 @@ static int drain_jobs(void) {
 }
 
 void pocket_runtime_shutdown(void) {
+#ifdef POCKET_OFFLOAD_POSIX
+  pocket_offload_stop();
+#endif
   if (context != 0) {
 #if defined(POCKET_RUNTIME_HARNESS)
     if (!JS_IsUndefined(harness_function)) JS_FreeValue(context, harness_function);
@@ -703,6 +712,9 @@ static int run_frame(
 ) {
   unsigned int tick;
   unsigned int index;
+#ifdef POCKET_OFFLOAD_POSIX
+  offload_submissions = offload_deliveries = offload_uploads = 0;
+#endif
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
 #ifdef POCKET_SVC_WIRE
   /* Bounded, non-blocking: discovery, connect, rx and tx progress once per
