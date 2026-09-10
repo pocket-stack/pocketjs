@@ -23,11 +23,17 @@ The provider issues a 64-character ticket with a 60-second expiry, admits it
 once, and limits outstanding tickets plus active streams to four. Disconnect
 aborts the producer. Closing the server closes authenticated and pending peers.
 
-The current wire adapter accepts **512×256 H.264 access units without B-frames
+The current wire adapter accepts **512×256 H.264 access units with one VCL
+slice per frame, without B-frames,
 and 22,050 Hz stereo IMA ADPCM blocks**. Apps fit source aspect ratio in display
 pixels before mapping into the decoder plane. They can choose bitrate within
 the native packet limit. This format is an implementation of the generic
 playback capability, not a capability ID.
+
+Providers using x264's zero-latency tune must disable sliced threading and
+select one encoder thread to preserve this frame boundary. `slices=1` alone
+can produce several slices per frame. The 3DS adapter submits each slice to
+MVD as a complete frame; partial frame slices are outside this wire profile.
 
 | Boundary | Limit |
 | --- | --- |
