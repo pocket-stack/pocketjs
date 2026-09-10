@@ -423,7 +423,7 @@ export function TextField(props: TextFieldProps): SolidJSX.Element {
         return Text({
           get class() {
             return osk.isOpen() || props.value()
-              ? "text-sm text-slate-100"
+              ? props.theme === "light" ? "text-sm text-slate-800" : "text-sm text-slate-100"
               : "text-sm text-slate-500";
           },
           get children() {
