@@ -348,7 +348,7 @@ async function preflightContainer(): Promise<string> {
  * owns the choice when it exists, otherwise plain nightly. -Z build-std needs
  * rust-src for whichever one wins.
  */
-async function preflightRust(): Promise<{ rustup: string; toolchain: string }> {
+async function preflightRust(): Promise<{ rustup: string; toolchain: string; rustcPath: string }> {
   const rustup = Bun.which("rustup") ?? `${homedir()}/.cargo/bin/rustup`;
   if (!existsSync(rustup)) {
     throw new Error(
@@ -381,7 +381,9 @@ async function preflightRust(): Promise<{ rustup: string; toolchain: string }> {
         `  rustup component add rust-src --toolchain ${toolchain}`,
     );
   }
-  return { rustup, toolchain };
+  const compiler = await capture(rustup, ["which", "--toolchain", toolchain, "rustc"]);
+  if (compiler.exitCode !== 0) throw new Error("PocketJS 3ds: cannot resolve the pinned Rust compiler");
+  return { rustup, toolchain, rustcPath: compiler.stdout.trim() };
 }
 
 // ---------------------------------------------------------------------------
@@ -687,7 +689,7 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
   if (args.pocketOnly) return pocketOutput;
 
   const imageId = await preflightContainer();
-  const { rustup, toolchain } = await preflightRust();
+  const { rustup, toolchain, rustcPath } = await preflightRust();
 
   // 2. the Rust core staticlib, on macOS
   console.log(`PocketJS 3ds: cargo build --release (${RUST_TARGET}, ${toolchain})`);
@@ -695,6 +697,7 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
     .cwd(coreDirectory)
     .env({
       ...process.env,
+      RUSTC: rustcPath,
       ...hostBuildEnvironment(inputs, {
         outputDirectory: args.outputDir,
         embedApp: true,
