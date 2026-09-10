@@ -211,6 +211,7 @@ static void play(const Command *cmd) {
     if (size && !receive_exact(fd,packet,size)) { fail(ERR_SOCKET,errno); break; }
     if (header[0]==1 && !decode_video(&config,packet,size,pts)) break;
     if (header[0]==2 && !put_audio(packet,size,pts)) break;
+    if (!atomic_load(&decoded) && (header[0]==1 || header[0]==2) && pts-origin_position>2000) { fail(ERR_MVD_DECODE,0); break; }
     if (header[0]==4) { fail(ERR_REMOTE,0); break; }
     if(header[0]==1 || header[0]==2) {
       char credit=1; bool acknowledged=false;
