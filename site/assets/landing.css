@@ -452,4 +452,16 @@
   color:var(--muted);text-align:center;opacity:0;transition:opacity .3s ease}
 .pg-stage.is-ready .stage-hint{opacity:1}
 .pg-stage.has-error .stage-hint{display:none}
+.handheld-grid{display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:4rem}
+.handheld-stage{min-width:0}
+.handheld-stage h3{font-size:1.1rem;margin:0 0 .5rem}
+.handheld-stage figcaption p{color:var(--ink-2);font-size:.85rem;line-height:1.65;max-width:34em;min-height:3.3em}
+.handheld-stage .pg-stage__viewport{height:420px;aspect-ratio:auto}
+.handheld-controls{display:flex;align-items:center;justify-content:center;gap:.45rem;flex-wrap:wrap;margin-top:.7rem}
+.handheld-controls button{font:inherit;font-size:.72rem;background:transparent;color:var(--ink-2);border:1px solid var(--line);border-radius:5px;padding:.4rem .65rem;cursor:pointer}
+.handheld-controls button:hover,.handheld-controls button:focus-visible{color:var(--ink);border-color:var(--ink-2)}
+.handheld-controls label{display:flex;gap:.4rem;align-items:center;font-size:.7rem;color:var(--ink-2)}
+.handheld-controls input{width:85px;accent-color:var(--ink-2)}
+.handheld-stage:not(.is-ready) .handheld-controls{visibility:hidden}
+@media(max-width:760px){.handheld-grid{grid-template-columns:1fr;gap:2.5rem}.handheld-stage .pg-stage__viewport{height:380px}}
 .spon-cta{margin-top:1.4rem;display:inline-flex;gap:.5rem;align-items:center}

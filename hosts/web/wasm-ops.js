@@ -39,6 +39,10 @@ export async function createWasmUi(wasm, options = {}) {
   let viewportWidth = integerInRange(options.width ?? FB_W, "viewport width", 1, 32000);
   let viewportHeight = integerInRange(options.height ?? FB_H, "viewport height", 1, 32000);
   const initialDensity = integerInRange(options.rasterDensity ?? 1, "rasterDensity", 1, 255);
+  const auxiliary = options.auxiliary ? options.auxiliary.map((n) =>
+    integerInRange(n, "auxiliary dimension", 1, 4096)) : null;
+  if (auxiliary && auxiliary.length !== 2) throw new RangeError("auxiliary requires width and height");
+  let auxiliaryRoot = 0;
   // node id -> { handle, focused }. The core owns geometry/painter order;
   // this mirror gives a browser AppSupervisor the complete lifecycle binding
   // set, including surfaces currently hidden by shell opacity.
@@ -52,6 +56,11 @@ export async function createWasmUi(wasm, options = {}) {
     if (ex.ui_set_viewport) ex.ui_set_viewport(viewportWidth, viewportHeight);
     else if (viewportWidth !== FB_W || viewportHeight !== FB_H) {
       throw new Error("this pocketjs.wasm predates ui_set_viewport — rebuild it: bun tools/wasm.ts");
+    }
+    if (auxiliary) {
+      if (!ex.ui_create_auxiliary_surface) throw new Error("Rebuild pocketjs.wasm for auxiliary output");
+      auxiliaryRoot = ex.ui_create_auxiliary_surface(...auxiliary);
+      if (!auxiliaryRoot) throw new Error("Could not create auxiliary output");
     }
   };
   init(initialDensity);
@@ -73,6 +82,9 @@ export async function createWasmUi(wasm, options = {}) {
   /** @type {import("../../framework/src/host.ts").HostOps} */
   const ops = {
     __viewport: { w: viewportWidth, h: viewportHeight },
+    get __auxiliarySurface() {
+      return auxiliary ? { root: auxiliaryRoot, w: auxiliary[0], h: auxiliary[1] } : undefined;
+    },
     createNode: (type) => ex.ui_create_node(type),
     destroyNode: (id) => {
       compositorBindings.delete(id);
@@ -117,6 +129,10 @@ export async function createWasmUi(wasm, options = {}) {
     debugPause: (on) => ex.ui_debug_pause(on ? 1 : 0),
     debugStep: () => ex.ui_debug_step(),
   };
+  if (auxiliary) {
+    ops.hitTestAuxiliary = (x, y) => ex.ui_hit_test_auxiliary(x, y);
+    ops.hitTestBoundsAuxiliary = (x, y) => ex.ui_hit_test_bounds_auxiliary(x, y);
+  }
 
   // Streamed-texture ops (spec ops 24/25) — feature-detected so a stale
   // pocketjs.wasm predating them still boots (the runtime falls back to
@@ -216,6 +232,12 @@ export async function createWasmUi(wasm, options = {}) {
     /** Rasterize the byte-exact framebuffer at the logical viewport size. */
     render() {
       return framebufferView(ex.ui_render(), 1);
+    },
+    renderAuxiliary() {
+      if (!auxiliary) throw new Error("This host has no auxiliary output");
+      const ptr = ex.ui_render_auxiliary();
+      if (!ptr) throw new Error("Auxiliary rasterization failed");
+      return new Uint8Array(ex.memory.buffer, ptr, auxiliary[0] * auxiliary[1] * 4);
     },
     /** Rasterize the logical DrawList directly at an integer physical scale. */
     renderScaled(scale) {

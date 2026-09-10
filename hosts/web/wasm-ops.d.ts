@@ -34,6 +34,8 @@ export interface WasmUi {
   freeCompositorSurface(handle: number): void;
   /** Rasterize the byte-exact RGBA8 framebuffer at the logical viewport size. */
   render(): Uint8Array;
+  /** Rasterize the auxiliary root into its independent logical framebuffer. */
+  renderAuxiliary(): Uint8Array;
   /** Rasterize directly at an integer physical scale from 1 through 4. */
   renderScaled(scale: number): Uint8Array;
   /** Render child surfaces at their compositor instructions. */
@@ -46,7 +48,7 @@ export interface WasmUi {
 
 export declare function createWasmUi(
   wasm: ArrayBuffer | Uint8Array | WebAssembly.Module,
-  options?: { width?: number; height?: number; rasterDensity?: number },
+  options?: { width?: number; height?: number; rasterDensity?: number; auxiliary?: [number, number] },
 ): Promise<WasmUi>;
 
 export declare function uploadPackImages(

@@ -126,6 +126,11 @@ const SUITE: readonly Stage[] = [
     ],
   },
   {
+    name: "handheld models and dual output",
+    prep: [["bun", "tools/wasm.ts"]],
+    tests: ["tests/handheld-models.test.ts"],
+  },
+  {
     name: "vue-sfc journeys",
     prep: [
       ["bun", "tools/build.ts", "hero-vue-sfc-main", "--framework=vue-vapor"],

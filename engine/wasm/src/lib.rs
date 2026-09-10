@@ -30,6 +30,7 @@ use pocketjs_core::raster;
 
 static mut UI: Option<Ui> = None;
 static mut FRAMEBUFFER: Vec<u8> = Vec::new();
+static mut AUXILIARY_FRAMEBUFFER: Vec<u8> = Vec::new();
 use pocketjs_core::compositor::CompositorRaster;
 
 /// Browser System hosts upload visible child AppInstance framebuffers here.
@@ -76,6 +77,7 @@ pub extern "C" fn ui_init(raster_density: u32) {
     unsafe {
         UI = Some(Ui::new_with_raster_density(raster_density.max(1)));
         FRAMEBUFFER.clear();
+        AUXILIARY_FRAMEBUFFER.clear();
         COMPOSITOR_RASTERS.clear();
         COMPOSITOR_FRAMES.clear();
         DAMAGE_TRACKER = DamageTracker::new();
@@ -87,6 +89,68 @@ pub extern "C" fn ui_init(raster_density: u32) {
 #[no_mangle]
 pub extern "C" fn ui_set_viewport(width: f32, height: f32) {
     ui().set_viewport(width, height);
+}
+
+/// Create the second output before the guest mounts, as the native 3DS host does.
+#[no_mangle]
+pub extern "C" fn ui_create_auxiliary_surface(width: u32, height: u32) -> i32 {
+    if !(1..=4096).contains(&width) || !(1..=4096).contains(&height) {
+        return 0;
+    }
+    ui().create_auxiliary_surface(width as f32, height as f32)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_hit_test_bounds_auxiliary(x: f32, y: f32) -> i32 {
+    ui().hit_test_bounds_auxiliary(x, y)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_hit_test_auxiliary(x: f32, y: f32) -> i32 {
+    ui().hit_test_auxiliary(x, y)
+}
+
+/// Borrow the shared image/font resources with this output's viewport.
+struct AuxiliaryResources<'a> {
+    ui: &'a Ui,
+    viewport: (f32, f32),
+}
+
+impl pocketjs_core::resources::RenderResources for AuxiliaryResources<'_> {
+    fn viewport(&self) -> (f32, f32) {
+        self.viewport
+    }
+    fn raster_revision(&self) -> u64 {
+        self.ui.raster_revision()
+    }
+    fn texture(&self, handle: i32) -> Option<pocketjs_core::TexView<'_>> {
+        self.ui.texture(handle)
+    }
+    fn font_atlas(&self, slot: u8) -> Option<pocketjs_core::resources::FontView<'_>> {
+        pocketjs_core::resources::RenderResources::font_atlas(self.ui, slot)
+    }
+}
+
+/// Independent framebuffer; rendering either output preserves the other view.
+#[no_mangle]
+pub extern "C" fn ui_render_auxiliary() -> *const u8 {
+    let u = ui();
+    let Some(viewport) = u.auxiliary_viewport() else {
+        return core::ptr::null();
+    };
+    let Some(dl) = u.draw_auxiliary() else {
+        return core::ptr::null();
+    };
+    let dl = dl as *const pocketjs_core::DrawList;
+    let resources = AuxiliaryResources {
+        ui: unsafe { &*(u as *const Ui) },
+        viewport,
+    };
+    unsafe {
+        AUXILIARY_FRAMEBUFFER.resize(viewport.0 as usize * viewport.1 as usize * 4, 0);
+        raster::render(&resources, &(*dl).words, &mut AUXILIARY_FRAMEBUFFER);
+        AUXILIARY_FRAMEBUFFER.as_ptr()
+    }
 }
 
 /// Allocate `len` bytes of scratch in linear memory for host -> wasm buffers.

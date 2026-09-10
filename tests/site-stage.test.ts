@@ -316,11 +316,11 @@ test("playground wraps its live framebuffer in the PSP model", () => {
   expect(adapter).toContain("if (suppliedHost)");
   expect(adapter).toContain("const onSuppliedHostError = stageHost.onError");
   expect(adapter).toContain("releaseButton();\n        onSuppliedHostError(error);");
-  expect(adapter).toContain("const modelUrl = STAGE_ROOT + profile.lods.orbit");
+  expect(adapter).toContain("new URL(profile.lods.orbit, new URL(profileUrl, location.href))");
   expect(adapter).toContain("loader.loadAsync(modelUrl)");
   expect(adapter).toContain("screenCanvasId: screenCanvas.id || null");
   expect(adapter).toContain("lastPressedPart");
-  expect(adapter).toContain("return { refreshScreen, releaseInput: releaseButton }");
+  expect(adapter).toContain("return { refreshScreen, releaseInput: releaseButton,");
 
   const build = readFileSync(ROOT + "site/build.ts", "utf8");
   expect(build).not.toContain("screen.css");
