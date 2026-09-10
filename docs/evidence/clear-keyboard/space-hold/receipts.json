@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-09-10T19:40:54.346490+00:00",
+  "ipodtouch4": {
+    "buildId": "6e96f34322bf5c2e5f87389d61478378",
+    "files": {
+      "PocketJSiPodTouch4": "d2a3538738e6eba34545c2a41d2934737af147fe5a9283fb664e7eb47b0e141a",
+      "Info.plist": "9abdfd5f61da1714034db59e273541bde902d38f3f0cb9894ac55320ebdebc76",
+      "PkgInfo": "82502191c9484b04d685374f9879a0066069c49b8acae7a04b01d38d07e8eca0",
+      "PocketClassic-User-v7.png": "a77ed6a31b834eaabbd786306d18d587564ec23f94e4851a533b148788cb362a",
+      "PocketClassic-User-v7@2x.png": "e2085f9870ea14526396b417bbe1d96268679f85401be437e7103a4161dbdfa7",
+      "Default@2x.png": "eb9c2db2b5af9daaaa668351e2605f699d6eadc24b5ed074455eadcf805c7b8e",
+      "Default-568h@2x.png": "6a2b5e6a609381490c4d47f1ff9179784d9091aa34d3ba332eb38c13850db882"
+    },
+    "byteExactInstallReadback": true
+  },
+  "moto-g-play": {
+    "apk": {
+      "path": "dist/moto-g-play/pocket-clear.apk",
+      "bytes": 959175,
+      "sha256": "961e4b41cc875445e26375a55a9b51d6112c1deda95d10a78ae76380f7c4fc3b"
+    },
+    "guest": {
+      "javaScript": "0b03404ce1b7feb128073efd24f19451d369912e94f231e9b817f0856654f7ba",
+      "pack": "92a4aa06f0d9eaa598cb9cb705937ad405f1c2b78a00f39a789121f7ab174c21"
+    },
+    "installedApkHashVerified": true
+  },
+  "spaceCapPixelsRgb": {
+    "moto-rest": [
+      51,
+      56,
+      63
+    ],
+    "moto-pressed": [
+      83,
+      89,
+      98
+    ],
+    "moto-trackpad": [
+      83,
+      89,
+      98
+    ],
+    "ipod-rest": [
+      51,
+      56,
+      63
+    ],
+    "ipod-trackpad": [
+      83,
+      89,
+      98
+    ]
+  },
+  "checks": {
+    "keyboardAndClearTests": 18,
+    "repositoryStages": "12/12",
+    "typeScript": "pass"
+  },
+  "screenshots": {
+    "ipod-rest.png": "f8900ba55567f2f0cf4be9f17d07da76e9e5f941a19d4adf3aae4e0f36aa3788",
+    "ipod-trackpad.png": "76bec40c14ea1ed599acd814446d8d77220e2c12941cfe192d02dcdd555f0fd9",
+    "moto-pressed.png": "f89069b8489a67b01f326b3737ecee958148e82262bbbb381746641a973adcfd",
+    "moto-rest.png": "f4b99c8e59e6cf2d7000af36a9ecfc4cfe4bbfbf8614138face76f7b58a0c7f3",
+    "moto-trackpad.png": "9649e83e5c4e2542eec20888d336f914a2646ccd3cc9d41e5fba9c44faf98000"
+  }
+}

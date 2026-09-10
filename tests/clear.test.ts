@@ -202,9 +202,18 @@ describe("Pocket Clear on the sim", () => {
     for (const ch of "abcdef") await tapKey("lower", key => key.ch === ch);
     expect(treeHasText(world.getTree(), "abcdef|")).toBe(true);
     const [sx, sy] = keyCenter(key => key.ch === " ");
-    for (let i = 0; i < 25; i++) await step([__packTouch(0, sx, sy)]);
+    const spacePixel = () => Array.from(world.render().slice((sy * W + sx - 60) * 4, (sy * W + sx - 60) * 4 + 3));
+    const restingCap = spacePixel();
+    await step([__packTouch(0, sx, sy)]);
+    const pressedCap = spacePixel(); expect(pressedCap).not.toEqual(restingCap);
+    // Past the former 180 ms flash: still pressed, before the 360 ms hold.
+    for (let i = 0; i < 18; i++) await step([__packTouch(0, sx, sy)]);
+    expect(spacePixel()).toEqual(pressedCap);
+    for (let i = 0; i < 6; i++) await step([__packTouch(0, sx, sy)]);
+    expect(spacePixel()).toEqual(pressedCap); // activation must not release the cap
     await step([__packTouch(0, sx - 30, sy)]);
-    await step();
+    await step(); await idle(13);
+    expect(spacePixel()).toEqual(restingCap);
     expect(treeHasText(world.getTree(), "abc|def")).toBe(true);
     await tapKey("lower", key => key.ch === "x");
     expect(treeHasText(world.getTree(), "abcx|def")).toBe(true);

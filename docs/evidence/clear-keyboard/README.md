@@ -1,5 +1,7 @@
 # Clear keyboard follow-up
 
+The [Space press continuity follow-up](space-hold/README.md) records the sustained pressed cap and revised grip indicator.
+
 Captured on 2026-09-10. [receipts.json](receipts.json) records the installed builds, native runtime counters, icon sampling flags and screenshot hashes. The [earlier IME acceptance](../clear-ime/README.md) covers candidate conversion and reconnect.
 
 | Check | iPod touch 4 | Moto G Play 2024 |

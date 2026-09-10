@@ -93,6 +93,8 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
   const candidates = Array.from({ length: 5 }, () => shallowRef(""));
   const layerNodes = new Map<KbLayerName, NodeMirror>();
   const keyNodes = new Map<string, NodeMirror>();
+  const spaceNodes = new Set<NodeMirror>();
+  let spacePressed = false;
   let panel: NodeMirror | null = null;
   let popupNode: NodeMirror | null = null;
   const popupText = shallowRef("");
@@ -112,6 +114,7 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
   onFrame(() => {
     const now = virtualNow();
     touch.step(now);
+    syncSpacePress();
     if (detent.value && now >= detentUntil) detent.value = false;
     if (now >= popupHideAt) {
       popupHideAt = Infinity;
@@ -125,6 +128,21 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
     for (const name of LAYER_NAMES) {
       const node = layerNodes.get(name);
       if (node) jump(node, "translateX", name === layer ? 0 : KB_W + 40);
+    }
+  }
+
+  function syncSpacePress(fade = true): void {
+    const pressed = touch.holdingSpace();
+    if (pressed === spacePressed) return;
+    spacePressed = pressed;
+    for (const node of spaceNodes) {
+      if (pressed || !fade) {
+        jump(node, "gradFrom", pressed ? CAP_PRESS_FROM : CAP_FROM);
+        jump(node, "gradTo", pressed ? CAP_PRESS_TO : CAP_TO);
+      } else {
+        animate(node, "gradFrom", CAP_FROM, { dur: 180, easing: "out" });
+        animate(node, "gradTo", CAP_TO, { dur: 180, easing: "out" });
+      }
     }
   }
 
@@ -154,7 +172,8 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
     const key = KB_LAYERS[layer][row][col];
     if (!touch.begin(id, x, y, key.ch === " " ? "space" : key.action === "backspace" ? "backspace" : "other",
       { x: key.x, y: screenH - KB_H + KB_PAD + row * (KB_ROW_H + KB_GAP), w: key.w, h: KB_ROW_H }, virtualNow())) return;
-    flashKey(layer, row, col);
+    if (key.ch === " ") syncSpacePress();
+    else flashKey(layer, row, col);
     showPopup(key, row, id);
     if (key.ch === " " || key.action === "backspace") return;
     if (key.ch !== undefined) {
@@ -198,7 +217,10 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
     return (
       <View
         nodeRef={(node) => {
-          if (node) keyNodes.set(`${name}:${r}:${c}`, node);
+          if (node) {
+            keyNodes.set(`${name}:${r}:${c}`, node);
+            if (key.ch === " ") spaceNodes.add(node);
+          }
         }}
         class={
           kind === "char"
@@ -221,8 +243,8 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
           <Image src="icon-backspace.svg" style={{ width: 26, height: 24, opacity: tracking.value ? 0.25 : 1 }} />
         ) : key.ch === " " && tracking.value ? (
           <View class="absolute inset-0 items-center justify-center">
-            <Image src="icon-trackpad.svg" style={{ width: 112, height: 24 }} />
-            <View class="absolute rounded-full w-[2] h-[20]" style={{ insetT: 10, bgColor: detent.value ? "#ffffff" : "#9ba7b7" }} />
+            <Image src="icon-trackpad.svg" style={{ width: 96, height: 24 }} />
+            <View class="absolute rounded-full w-[1] h-[8] bg-[#cbd3dd]" style={{ insetT: 16, opacity: detent.value ? 0.7 : 0 }} />
           </View>
         ) : (
           <Text
@@ -309,7 +331,7 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
     setOpen(next: boolean): void {
       if (next === open) return;
       open = next;
-      touch.cancel(); popupOwner = -1; popupHideAt = Infinity;
+      touch.cancel(); syncSpacePress(false); popupOwner = -1; popupHideAt = Infinity;
       if (open) applyLayer("lower");
       if (popupNode) jump(popupNode, "opacity", 0);
       if (panel) {
@@ -334,9 +356,10 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
       const pos = kbKeyAt(KB_LAYERS[layer], x, y - (screenH - KB_H));
       if (pos) press(pos.row, pos.col, id, x, y, screenH);
     },
-    moveAt(x: number, y: number, id = 0) { touch.move(id, x, y); },
+    moveAt(x: number, y: number, id = 0) { touch.move(id, x, y); syncSpacePress(); },
     release(id = 0, cancelled = false): void {
       touch.release(id, cancelled);
+      syncSpacePress();
       if (id === popupOwner) {
         popupOwner = -1;
         popupHideAt = cancelled ? virtualNow() : Math.max(popupAt + 0.24, virtualNow() + 0.14);

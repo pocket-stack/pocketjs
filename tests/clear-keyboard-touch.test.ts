@@ -51,3 +51,17 @@ test("a stalled frame cannot burst an unbounded backlog of deletes or caret move
   begin("space"); touch.step(.4); touch.move(0, 10000, 100);
   expect(events.filter(e => e === 1).length).toBe(8);
 });
+
+test("space stays held through trackpad activation and a two-thumb chord until release or cancel", () => {
+  const { touch, begin } = fixture();
+  expect(touch.holdingSpace()).toBe(false);
+  begin("space"); expect(touch.holdingSpace()).toBe(true);
+  touch.step(.25); expect(touch.holdingSpace()).toBe(true);
+  touch.step(.4); expect(touch.holdingSpace()).toBe(true);
+  touch.move(0, 70, 140); expect(touch.holdingSpace()).toBe(true);
+  touch.release(0); expect(touch.holdingSpace()).toBe(false);
+  begin("space"); begin("other", 1, .1); expect(touch.holdingSpace()).toBe(true);
+  touch.release(1); expect(touch.holdingSpace()).toBe(true);
+  touch.cancel(); expect(touch.holdingSpace()).toBe(false);
+  begin("space"); touch.move(0, 130, 100); expect(touch.holdingSpace()).toBe(false);
+});

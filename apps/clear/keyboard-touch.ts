@@ -72,5 +72,9 @@ export function createKeyboardTouch(handlers: {
     release,
     cancel() { for (const id of holds.keys()) release(id, true); },
     tracking: () => cursorOwner !== undefined,
+    holdingSpace() {
+      for (const hold of holds.values()) if (hold.kind === "space" && !hold.cancelled) return true;
+      return false;
+    },
   };
 }
