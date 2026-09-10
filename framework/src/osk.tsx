@@ -114,6 +114,8 @@ const INK_DIM = { dark: "#8fa3ad", light: "#5f6b78" } as const;
 export interface OskProps {
   osk: OskController;
   surface?: SurfaceId;
+  /** Key height in logical pixels; width follows the chosen surface. */
+  keyHeight?: number;
   /** Default "dark". */
   theme?: OskThemeName;
 }
@@ -123,7 +125,7 @@ export interface OskProps {
 export function Osk(props: OskProps): SolidJSX.Element {
   return (
     <Show when={props.osk.isOpen()}>
-      <OskPanel osk={props.osk} theme={props.theme ?? "dark"} surface={props.surface ?? "primary"} />
+      <OskPanel osk={props.osk} theme={props.theme ?? "dark"} surface={props.surface ?? "primary"} keyHeight={props.keyHeight} />
     </Show>
   );
 }
@@ -137,8 +139,12 @@ function keyboardViewport(surface: SurfaceId) {
   return hostViewport(getOps()) ?? { w: SCREEN_W, h: SCREEN_H };
 }
 
-function OskPanel(props: { osk: OskController; theme: OskThemeName; surface: SurfaceId }): SolidJSX.Element {
+function OskPanel(props: { osk: OskController; theme: OskThemeName; surface: SurfaceId; keyHeight?: number }): SolidJSX.Element {
   const viewport = keyboardViewport(props.surface), innerWidth = viewport.w - 2 * OSK_PAD;
+  const rowHeight = props.keyHeight ?? OSK_ROW_H;
+  const panelHeight = 4 * rowHeight + 3 * OSK_GAP + 2 * OSK_PAD;
+  if (!Number.isFinite(rowHeight) || rowHeight < OSK_ROW_H || panelHeight > viewport.h)
+    throw new Error("Keyboard key height does not fit its surface");
   const [layer, setLayer] = createSignal<OskLayerName>("lower");
   const rows = createMemo(() => layoutRows(OSK_LAYERS[layer()], innerWidth));
 
@@ -253,7 +259,7 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName; surface: Sur
       node: () => rootNode,
       rect: () => {
         // Dock-at-the-bottom geometry for hosts without hitTest.
-        return { x: 0, y: viewport.h - OSK_H, w: viewport.w, h: OSK_H };
+        return { x: 0, y: viewport.h - panelHeight, w: viewport.w, h: panelHeight };
       },
     },
     allowWhenBlocked: true, // exempt from the OSK's own touch block
@@ -315,7 +321,7 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName; surface: Sur
     if (node) return nodeInfo.get(node) ?? null;
     if (props.surface === "auxiliary" ? getOps().hitTestAuxiliary : getOps().hitTest) return null;
     // No hitTest op: assume the panel is docked at the bottom of the screen.
-    const pos = keyAtPoint(rows(), x - OSK_PAD, y - (viewport.h - OSK_H) - OSK_PAD);
+    const pos = keyAtPoint(rows(), x - OSK_PAD, y - (viewport.h - panelHeight) - OSK_PAD, rowHeight);
     return pos ? rows()[pos.row][pos.col] : null;
   };
 
@@ -333,7 +339,7 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName; surface: Sur
         rootNode = n;
       }}
       class={props.theme === "light" ? PANEL_LIGHT : PANEL_DARK}
-      style={{ height: OSK_H, width: viewport.w, translateY: OSK_H }}
+      style={{ height: panelHeight, width: viewport.w, translateY: panelHeight }}
     >
       {/* Structural reactivity must ride <For> — a bare `{rows().map(…)}`
           child compiles to a static insert and never re-renders on a layer
@@ -342,14 +348,14 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName; surface: Sur
         {(row, r) => (
           <View
             class="absolute"
-            style={{ insetT: OSK_PAD + r() * (OSK_ROW_H + OSK_GAP), insetL: OSK_PAD, width: innerWidth, height: OSK_ROW_H }}
+            style={{ insetT: OSK_PAD + r() * (rowHeight + OSK_GAP), insetL: OSK_PAD, width: innerWidth, height: rowHeight }}
           >
             <For each={row}>
               {(rect) => (
                 <Focusable
                   nodeRef={(n) => registerKey(n, rect)}
                   class={keyCls(rect.key)}
-                  style={{ insetL: rect.x, insetT: 0, width: rect.w, height: OSK_ROW_H }}
+                  style={{ insetL: rect.x, insetT: 0, width: rect.w, height: rowHeight }}
                   onPress={() => activate(rect.key)}
                 >
                   <Text
@@ -380,6 +386,7 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName; surface: Sur
 
 export interface TextFieldProps {
   surface?: SurfaceId;
+  keyHeight?: number;
   /** The bound text (application state stays the only authority). */
   value: Accessor<string>;
   onInput: (next: string) => void;
@@ -433,7 +440,7 @@ export function TextField(props: TextFieldProps): SolidJSX.Element {
         View({
           style: { posType: ENUMS.PosType.Absolute, insetB: 0, insetL: 0, width: viewport.w, hitPass: 1 },
           get children() {
-            return Osk({ osk, surface, get theme() { return props.theme; } });
+            return Osk({ osk, surface, keyHeight: props.keyHeight, get theme() { return props.theme; } });
           },
         }),
     }),
