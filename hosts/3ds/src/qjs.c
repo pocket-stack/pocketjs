@@ -107,7 +107,7 @@ static char last_error[1024];
 static char debug_poll_buffer[32 * 1024];
 /* contracts/spec/spec.ts SVC_POLL_BUF + the terminating NUL. */
 static char svc_poll_buffer[8192 + 1];
-static uint8_t coverage_pixels[512 * 16 * 4];
+static uint8_t coverage_pixels[16384 * 4];
 static bool coverage_used;
 
 static void set_error(const char *message) {

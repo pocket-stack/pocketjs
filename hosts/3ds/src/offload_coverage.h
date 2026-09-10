@@ -9,14 +9,17 @@ static inline int coverage_digit(char c) {
   if (c >= '0' && c <= '9') return c - '0' + 52;
   return c == '+' ? 62 : c == '/' ? 63 : -1;
 }
-/* Maximum envelope 512x16 RGBA. The caller owns one reusable scratch buffer.
+/* At most 8192 coverage pixels in a 16384-pixel RGBA texture envelope.
+ * The caller owns one reusable scratch buffer; narrow blocks can be taller.
  * Input is 2-bit alpha, four pixels per byte, low bits first. */
 static inline int coverage_decode(const char *base64, size_t length, unsigned width, unsigned height, uint32_t color, uint8_t *rgba) {
-  if (!width || width > 512 || width % 4 || !height || height > 16) return 0;
+  if (!width || width > 512 || width % 4 || !height || height > 64 || width * height > 8192) return 0;
   unsigned count = width * height, bytes = count / 4;
   if (length != ((bytes + 2) / 3) * 4) return 0;
   unsigned envelope = 8; while (envelope < width) envelope *= 2;
-  memset(rgba, 0, 512 * 16 * 4);
+  unsigned padded_height = 8; while (padded_height < height) padded_height *= 2;
+  if (envelope * padded_height > 16384) return 0;
+  memset(rgba, 0, envelope * padded_height * 4);
   unsigned pixel = 0;
   for (size_t i = 0; i < length; i += 4) {
     uint32_t value = 0;
@@ -46,7 +49,7 @@ static inline int coverage_hex(char c) {
  * Fixed work, same scratch allocation and one uploaded texture. */
 static inline int coverage_colorize(const char *columns, size_t columns_length,
     const char *palette, size_t palette_length, unsigned width, unsigned height, unsigned envelope, uint8_t *rgba) {
-  if (!width || width > 512 || !height || height > 16 || envelope < width || envelope > 512 ||
+  if (!width || width > 512 || !height || height > 64 || width * height > 8192 || envelope * height > 16384 || envelope < width || envelope > 512 ||
       columns_length != width || !palette_length || palette_length > 96 || palette_length % 6) return 0;
   uint8_t colors[16][3];
   for (size_t i = 0; i < palette_length; i += 2) {
