@@ -61,6 +61,8 @@ output. See the [devkitPro MVD example](https://github.com/devkitPro/3ds-example
 and [libctru MVD interface](https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/services/mvd.h).
 Unavailable MVD or DSP firmware yields a playback error. The 3DS profile remains
 private and its host ABI is 10; ABI 8 launchers require a native replacement.
+The CIA declares `mvd:STD` service access and the MVD system-module dependency
+listed in [3dbrew's title table](https://www.3dbrew.org/wiki/Title_list#00040130_-_System_Modules).
 
 ## Shared interaction
 
