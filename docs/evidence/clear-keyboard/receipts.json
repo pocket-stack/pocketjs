@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-09-10T19:17:54.614048+00:00",
+  "ipodtouch4": {
+    "build": {
+      "schema": 1,
+      "buildId": "df2c99e3e5590533ab964f085b6c67a9",
+      "bundleId": "dev.pocket-stack.clear",
+      "target": "ipodtouch4-dev",
+      "hostAbi": 8,
+      "deploymentTarget": "6.0",
+      "files": {
+        "PocketJSiPodTouch4": "09d566d90831b16a8aad35b04cf82e0a8bfe241ac383e5720db5193dfa6d8a13",
+        "Info.plist": "9abdfd5f61da1714034db59e273541bde902d38f3f0cb9894ac55320ebdebc76",
+        "PkgInfo": "82502191c9484b04d685374f9879a0066069c49b8acae7a04b01d38d07e8eca0",
+        "PocketClassic-User-v7.png": "a77ed6a31b834eaabbd786306d18d587564ec23f94e4851a533b148788cb362a",
+        "PocketClassic-User-v7@2x.png": "e2085f9870ea14526396b417bbe1d96268679f85401be437e7103a4161dbdfa7",
+        "Default@2x.png": "eb9c2db2b5af9daaaa668351e2605f699d6eadc24b5ed074455eadcf805c7b8e",
+        "Default-568h@2x.png": "6a2b5e6a609381490c4d47f1ff9179784d9091aa34d3ba332eb38c13850db882"
+      },
+      "viewport": {
+        "logical": [
+          320,
+          480
+        ],
+        "physical": [
+          640,
+          960
+        ],
+        "rasterDensity": 2
+      }
+    },
+    "byteExactInstallReadback": true,
+    "runtime": {
+      "build_id": "df2c99e3e5590533ab964f085b6c67a9",
+      "state": "running",
+      "pid": 3171,
+      "written_at": 1789067807,
+      "heartbeat": 126,
+      "guest_frames": 6031,
+      "touch_sequences": 32,
+      "completed_touch_sequences": 32,
+      "touch_down": 0,
+      "last_touch_x": 16,
+      "last_touch_y": 322,
+      "last_touch_hit": 231,
+      "action_name": "clear_gesture",
+      "action_value": 1,
+      "action_sequence": 1,
+      "renderer": "gles1",
+      "clock": "displaylink",
+      "raster_density": 2,
+      "drawable_width": 640,
+      "drawable_height": 960,
+      "frame_us": 1419,
+      "submit_us": 51685,
+      "present_us": 57575,
+      "window_frames": 60,
+      "window_us": 3580885,
+      "blit_us": 0,
+      "damage_attempts": 0,
+      "damage_failures": 0,
+      "damage_full_redraws": 0,
+      "damage_pixels": 0,
+      "composites": 0,
+      "damage_regions_last": 0,
+      "svc": "absent",
+      "error": ""
+    }
+  },
+  "moto-g-play": {
+    "apk": {
+      "path": "dist/moto-g-play/pocket-clear.apk",
+      "bytes": 959175,
+      "sha256": "0b197b70aa35d6576ae56441b03af053d22b33809b248270907023a8e8cb8a6a"
+    },
+    "guest": {
+      "javaScript": "d3b20661f97e39b34ff14f9e3e2f01d3bf7ca00041d1df0e16d972d740e794b9",
+      "pack": "b37ab347d992b7d8a1c8ff64301809c37bde1d4743906cde3ac05ac1a21f0aac"
+    },
+    "viewport": {
+      "logical": [
+        360,
+        800
+      ],
+      "physical": [
+        720,
+        1600
+      ],
+      "presentation": "native",
+      "rasterDensity": 2
+    },
+    "installedApkHashVerified": true,
+    "runtime": {
+      "state": "running",
+      "renderer": "gles2",
+      "frames": 4260,
+      "touch_sequences": 14,
+      "logical_width": 360,
+      "logical_height": 800,
+      "surface_width": 720,
+      "surface_height": 1600,
+      "action_name": "clear_gesture",
+      "action_value": 1
+    }
+  },
+  "interaction": {
+    "route": "software-generated native touch on physical hardware",
+    "caret": "abcdef| -> abc|def",
+    "repeat": "abc|def -> abcz|def -> hold Backspace -> |def -> release -> type q -> q|def; no later deletion",
+    "ipodSpaceHoldMs": 1200,
+    "motoSpaceHoldMs": 500,
+    "ipodBackspaceHoldMs": 2000,
+    "motoBackspaceHoldMs": 1200
+  },
+  "imageSampling": {
+    "rasterDensity": 2,
+    "imageFlags": 2,
+    "sampling": "linear",
+    "assets": [
+      "icon-backspace.svg",
+      "icon-cancel.svg",
+      "icon-globe.svg",
+      "icon-next.svg",
+      "icon-previous.svg",
+      "icon-trackpad.svg"
+    ]
+  },
+  "checks": {
+    "repositoryStages": "12/12",
+    "coreTests": 130,
+    "keyboardAndClearTests": 17,
+    "typeScript": "pass"
+  },
+  "screenshots": {
+    "ipod-caret.png": "05e8bcba3f4f68af16083ec10af3c10df02e2c3f0eda228c96157db0f7011898",
+    "ipod-repeat-release.png": "729c42525089643918a2d2eef5291f8fb7ed903c0d7e933a6650b2fe04724a72",
+    "ipod-trackpad.png": "772aa9980fbb0bb09e02687b6b929e0f130a92e068c82a13fcca4db685804733",
+    "moto-caret.png": "89894d7b95907ecf8c05b436ddb92962e343be07022d9896a01b8081d7c60c78",
+    "moto-repeat-release.png": "5cda5e0ba6d07074223d2bfceec926235afc28af7831c67cc5f0f6fedaf634c4",
+    "moto-trackpad.png": "e4b913c2a124e956c7b45d139e9e1342235192d95db6afa7d708a04983a3fbb7"
+  }
+}

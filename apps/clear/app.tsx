@@ -556,12 +556,13 @@ export default () => {
   });
 
   // The keyboard claims its panel outright (registered last = top priority).
-  // Keys commit on the down edge; the key-cap popup lives until the lift.
+  // Contacts own holds and drags; a short space commits on release.
   createGesture({
     region: { rect: () => kb.rect() },
-    onDown: (c) => kb.pressAt(c.x, c.y, SCREEN_H),
-    onUp: () => kb.release(),
-    onCancel: () => kb.release(),
+    onDown: (c) => kb.pressAt(c.x, c.y, SCREEN_H, c.id),
+    onMove: (c) => kb.moveAt(c.x, c.y, c.id),
+    onUp: (c) => kb.release(c.id),
+    onCancel: (c) => kb.release(c.id, true),
   });
 
   // ------------------------------------------------------------ frame pump
