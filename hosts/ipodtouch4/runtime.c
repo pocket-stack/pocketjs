@@ -22,5 +22,16 @@ static const char *pocket_ipod_receipt_path(unsigned index, const char *suffix) 
 #define POCKET_GL_DEFAULT 1
 #define POCKET_REQUIRE_GL 1
 
+#ifdef POCKET_FOLD_SURFACE
+#if POCKET_LOGICAL_WIDTH != 320 || POCKET_LOGICAL_HEIGHT != 480
+#error "Pocket Fold requires a 320x480 portrait viewport"
+#endif
+#include "../ios-legacy/fold-surface.h"
+#define POCKET_SVC_STATE_NAME() "local-fold"
+#define POCKET_GL_BACKGROUND_RENDER(w, h) pocket_fold_render(w, h)
+#define POCKET_GL_BACKGROUND_SHUTDOWN() pocket_fold_shutdown()
+#define POCKET_HOST_ACTIVE(active) pocket_fold_active(active)
+#endif
+
 /* The iPod touch 4 shares the iPhone 4S legacy UIKit implementation. */
 #include "../ios-legacy/runtime.c"

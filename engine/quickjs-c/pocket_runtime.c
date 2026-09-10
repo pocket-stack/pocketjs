@@ -3,8 +3,18 @@
 #include "pocket_ui_cabi.h"
 #include "pocket_spec.h"
 #include "quickjs.h"
-#ifdef POCKET_SVC_WIRE
+#if defined(POCKET_HOST_SERVICE) && defined(POCKET_SVC_WIRE)
+#error "Select one host service provider"
+#endif
+#if defined(POCKET_HOST_SERVICE)
+#include "pocket_host_service.h"
+#define POCKET_SERVICE_ENABLED
+#elif defined(POCKET_SVC_WIRE)
 #include "svcwire.h"
+#define POCKET_SERVICE_ENABLED
+#define pocket_host_service_open svcwire_open
+#define pocket_host_service_poll svcwire_recv_lines
+#define pocket_host_service_send svcwire_send_line
 #endif
 
 #include <stddef.h>
@@ -72,10 +82,8 @@ typedef enum {
   HostDebugPause,
   HostDebugStep,
   HostReportAppAction,
-#ifdef POCKET_SVC_WIRE
-  /* spec ops 30..32 — the host service channel over the PKNT wire
-   * (svcwire.c). Present only in builds whose companion is on the network,
-   * so every other legacy Apple op table stays byte-identical. */
+#ifdef POCKET_SERVICE_ENABLED
+  /* spec ops 30..32, provided by a local host service or PKNT wire. */
   HostSvcOpen,
   HostSvcPoll,
   HostSvcSend,
@@ -94,7 +102,7 @@ static char reported_action_name[POCKETJS_ACTION_NAME_CAPACITY];
 static int32_t reported_action_value;
 static unsigned long reported_action_sequence;
 static int runtime_failed;
-#ifdef POCKET_SVC_WIRE
+#ifdef POCKET_SERVICE_ENABLED
 /* spec SVC_POLL_BUF (8192) + terminator: one svcPoll batch. */
 static char svc_poll_buffer[8193];
 #endif
@@ -446,21 +454,21 @@ static JSValue host_operation(
       reported_action_sequence += 1;
       JS_FreeCString(ctx, text);
       return JS_UNDEFINED;
-#ifdef POCKET_SVC_WIRE
+#ifdef POCKET_SERVICE_ENABLED
     case HostSvcOpen: {
       int open;
       if (!string_argument(ctx, argc, argv, 0, &text, &text_length)) return JS_NewBool(ctx, 0);
-      open = svcwire_open(text);
+      open = pocket_host_service_open(text);
       JS_FreeCString(ctx, text);
       return JS_NewBool(ctx, open);
     }
     case HostSvcPoll: {
-      size_t length = svcwire_recv_lines(svc_poll_buffer, sizeof svc_poll_buffer);
+      size_t length = pocket_host_service_poll(svc_poll_buffer, sizeof svc_poll_buffer);
       return length == 0 ? JS_UNDEFINED : JS_NewStringLen(ctx, svc_poll_buffer, length);
     }
     case HostSvcSend:
       if (!string_argument(ctx, argc, argv, 0, &text, &text_length)) return JS_UNDEFINED;
-      svcwire_send_line(text, text_length);
+      pocket_host_service_send(text, text_length);
       JS_FreeCString(ctx, text);
       return JS_UNDEFINED;
 #endif
@@ -524,7 +532,7 @@ static int install_host(int width, int height) {
     JS_FreeValue(context, ui);
     return 0;
   }
-#ifdef POCKET_SVC_WIRE
+#ifdef POCKET_SERVICE_ENABLED
   if (!add_host_operation(context, ui, "svcOpen", 1, HostSvcOpen) ||
       !add_host_operation(context, ui, "svcPoll", 0, HostSvcPoll) ||
       !add_host_operation(context, ui, "svcSend", 1, HostSvcSend)) {
@@ -959,6 +967,11 @@ int pocket_runtime_gl_render(int width, int height) {
    * rectangle is the whole window and no letterboxing arithmetic applies.
    */
   return ui_gl_render(0, 0, width, height, width, height) != 0;
+}
+
+int pocket_runtime_gl_render_over(int width, int height) {
+  if (runtime == 0 || context == 0 || runtime_failed || width <= 0 || height <= 0) return 0;
+  return ui_gl_render_over(0, 0, width, height, width, height) != 0;
 }
 
 void pocket_runtime_gl_shutdown(void) {

@@ -58,6 +58,7 @@ describe("portable QuickJS C harness contract", () => {
     };
 
     runVariant("production", []);
+    runVariant("local-service", ["-DPOCKET_HOST_SERVICE"]);
     runVariant("stages", ["-DPOCKET_RUNTIME_STAGE_HOOKS"]);
     runVariant("harness", ["-DPOCKET_RUNTIME_HARNESS"]);
     runVariant("stages-and-harness", [

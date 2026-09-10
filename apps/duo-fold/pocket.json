@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.duo-fold",
+  "name": "pocketjs-duo-fold",
+  "title": "Pocket Fold",
+  "version": "0.1.0",
+  "engine": { "capabilities": { "requires": ["input.touch", "text.glyphs.baked"] } },
+  "app": {
+    "entry": "apps/duo-fold/main.tsx",
+    "output": "duo-fold-main",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [320, 480], "presentation": "native" } }
+  }
+}

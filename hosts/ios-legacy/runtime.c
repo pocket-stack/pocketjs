@@ -2,11 +2,13 @@
 /* The svc transport's state, for the acceptance record: "absent" on builds
  * without the network channel, else discover / connecting / hello / up /
  * up-usb / backoff (svcwire.c). */
+#ifndef POCKET_SVC_STATE_NAME
 #ifdef POCKET_SVC_WIRE
 #include "svcwire.h"
 #define POCKET_SVC_STATE_NAME() svcwire_state_name()
 #else
 #define POCKET_SVC_STATE_NAME() "absent"
+#endif
 #endif
 
 #include <fcntl.h>
@@ -1001,6 +1003,9 @@ static void teardown_gl(void) {
   /* The core's textures belong to this context, so release them while it is
    * still current — and only if it ever got as far as owning any. */
   if (g_gl_ready) {
+#ifdef POCKET_GL_BACKGROUND_SHUTDOWN
+    POCKET_GL_BACKGROUND_SHUTDOWN();
+#endif
     pocket_runtime_gl_shutdown();
   }
   if (g_gl_framebuffer != 0 && gl_delete_framebuffers != NULL) {
@@ -1170,7 +1175,12 @@ static int present_gl(unsigned long *submitted_us) {
   if (!send_bool_class_object(eagl, "setCurrentContext:", g_gl_context)) return 0;
   started = now_us();
   gl_bind_framebuffer(POCKET_GL_FRAMEBUFFER_OES, g_gl_framebuffer);
+#ifdef POCKET_GL_BACKGROUND_RENDER
+  if (!POCKET_GL_BACKGROUND_RENDER(g_gl_width, g_gl_height)) return 0;
+  if (!pocket_runtime_gl_render_over(g_gl_width, g_gl_height)) return 0;
+#else
   if (!pocket_runtime_gl_render(g_gl_width, g_gl_height)) return 0;
+#endif
   gl_bind_renderbuffer(POCKET_GL_RENDERBUFFER_OES, g_gl_renderbuffer);
   *submitted_us = now_us() - started;
   capture_frame_if_requested();
@@ -1951,6 +1961,17 @@ static Class register_view_class(void) {
   return cls;
 }
 
+#ifdef POCKET_HOST_ACTIVE
+static void pocket_application_active(id self, SEL command, id application) {
+  (void)self; (void)command; (void)application;
+  POCKET_HOST_ACTIVE(1);
+}
+static void pocket_application_inactive(id self, SEL command, id application) {
+  (void)self; (void)command; (void)application;
+  POCKET_HOST_ACTIVE(0);
+}
+#endif
+
 static Class register_delegate_class(void) {
   Class cls = objc_allocateClassPair(objc_getClass("NSObject"), "PocketJSRuntimeDelegate", 0);
   BOOL methods_added;
@@ -1984,6 +2005,12 @@ static Class register_delegate_class(void) {
   if (!methods_added) {
     return NULL;
   }
+#ifdef POCKET_HOST_ACTIVE
+  if (!class_addMethod(cls, sel_registerName("applicationDidBecomeActive:"),
+      (void (*)(void))pocket_application_active, "v@:@") ||
+      !class_addMethod(cls, sel_registerName("applicationWillResignActive:"),
+      (void (*)(void))pocket_application_inactive, "v@:@")) return NULL;
+#endif
   objc_registerClassPair(cls);
   return cls;
 }

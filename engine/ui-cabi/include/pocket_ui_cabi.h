@@ -93,5 +93,14 @@ int32_t ui_gl_render(
   int32_t window_width,
   int32_t window_height
 );
+/* Retained UI over a host-owned color buffer; preserves its background. */
+int32_t ui_gl_render_over(
+  int32_t target_x,
+  int32_t target_y,
+  int32_t target_width,
+  int32_t target_height,
+  int32_t window_width,
+  int32_t window_height
+);
 
 #endif

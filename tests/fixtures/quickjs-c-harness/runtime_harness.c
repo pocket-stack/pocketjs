@@ -42,6 +42,21 @@ static int stages[32];
 static size_t stage_count;
 #endif
 static uint8_t framebuffer[4];
+#if defined(POCKET_HOST_SERVICE)
+static JSCFunctionMagic *service_functions[3];
+static int service_magic[3], service_opens, service_sends, service_polls;
+int pocket_host_service_open(const char *name) {
+  service_opens++;
+  return !strcmp(name, "stub exception");
+}
+size_t pocket_host_service_poll(char *out, size_t capacity) {
+  if (service_polls++ || capacity < 3) return 0;
+  memcpy(out, "{}", 3); return 2;
+}
+void pocket_host_service_send(const char *line, size_t length) {
+  if (length == 14 && !memcmp(line, "stub exception", 14)) service_sends++;
+}
+#endif
 
 static void reset_stubs(enum Scenario next) {
   scenario = next;
@@ -215,6 +230,19 @@ int main(void) {
   if (!test_dispatcher_contract())
     return 1;
 #endif
+#if defined(POCKET_HOST_SERVICE)
+  if (!boot(SCENARIO_SUCCESS)) return 1;
+  JSValue argument = VALUE_OBJECT;
+  for (int i = 0; i < 3; ++i) if (!service_functions[i]) return 1;
+  if (service_functions[0](&stub_context, VALUE_OBJECT, 1, &argument, service_magic[0]) != 1) return 1;
+  if (service_functions[1](&stub_context, VALUE_OBJECT, 0, NULL, service_magic[1]) != VALUE_OBJECT) return 1;
+  if (service_functions[1](&stub_context, VALUE_OBJECT, 0, NULL, service_magic[1]) != JS_UNDEFINED) return 1;
+  service_functions[2](&stub_context, VALUE_OBJECT, 1, &argument, service_magic[2]);
+  if (service_opens != 1 || service_sends != 1) return 1;
+  if (pocket_runtime_gl_render_over(0, 480) || !pocket_runtime_gl_render_over(320, 480)) return 1;
+  pocket_runtime_shutdown();
+  if (pocket_runtime_gl_render_over(320, 480)) return 1;
+#endif
   puts("quickjs-c harness: ok");
   return 0;
 }
@@ -276,6 +304,9 @@ JSValue JS_NewBool(JSContext *context, int value) { return value; }
 JSValue JS_NewString(JSContext *context, const char *value) {
   return VALUE_OBJECT;
 }
+JSValue JS_NewStringLen(JSContext *context, const char *value, size_t length) {
+  return length == 2 && !memcmp(value, "{}", 2) ? VALUE_OBJECT : JS_EXCEPTION;
+}
 JSValue JS_NewObject(JSContext *context) { return VALUE_OBJECT; }
 JSValue JS_NewArray(JSContext *context) { return VALUE_OBJECT; }
 
@@ -304,6 +335,12 @@ JSValue JS_GetTypedArrayBuffer(JSContext *context, JSValueConst value,
 JSValue JS_NewCFunctionMagic(JSContext *context, JSCFunctionMagic *function,
                              const char *name, int length, JSCFunctionEnum kind,
                              int magic) {
+#if defined(POCKET_HOST_SERVICE)
+  const char *names[] = {"svcOpen", "svcPoll", "svcSend"};
+  for (int i = 0; i < 3; ++i) if (!strcmp(name, names[i])) {
+    service_functions[i] = function; service_magic[i] = magic;
+  }
+#endif
   return VALUE_FRAME_FUNCTION;
 }
 
@@ -434,5 +471,10 @@ void ui_gl_shutdown(void) {}
 int32_t ui_gl_render(int32_t target_x, int32_t target_y, int32_t target_width,
                      int32_t target_height, int32_t window_width,
                      int32_t window_height) {
+  return 1;
+}
+
+int32_t ui_gl_render_over(int32_t target_x, int32_t target_y, int32_t target_width,
+                         int32_t target_height, int32_t window_width, int32_t window_height) {
   return 1;
 }

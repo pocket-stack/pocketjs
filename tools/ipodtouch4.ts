@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { bakeFoldSnapshot } from "./fold-snapshot.ts";
 import { createCanvas } from "@napi-rs/canvas";
 import {
   chmodSync,
@@ -89,6 +90,8 @@ export interface IPodTouch4App {
   readonly svcWire: boolean;
   /** Disable iOS's idle timer while the app runs (a remote must not auto-lock). */
   readonly keepAwake: boolean;
+  /** Local Core Motion / ES 1.1 fold surface, mutually exclusive with svcWire. */
+  readonly foldSurface?: boolean;
 }
 
 /** The fields an external app's descriptor file must carry. */
@@ -105,6 +108,13 @@ const EXTERNAL_FIELDS = [
 ] as const;
 
 export const IPODTOUCH4_APPS: Readonly<Record<string, IPodTouch4App>> = {
+  fold: {
+    id: "fold", manifest: "apps/duo-fold/pocket.json",
+    bundleId: "dev.pocket-stack.duo-fold", bundleName: "PocketFold.app",
+    executable: "PocketFold", title: "Pocket Fold", scheme: "pocket-fold",
+    receiptSlug: "pocket-fold", actionName: "fold_control",
+    svcWire: false, keepAwake: true, foldSurface: true,
+  },
   clear: {
     id: "clear",
     manifest: "apps/clear/pocket.json",
@@ -137,6 +147,9 @@ export function readExternalIPodTouch4App(descriptorPath: string): IPodTouch4App
       throw new Error(`pocket ipodtouch4: ${file} is missing a string ${field}`);
     }
   }
+  if (parsed.foldSurface === true && parsed.svcWire === true) {
+    throw new Error("pocket ipodtouch4: foldSurface and svcWire select different service providers");
+  }
   // The project root is where the app's own manifest paths start from — the
   // product repository, not necessarily the descriptor's directory.
   const root = resolvePath(dirname(file), typeof parsed.projectRoot === "string" ? parsed.projectRoot : ".");
@@ -157,6 +170,7 @@ export function readExternalIPodTouch4App(descriptorPath: string): IPodTouch4App
     actionName: parsed.actionName as string,
     svcWire: parsed.svcWire === true,
     keepAwake: parsed.keepAwake === true,
+    ...(parsed.foldSurface === true ? { foldSurface: true } : {}),
   };
 }
 
@@ -695,16 +709,19 @@ async function build(): Promise<void> {
     `-DPOCKET_LOGICAL_WIDTH=${inputs.viewport.logical[0]}`,
     `-DPOCKET_LOGICAL_HEIGHT=${inputs.viewport.logical[1]}`,
     `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`,
+    ...(APP.foldSurface ? ["-DPOCKET_FOLD_SURFACE"] : []),
     ...(APP.keepAwake ? ["-DPOCKET_KEEP_AWAKE"] : []),
     // The wrapper reports the transport's state in the acceptance record,
     // so it needs the same switch as the guest runtime.
     ...(APP.svcWire ? ["-DPOCKET_SVC_WIRE"] : []),
   ];
-  const svcWireDefines = APP.svcWire ? ["-DPOCKET_SVC_WIRE", "-I", join(REPOSITORY, "hosts/ios-legacy")] : [];
+  const svcWireDefines = APP.svcWire ? ["-DPOCKET_SVC_WIRE", "-I", join(REPOSITORY, "hosts/ios-legacy")]
+    : APP.foldSurface ? ["-DPOCKET_HOST_SERVICE"] : [];
   const crtGlobalsObject = join(nativeBuild, "crt_globals.o");
   const runtimeIdentityObject = join(nativeBuild, "runtime.build-id-input.o");
   const pocketRuntimeObject = join(nativeBuild, "pocket_runtime.o");
   const svcWireObject = join(nativeBuild, "svcwire.o");
+  const foldObject = join(nativeBuild, "fold-surface.o");
   const compatObject = join(nativeBuild, "compat.o");
   compile(join(REPOSITORY, "hosts/ios-legacy/crt_globals.c"), crtGlobalsObject, warnings);
   compile(join(REPOSITORY, "hosts/ipodtouch4/runtime.c"), runtimeIdentityObject, [
@@ -726,6 +743,10 @@ async function build(): Promise<void> {
   ]);
   if (APP.svcWire) {
     compile(join(REPOSITORY, "hosts/ios-legacy/svcwire.c"), svcWireObject, [...warnings, ...svcWireDefines]);
+  }
+  if (APP.foldSurface) {
+    compile(join(REPOSITORY, "hosts/ios-legacy/fold-surface.c"), foldObject,
+      [...warnings, "-Wno-cast-function-type-mismatch", "-I", join(REPOSITORY, "engine/quickjs-c")]);
   }
   compile(join(REPOSITORY, "hosts/ios-legacy/compat.c"), compatObject, warnings);
 
@@ -756,6 +777,7 @@ async function build(): Promise<void> {
     { label: "native/runtime.build-id-input.o", path: runtimeIdentityObject },
     { label: "native/pocket_runtime.o", path: pocketRuntimeObject },
     ...(APP.svcWire ? [{ label: "native/svcwire.o", path: svcWireObject }] : []),
+    ...(APP.foldSurface ? [{ label: "native/fold-surface.o", path: foldObject }] : []),
     { label: "native/compat.o", path: compatObject },
     ...quickJsObjects.map((path) => ({ label: `native/${path.slice(nativeBuild.length + 1)}`, path })),
     { label: "native/libpocketjs_symbian_core.a", path: rustLibrary },
@@ -782,7 +804,8 @@ async function build(): Promise<void> {
     "-no_source_version", "-no_compact_unwind", "-no_adhoc_codesign", "-no_encryption",
     "-e", "start", "-o", executable, join(nativeBuild, "csu-start.o"),
     join(nativeBuild, "csu-dyld-glue.o"), crtGlobalsObject,
-    runtimeObject, pocketRuntimeObject, ...(APP.svcWire ? [svcWireObject] : []), compatObject,
+    runtimeObject, pocketRuntimeObject, ...(APP.svcWire ? [svcWireObject] : []),
+    ...(APP.foldSurface ? [foldObject] : []), compatObject,
     "-force_load", rustLibrary, ...quickJsObjects,
     "-sectcreate", "__DATA", "__pocket_js", embeddedJavaScript,
     "-sectcreate", "__DATA", "__pocket_pak", guestPak,
@@ -839,6 +862,22 @@ async function build(): Promise<void> {
     "-framework", "Foundation", "-lobjc", "-lSystem", "-lgcc_s.1"]);
   chmodSync(installer, 0o755);
   mustRun("ldid", [`-S${join(REPOSITORY, "hosts/ipodtouch4/installer-entitlements.plist")}`, installer]);
+
+  if (APP.foldSurface) {
+    const screenObject = join(nativeBuild, "screen-capture.o");
+    const screen = join(REPOSITORY, "dist/ipodtouch4/screen-capture");
+    compile(join(REPOSITORY, "hosts/ipodtouch4/screen-capture.c"), screenObject,
+      [...warnings, "-Wno-cast-function-type-mismatch"]);
+    mustRun(linker, ["-arch", "armv7", "-syslibroot", sysroot,
+      "-iphoneos_version_min", DEPLOYMENT_TARGET, "-no_pie", "-no_uuid",
+      "-no_function_starts", "-no_data_in_code_info", "-no_source_version",
+      "-no_compact_unwind", "-no_adhoc_codesign", "-no_encryption", "-e", "start",
+      "-o", screen, join(nativeBuild, "csu-start.o"), join(nativeBuild, "csu-dyld-glue.o"),
+      crtGlobalsObject, screenObject, "-framework", "UIKit", "-framework", "Foundation",
+      "-framework", "CoreGraphics", "-lobjc", "-lSystem", "-lgcc_s.1"]);
+    chmodSync(screen, 0o755);
+    mustRun("ldid", ["-S", screen]);
+  }
 
   const packageRoot = join(nativeBuild, "package");
   const payload = join(packageRoot, "Payload", BUNDLE_NAME);
@@ -1085,6 +1124,70 @@ async function capture(): Promise<void> {
   console.log(`${mustRun("file", [destination])}\n${destination}`);
 }
 
+/** Capture the composed display while SpringBoard is visible, then bake and
+ * install a private snapshot in the selected app's Documents directory. */
+async function snapshot(source?: string): Promise<void> {
+  if (!APP.foldSurface) throw new Error("snapshot requires POCKETJS_IPODTOUCH4_APP=fold");
+  const directory = join(REPOSITORY, "dist/ipodtouch4/fold");
+  mkdirSync(directory, { recursive: true });
+  const png = source ? resolvePath(source) : join(directory, "springboard.png");
+  const textures = join(directory, "fold-textures.bin");
+  if (!source) {
+    const helper = join(REPOSITORY, "dist/ipodtouch4/screen-capture");
+    if (!existsSync(helper)) throw new Error("build Pocket Fold before taking a snapshot");
+    await withTunnel(async (port) => {
+      const remoteRoot = `/private/var/tmp/pocket-fold-${randomBytes(8).toString("hex")}`;
+      mustRemote(port, `mkdir -m 700 ${remoteRoot}`);
+      try {
+        copyToDevice(port, helper, `${remoteRoot}/capture`);
+        console.log(mustRemote(port, `chmod 700 ${remoteRoot}/capture; ${remoteRoot}/capture ${remoteRoot}/screen.png`));
+        const result = runBinary("ssh", sshArgs(port, `cat ${remoteRoot}/screen.png`));
+        if (result.exitCode) throw new Error("display snapshot download failed");
+        writeFileSync(png, result.stdout);
+      } finally { remote(port, `rm -rf ${remoteRoot}`); }
+    });
+  }
+  await bakeFoldSnapshot(png, textures);
+  await withTunnel(async (port) => {
+    const app = installedApp(port);
+    const destination = `${app.Container}/Documents/fold-textures.bin`;
+    const temporary = `${destination}.${randomBytes(8).toString("hex")}`;
+    try {
+      copyToDevice(port, textures, temporary);
+      const digest = mustRemote(port, `/usr/bin/openssl dgst -sha256 ${shellQuote(temporary)}`);
+      if (!digest.endsWith(sha256(textures))) throw new Error("snapshot readback hash mismatch");
+      mustRemote(port, `chown mobile:mobile ${shellQuote(temporary)}; chmod 600 ${shellQuote(temporary)}; mv ${shellQuote(temporary)} ${shellQuote(destination)}`);
+    } finally { remote(port, `rm -f ${shellQuote(temporary)}`); }
+  });
+  console.log(`snapshot installed with SHA-256 readback; launch Pocket Fold to load it\n${png}`);
+}
+
+async function foldControl(operation?: string, value?: string): Promise<void> {
+  if (!APP.foldSurface) throw new Error("fold-command requires POCKETJS_IPODTOUCH4_APP=fold");
+  const degrees = Number(value);
+  if (operation !== "calibrate" && operation !== "motion" &&
+      !(operation === "manual" && value !== undefined && Number.isFinite(degrees) && Math.abs(degrees) <= 85)) {
+    throw new Error("fold-command calibrate|motion|manual <degrees from -85 to 85>");
+  }
+  const command = JSON.stringify(operation === "manual" ? { op: operation, degrees } : { op: operation });
+  await withTunnel(async (port) => {
+    const app = installedApp(port);
+    const path = `${app.Container}/tmp/fold.command`;
+    mustRemote(port, `printf %s ${shellQuote(command)} > ${shellQuote(path + ".new")}; ` +
+      `chown mobile:mobile ${shellQuote(path + ".new")}; mv ${shellQuote(path + ".new")} ${shellQuote(path)}`);
+  });
+}
+
+async function foldStatus(): Promise<void> {
+  if (!APP.foldSurface) throw new Error("fold-status requires POCKETJS_IPODTOUCH4_APP=fold");
+  await status(false);
+  await withTunnel(async (port) => {
+    const app = installedApp(port);
+    const raw = mustRemote(port, `cat ${shellQuote(app.Container + "/tmp/fold.status.json")}`);
+    console.log(JSON.stringify(JSON.parse(raw), null, 2));
+  });
+}
+
 function tunnel(): never {
   const udid = verifyDeviceIdentity();
   console.log(`forwarding 127.0.0.1:${LOCAL_PORT} to ${DEVICE_TYPE} port ${DEVICE_PORT}`);
@@ -1110,7 +1213,10 @@ function usage(): void {
   bun ipodtouch4 launch
   bun ipodtouch4 status [--require-action]
   bun ipodtouch4 capture
-  bun ipodtouch4 tunnel`);
+  bun ipodtouch4 tunnel
+  bun ipodtouch4 snapshot [portrait.png]       # fold app; SpringBoard visible
+  bun ipodtouch4 fold-command calibrate|motion|manual <degrees>
+  bun ipodtouch4 fold-status`);
 }
 
 export async function main(args: readonly string[] = Bun.argv.slice(2)): Promise<void> {
@@ -1142,6 +1248,15 @@ export async function main(args: readonly string[] = Bun.argv.slice(2)): Promise
       break;
     case "capture":
       await capture();
+      break;
+    case "snapshot":
+      await snapshot(args[1]);
+      break;
+    case "fold-command":
+      await foldControl(args[1], args[2]);
+      break;
+    case "fold-status":
+      await foldStatus();
       break;
     case "tunnel":
       tunnel();

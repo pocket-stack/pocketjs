@@ -128,6 +128,8 @@ int pocket_runtime_damage_bounds(int *bounds);
 int pocket_runtime_gl_initialize(void);
 void pocket_runtime_gl_reset(void);
 int pocket_runtime_gl_render(int width, int height);
+/* Preserve an application-owned background beneath the retained UI. */
+int pocket_runtime_gl_render_over(int width, int height);
 void pocket_runtime_gl_shutdown(void);
 
 uint32_t pocket_runtime_width(void);
