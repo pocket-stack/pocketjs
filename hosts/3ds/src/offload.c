@@ -7,6 +7,9 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#if __has_include(<netinet/tcp.h>)
+#include <netinet/tcp.h>
+#endif
 #include <stdio.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -76,6 +79,10 @@ static void serve(void *unused) {
     int fd = accept(listener, NULL, NULL);
     if (fd < 0) { svcSleepThread(10000000); continue; }
     fcntl(fd, F_SETFL, O_NONBLOCK);
+#ifdef TCP_NODELAY
+    int no_delay = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof no_delay);
+#endif
     char offered[64]; unsigned mismatch = 0;
     if (!transfer(fd, offered, sizeof offered, false)) { close(fd); continue; }
     for (unsigned i = 0; i < sizeof key; i++) mismatch |= key[i] ^ offered[i];
