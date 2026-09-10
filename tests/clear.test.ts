@@ -178,6 +178,55 @@ describe("Pocket Clear on the sim", () => {
     expect(treeHasText(world.getTree(), "Z5€m|")).toBe(false);
   });
 
+  test("held space scrubs the real editor; held backspace deletes and stops at lift", async () => {
+    await tap(160, rowCenterY(0));
+    await idle(20);
+    const [bx, by] = keyCenter(key => key.action === "backspace");
+    for (let i = 0; i < 180; i++) await step([__packTouch(0, bx, by)]);
+    await step();
+    // Probe a blank part of q's popup: quick taps retain it, then fade;
+    // holding a character keeps it up beyond the minimum display duration.
+    const [qx, qy] = keyCenter(key => key.ch === "q");
+    const pixel = () => Array.from(world.render().slice(((qy - 64) * W + qx) * 4, ((qy - 64) * W + qx) * 4 + 3));
+    const empty = pixel();
+    await step([__packTouch(0, qx, qy)]); await step();
+    const raised = pixel(); expect(raised).not.toEqual(empty);
+    await idle(10); expect(pixel()).toEqual(raised);
+    await idle(20); expect(pixel()).toEqual(empty);
+    for (let i = 0; i < 35; i++) await step([__packTouch(0, qx, qy)]);
+    expect(pixel()).toEqual(raised);
+    await step(); await idle(5); expect(pixel()).toEqual(raised);
+    await idle(20); expect(pixel()).toEqual(empty);
+    await tapKey("lower", key => key.action === "backspace");
+    await tapKey("lower", key => key.action === "backspace");
+    for (const ch of "abcdef") await tapKey("lower", key => key.ch === ch);
+    expect(treeHasText(world.getTree(), "abcdef|")).toBe(true);
+    const [sx, sy] = keyCenter(key => key.ch === " ");
+    const spacePixel = () => Array.from(world.render().slice((sy * W + sx - 60) * 4, (sy * W + sx - 60) * 4 + 3));
+    const restingCap = spacePixel();
+    await step([__packTouch(0, sx, sy)]);
+    const pressedCap = spacePixel(); expect(pressedCap).not.toEqual(restingCap);
+    // Past the former 180 ms flash: still pressed, before the 360 ms hold.
+    for (let i = 0; i < 18; i++) await step([__packTouch(0, sx, sy)]);
+    expect(spacePixel()).toEqual(pressedCap);
+    for (let i = 0; i < 6; i++) await step([__packTouch(0, sx, sy)]);
+    expect(spacePixel()).toEqual(pressedCap); // activation must not release the cap
+    await step([__packTouch(0, sx - 30, sy)]);
+    await step(); await idle(13);
+    expect(spacePixel()).toEqual(restingCap);
+    expect(treeHasText(world.getTree(), "abc|def")).toBe(true);
+    await tapKey("lower", key => key.ch === "x");
+    expect(treeHasText(world.getTree(), "abcx|def")).toBe(true);
+    for (let i = 0; i < 40; i++) await step([__packTouch(0, bx, by)]);
+    await step(); await idle(30);
+    expect(treeHasText(world.getTree(), "|def")).toBe(true);
+    await tapKey("lower", key => key.ch === "q");
+    await idle(30); // no delayed repeat may erase q
+    expect(treeHasText(world.getTree(), "q|def")).toBe(true);
+    await tapKey("lower", key => key.action === "return");
+    await idle(20);
+  });
+
   test("pull up past the end clears the done pile", async () => {
     // One done row exists ("Swipe right to complete"); 9 rows total, so the
     // range max is 558-480=78 and the clear needs ~382px of finger travel.

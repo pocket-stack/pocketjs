@@ -549,19 +549,20 @@ export default () => {
     region: {
       rect: () =>
         screenName === "todos" && editor.editing()
-          ? { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H - KB_H }
+          ? { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H - kb.height() }
           : null,
     },
     onTap: () => editor.close(true),
   });
 
   // The keyboard claims its panel outright (registered last = top priority).
-  // Keys commit on the down edge; the key-cap popup lives until the lift.
+  // Contacts own holds and drags; a short space commits on release.
   createGesture({
     region: { rect: () => kb.rect() },
-    onDown: (c) => kb.pressAt(c.x, c.y, SCREEN_H),
-    onUp: () => kb.release(),
-    onCancel: () => kb.release(),
+    onDown: (c) => kb.pressAt(c.x, c.y, SCREEN_H, c.id),
+    onMove: (c) => kb.moveAt(c.x, c.y, c.id),
+    onUp: (c) => kb.release(c.id),
+    onCancel: (c) => kb.release(c.id, true),
   });
 
   // ------------------------------------------------------------ frame pump
@@ -595,6 +596,7 @@ export default () => {
   }
 
   onFrame(() => {
+    editor.step();
     if (screenName === "todos") {
       scroller.step();
       const off = scroller.offset();

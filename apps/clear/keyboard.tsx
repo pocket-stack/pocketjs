@@ -8,9 +8,16 @@
 // lower); the numbers layer's third-row-left key toggles "#+=" symbols in
 // place while the bottom-left key stays "ABC" on both, like the original.
 
-import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate, jump } from "@pocketjs/framework/animation";
-import { shallowRef } from "vue";
+import { virtualNow } from "@pocketjs/framework/clock";
+import { onFrame } from "@pocketjs/framework/lifecycle";
+import { shallowRef, onScopeDispose } from "vue";
+import { createKeyboardTouch } from "./keyboard-touch.ts";
+import { remoteText, hasCompanion } from "./remote-text.tsx";
+import type { ImeState } from "@pocketjs/framework/ime";
+import { SCREEN_H } from "./metrics.ts";
+import { IME_BAR_H } from "./keyboard-metrics.ts";
 import { KB_GAP, KB_H, KB_PAD, KB_ROW_H, KB_W } from "./keyboard-metrics.ts";
 import { KB_LAYERS, kbKeyAt, type KbKey, type KbLayerName } from "./kb-layout.ts";
 
@@ -39,21 +46,29 @@ export interface KeyboardHandlers {
   onInsert(ch: string): void;
   onBackspace(): void;
   onEnter(): void;
+  onMode?(): void;
+  onCandidate?(index: number): void;
+  onPage?(direction: number): void;
+  onCaret?(direction: number): void;
+  onCancelComposition?(): void;
 }
 
 const LAYER_NAMES: readonly KbLayerName[] = ["lower", "upper", "numbers", "symbols"];
 
 export interface Keyboard {
   view: JSX.Element;
+  height(): number;
+  setIme(state: ImeState, chinese: boolean): void;
   /** Dock/undock the panel (animated). */
   setOpen(open: boolean): void;
   isOpen(): boolean;
   /** The docked panel's screen rect, for the gesture region. */
   rect(): { x: number; y: number; w: number; h: number } | null;
   /** Route a contact's down edge (screen coordinates) into a key press. */
-  pressAt(x: number, y: number, screenH: number): void;
+  pressAt(x: number, y: number, screenH: number, id?: number): void;
+  moveAt(x: number, y: number, id?: number): void;
   /** The contact lifted (or was cancelled): dismiss the key-cap popup. */
-  release(): void;
+  release(id?: number, cancelled?: boolean): void;
 }
 
 type CapKind = "char" | "action" | "engaged";
@@ -72,19 +87,62 @@ const CAP_COLORS: Record<CapKind, [string, string, string, string]> = {
 };
 
 export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
+  const imeHeight = hasCompanion() ? IME_BAR_H : 0;
+  const imeStatus = shallowRef("EN");
+  const preedit = shallowRef("");
+  const candidates = Array.from({ length: 5 }, () => shallowRef(""));
   const layerNodes = new Map<KbLayerName, NodeMirror>();
   const keyNodes = new Map<string, NodeMirror>();
+  const spaceNodes = new Set<NodeMirror>();
+  let spacePressed = false;
   let panel: NodeMirror | null = null;
   let popupNode: NodeMirror | null = null;
   const popupText = shallowRef("");
+  const tracking = shallowRef(false), detent = shallowRef(false);
+  let popupOwner = -1, popupAt = 0, popupHideAt = Infinity, detentUntil = 0;
   let open = false;
   let layer: KbLayerName = "lower";
+  const touch = createKeyboardTouch({
+    space: () => handlers.onInsert(" "), backspace: () => handlers.onBackspace(),
+    caret: direction => handlers.onCaret?.(direction),
+    trackpad(active) {
+      tracking.value = active;
+      if (active && popupNode) { jump(popupNode, "opacity", 0); popupOwner = -1; popupHideAt = Infinity; }
+    },
+    detent() { detent.value = true; detentUntil = virtualNow() + 0.075; },
+  });
+  onFrame(() => {
+    const now = virtualNow();
+    touch.step(now);
+    syncSpacePress();
+    if (detent.value && now >= detentUntil) detent.value = false;
+    if (now >= popupHideAt) {
+      popupHideAt = Infinity;
+      if (popupNode) animate(popupNode, "opacity", 0, { dur: 120, easing: "out" });
+    }
+  });
+  onScopeDispose(() => touch.cancel());
 
   function applyLayer(next: KbLayerName): void {
     layer = next;
     for (const name of LAYER_NAMES) {
       const node = layerNodes.get(name);
       if (node) jump(node, "translateX", name === layer ? 0 : KB_W + 40);
+    }
+  }
+
+  function syncSpacePress(fade = true): void {
+    const pressed = touch.holdingSpace();
+    if (pressed === spacePressed) return;
+    spacePressed = pressed;
+    for (const node of spaceNodes) {
+      if (pressed || !fade) {
+        jump(node, "gradFrom", pressed ? CAP_PRESS_FROM : CAP_FROM);
+        jump(node, "gradTo", pressed ? CAP_PRESS_TO : CAP_TO);
+      } else {
+        animate(node, "gradFrom", CAP_FROM, { dur: 180, easing: "out" });
+        animate(node, "gradTo", CAP_TO, { dur: 180, easing: "out" });
+      }
     }
   }
 
@@ -99,9 +157,10 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
     animate(node, "gradTo", to, { dur: 180, easing: "out" });
   }
 
-  function showPopup(key: KbKey, row: number): void {
+  function showPopup(key: KbKey, row: number, id: number): void {
     if (!popupNode || key.ch === undefined || key.ch === " ") return;
     popupText.value = key.ch;
+    popupOwner = id; popupAt = virtualNow(); popupHideAt = Infinity;
     const x = Math.max(2, Math.min(KB_W - POPUP_W - 2, key.x + key.w / 2 - POPUP_W / 2));
     const y = KB_PAD + row * (KB_ROW_H + KB_GAP) - POPUP_H - 6;
     jump(popupNode, "translateX", x);
@@ -109,10 +168,14 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
     jump(popupNode, "opacity", 1);
   }
 
-  function press(row: number, col: number): void {
+  function press(row: number, col: number, id: number, x: number, y: number, screenH: number): void {
     const key = KB_LAYERS[layer][row][col];
-    flashKey(layer, row, col);
-    showPopup(key, row);
+    if (!touch.begin(id, x, y, key.ch === " " ? "space" : key.action === "backspace" ? "backspace" : "other",
+      { x: key.x, y: screenH - KB_H + KB_PAD + row * (KB_ROW_H + KB_GAP), w: key.w, h: KB_ROW_H }, virtualNow())) return;
+    if (key.ch === " ") syncSpacePress();
+    else flashKey(layer, row, col);
+    showPopup(key, row, id);
+    if (key.ch === " " || key.action === "backspace") return;
     if (key.ch !== undefined) {
       handlers.onInsert(key.ch);
       if (layer === "upper") applyLayer("lower"); // one-shot shift
@@ -131,28 +194,19 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
       case "abc":
         applyLayer("lower");
         break;
-      case "backspace":
-        handlers.onBackspace();
-        break;
       case "return":
         handlers.onEnter();
         break;
       case "globe":
-        break; // one keyboard only — the flash is the whole effect
+        handlers.onMode?.();
+        break;
     }
   }
 
-  /** The globe key's icon: an arc ring with crosshair meridians. */
+  /** Baked filled contours keep thin meridians antialiased at native density. */
   function globeIcon() {
     return (
-      <View class="absolute" style={{ insetL: 10, insetT: 11, width: 18, height: 18 }}>
-        <View
-          class="absolute inset-0"
-          style={{ arcStart: 0, arcSweep: 360, arcWidth: 1.6, bgColor: "#d3d7dc" }}
-        />
-        <View class="absolute bg-[#d3d7dc]" style={{ insetL: 0, insetT: 8, width: 18, height: 1.6 }} />
-        <View class="absolute bg-[#d3d7dc]" style={{ insetL: 8, insetT: 0, width: 1.6, height: 18 }} />
-      </View>
+      <Image src="icon-globe.svg" style={{ width: 24, height: 24, opacity: tracking.value ? 0.25 : 1 }} />
     );
   }
 
@@ -163,7 +217,10 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
     return (
       <View
         nodeRef={(node) => {
-          if (node) keyNodes.set(`${name}:${r}:${c}`, node);
+          if (node) {
+            keyNodes.set(`${name}:${r}:${c}`, node);
+            if (key.ch === " ") spaceNodes.add(node);
+          }
         }}
         class={
           kind === "char"
@@ -182,8 +239,16 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
       >
         {key.action === "globe" ? (
           globeIcon()
+        ) : key.action === "backspace" ? (
+          <Image src="icon-backspace.svg" style={{ width: 26, height: 24, opacity: tracking.value ? 0.25 : 1 }} />
+        ) : key.ch === " " && tracking.value ? (
+          <View class="absolute inset-0 items-center justify-center">
+            <Image src="icon-trackpad.svg" style={{ width: 96, height: 24 }} />
+            <View class="absolute rounded-full w-[1] h-[8] bg-[#cbd3dd]" style={{ insetT: 16, opacity: detent.value ? 0.7 : 0 }} />
+          </View>
         ) : (
           <Text
+            style={{ opacity: tracking.value ? 0.25 : 1 }}
             class={
               kind === "engaged"
                 ? "text-lg text-[#16181c]"
@@ -219,9 +284,19 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
         if (node) panel = node;
       }}
       class="absolute left-0 right-0 bottom-0 z-40 bg-gradient-to-b from-[#17191d] to-[#0d0f12]"
-      style={{ height: KB_H, translateY: KB_H + POPUP_H + 8 }}
+      style={{ height: KB_H, translateY: KB_H + POPUP_H + IME_BAR_H + 8 }}
     >
       <View class="absolute left-0 right-0 top-0 bg-[#000000]" style={{ height: 1 }} />
+      {imeHeight > 0 ? <View class="absolute left-0 right-0 bg-[#1a1d21]" style={{ insetT: -imeHeight, height: imeHeight }}>
+        <Text class="absolute left-[6] top-[4] text-sm text-[#b3bbc6]">{imeStatus.value}</Text>
+        <View class="absolute left-[42] top-[4]">{remoteText(() => preedit.value, KB_W - 140, 16)}</View>
+        <View class="absolute right-[54] top-[2] w-[42] h-[28] items-center justify-center"><Image src="icon-cancel.svg" class="w-[22] h-[22]" /></View>
+        <View class="absolute right-[26] top-[2] w-[24] h-[28] items-center justify-center"><Image src="icon-previous.svg" class="w-[16] h-[16]" /></View>
+        <View class="absolute right-[2] top-[2] w-[24] h-[28] items-center justify-center"><Image src="icon-next.svg" class="w-[16] h-[16]" /></View>
+        {candidates.map((candidate, i) => <View class="absolute overflow-hidden" style={{ insetL: 4 + i * (KB_W - 8) / 5, insetT: 30, width: 60, height: 28 }}>
+          {remoteText(() => candidate.value, 60, 16)}
+        </View>)}
+      </View> : null}
       {LAYER_NAMES.map((name) => renderLayer(name))}
       <View
         nodeRef={(node) => {
@@ -246,25 +321,49 @@ export function makeKeyboard(handlers: KeyboardHandlers): Keyboard {
 
   return {
     view,
+    height: () => KB_H + imeHeight,
+    setIme(state, chinese) {
+      imeStatus.value = chinese ? "PY" : "EN";
+      preedit.value = !chinese ? "" : !state.connected ? "Offline (queued)" : state.error ? "Retry / clear" :
+        state.preedit ? `${state.preedit.slice(0, state.caret)}|${state.preedit.slice(state.caret)}${state.pending ? "..." : ""}` : state.pending ? "..." : "Pinyin";
+      for (let i = 0; i < 5; i++) candidates[i].value = chinese && !state.pending ? state.candidates[i] ?? "" : "";
+    },
     setOpen(next: boolean): void {
       if (next === open) return;
       open = next;
+      touch.cancel(); syncSpacePress(false); popupOwner = -1; popupHideAt = Infinity;
       if (open) applyLayer("lower");
       if (popupNode) jump(popupNode, "opacity", 0);
       if (panel) {
-        animate(panel, "translateY", open ? 0 : KB_H + POPUP_H + 8, { dur: 200, easing: "out" });
+        animate(panel, "translateY", open ? 0 : KB_H + POPUP_H + IME_BAR_H + 8, { dur: 200, easing: "out" });
       }
     },
     isOpen: () => open,
     rect() {
-      return open ? { x: 0, y: 480 - KB_H, w: KB_W, h: KB_H } : null;
+      return open ? { x: 0, y: SCREEN_H - KB_H - imeHeight, w: KB_W, h: KB_H + imeHeight } : null;
     },
-    pressAt(x: number, y: number, screenH: number): void {
+    pressAt(x: number, y: number, screenH: number, id = 0): void {
+      if (touch.tracking()) return;
+      const barY = y - (screenH - KB_H - imeHeight);
+      if (imeHeight && barY >= 0 && barY < imeHeight) {
+        if (barY >= 28) handlers.onCandidate?.(Math.max(0, Math.min(4, Math.floor((x - 4) / ((KB_W - 8) / 5)))));
+        else if (x > KB_W - 50) handlers.onPage?.(x < KB_W - 24 ? -1 : 1);
+        else if (x > KB_W - 96) handlers.onCancelComposition?.();
+        else if (x < 45) handlers.onMode?.();
+        else handlers.onCaret?.(x < 158 ? -1 : 1);
+        return;
+      }
       const pos = kbKeyAt(KB_LAYERS[layer], x, y - (screenH - KB_H));
-      if (pos) press(pos.row, pos.col);
+      if (pos) press(pos.row, pos.col, id, x, y, screenH);
     },
-    release(): void {
-      if (popupNode) animate(popupNode, "opacity", 0, { dur: 90, easing: "out" });
+    moveAt(x: number, y: number, id = 0) { touch.move(id, x, y); syncSpacePress(); },
+    release(id = 0, cancelled = false): void {
+      touch.release(id, cancelled);
+      syncSpacePress();
+      if (id === popupOwner) {
+        popupOwner = -1;
+        popupHideAt = cancelled ? virtualNow() : Math.max(popupAt + 0.24, virtualNow() + 0.14);
+      }
     },
   };
 }
