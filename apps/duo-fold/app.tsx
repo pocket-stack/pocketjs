@@ -1,5 +1,5 @@
 import { createSignal, Show } from "solid-js";
-import { Focusable, Text, View } from "@pocketjs/framework/components";
+import { Focusable, Image, Text, View } from "@pocketjs/framework/components";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { reportAppAction } from "@pocketjs/framework/host";
 import { connectFold, type FoldCommand } from "./service.ts";
@@ -28,8 +28,8 @@ export default function Fold() {
   return (
     <View class="relative w-[320] h-[480] overflow-hidden">
       <Focusable debugName="FoldControlsToggle" onPress={() => { setVisible(!visible()); reportAppAction("fold_control", ++actions); }}
-        class="absolute right-[10] top-[24] w-[42] h-[32] rounded-xl bg-slate-900 items-center justify-center">
-        <Text class="text-sm text-white">{visible() ? "Hide" : "Fold"}</Text>
+        class="absolute right-[8] top-[24] w-[44] h-[44] items-center justify-center">
+        <Image class="w-[32] h-[32]" src="pocketjs-icon.png" />
       </Focusable>
       <Show when={!source()}>
         <View class="absolute left-[22] top-[164] w-[276] flex-col gap-3">

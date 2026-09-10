@@ -51,8 +51,12 @@ source at 320×480. Updating the app preserves the snapshot in Documents.
 - **Set zero** records the current pose and returns to gyroscope mode.
 - **Gyroscope** leaves a manual preview and resumes the calibrated attitude.
 - **−15 deg**, **Flat**, and **+15 deg** set a manual preview angle.
-- **Hide / Fold** closes or opens the controls. The initial panel hides after
-  eight seconds of rendering when a snapshot is present.
+- The **solid PocketJS icon** in the top-right corner closes or opens the controls.
+  It uses the `site/assets/favicon.svg` artwork in a 44×44 touch target, with
+  a filled shell and transparency outside the colored frame.
+  `bun apps/duo-fold/bake-icon.ts` produces the 32×32 and 64×64 pack assets.
+  The initial panel hides after eight seconds of rendering when a snapshot
+  is present.
 
 Hold the iPod in portrait orientation and rotate it about its vertical axis.
 The reference plane remains fixed until calibration. Home returns to iOS.
