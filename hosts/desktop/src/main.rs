@@ -1,20 +1,21 @@
-//! Native platform adapter: window, input, clipboard and pixel presentation.
-//! Guests, layout, composition and rasterization belong to the runtime worker.
+//! Native platform adapter: window, input, clipboard and GPU presentation.
+//! Guests, layout, composition and GPU recording belong to the runtime worker.
 //! Text capabilities run in separately budgeted io.offload workers. No platform
 //! text system participates in layout, shaping or drawing.
 use anyhow::{Context as _, Result, anyhow};
 use pocket_mod::Guest;
 use pocket_ui_surface::{UiSurface, offload::OffloadWorker};
-use pocketjs_core::compositor::{self, CompositorRaster};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     cmp::Reverse,
     collections::{HashMap, HashSet, VecDeque},
-    num::NonZeroU32,
     path::PathBuf,
-    rc::Rc,
     sync::mpsc::{Receiver, SyncSender, sync_channel},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -26,6 +27,7 @@ use winit::{
     keyboard::{Key, ModifiersState, NamedKey},
     window::{CursorIcon, Window, WindowId},
 };
+mod gpu;
 mod net;
 include!("plan.rs");
 include!("supervisor.rs");
@@ -47,10 +49,25 @@ enum Input {
     Reset,
     Quit,
 }
+// Reservation covers queued GPU work as well as the output channel.
+struct OutputPermit(Arc<AtomicBool>);
+impl OutputPermit {
+    fn acquire(available: &Arc<AtomicBool>) -> Option<Self> {
+        available
+            .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| Self(available.clone()))
+    }
+}
+impl Drop for OutputPermit {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
 struct Output {
-    pixels: Option<Vec<u32>>,
-    width: u32,
-    height: u32,
+    _permit: OutputPermit,
+    tick: u64,
+    target: Option<Arc<gpu::Target>>,
     intents: Vec<Value>,
 }
 #[derive(Debug)]
@@ -242,48 +259,7 @@ impl Runtime {
         self.surface
             .with_ui(|ui| fnv1a64(&ui.draw().words) ^ ui.raster_revision().rotate_left(7))
             ^ self.supervisor.visible_hash().rotate_left(17)
-    }
-    fn render(&mut self) -> Vec<u32> {
-        let mut surfaces = vec![None; self.supervisor.catalog.len() + 1];
-        for instance in &self.supervisor.instances {
-            if !instance.visible || instance.state == AppInstanceState::Failed {
-                continue;
-            }
-            let (w, h) = (
-                instance.package.plan.viewport.logical[0],
-                instance.package.plan.viewport.logical[1],
-            );
-            let density = self.args.density;
-            let mut pixels = vec![0u8; (w * density) as usize * (h * density) as usize * 4];
-            instance.surface.with_ui(|ui| {
-                let words = ui.draw().words.clone();
-                pocketjs_core::raster::render_scaled(ui, &words, &mut pixels, density);
-            });
-            let handle = instance.surface_handle as usize;
-            if surfaces.len() <= handle {
-                surfaces.resize(handle + 1, None);
-            }
-            surfaces[handle] = Some(CompositorRaster {
-                pixels,
-                width: w,
-                height: h,
-                density,
-            });
-        }
-        let (w, h) = (
-            self.viewport.0 * self.args.density,
-            self.viewport.1 * self.args.density,
-        );
-        let mut rgba = vec![0u8; w as usize * h as usize * 4];
-        self.surface.with_ui(|ui| {
-            let words = ui.draw().words.clone();
-            compositor::render(ui, &words, &mut rgba, self.args.density, &surfaces);
-        });
-        rgba.as_chunks::<4>()
-            .0
-            .iter()
-            .map(|p| (p[0] as u32) << 16 | (p[1] as u32) << 8 | p[2] as u32)
-            .collect()
+            ^ ((self.viewport.0 as u64) << 32 | self.viewport.1 as u64)
     }
     fn run_script(&mut self) {
         let tick = self.ticks;
@@ -345,7 +321,10 @@ fn run_runtime(
     inputs: Receiver<Input>,
     outputs: SyncSender<Output>,
     proxy: EventLoopProxy<Wake>,
+    gpu: Arc<pocket3d::gpu::Gpu>,
 ) -> Result<()> {
+    let available = Arc::new(AtomicBool::new(true));
+    let mut renderer = gpu::Renderer::new(gpu);
     let mut runtime = Runtime::boot(args)?;
     let mut hash = None;
     let mut intents = Vec::new();
@@ -356,7 +335,9 @@ fn run_runtime(
                 return Ok(());
             }
         }
+        let work_start = Instant::now();
         intents.extend(runtime.tick()?);
+        trace_frame(runtime.args.trace_frames, "tick", runtime.ticks, work_start);
         if intents.iter().any(|v| v["t"] == "quit") {
             return Ok(());
         }
@@ -364,26 +345,41 @@ fn run_runtime(
             return Err(anyhow!("Host intent queue exceeded budget"));
         }
         let next = runtime.hash();
-        if hash != Some(next) || !intents.is_empty() {
+        if (hash != Some(next) || !intents.is_empty())
+            && let Some(permit) = OutputPermit::acquire(&available)
+        {
+            let target = if hash != Some(next) {
+                let start = Instant::now();
+                let frame = renderer.render(&mut runtime)?;
+                trace_frame(
+                    runtime.args.trace_frames,
+                    "render-submit",
+                    runtime.ticks,
+                    start,
+                );
+                frame
+            } else {
+                None
+            };
+            let rendered = target.is_some();
             let output = Output {
-                pixels: if hash != Some(next) {
-                    Some(runtime.render())
-                } else {
-                    None
-                },
-                width: runtime.viewport.0 * runtime.args.density,
-                height: runtime.viewport.1 * runtime.args.density,
+                _permit: permit,
+                tick: runtime.ticks,
+                target,
                 intents: std::mem::take(&mut intents),
             };
             match outputs.try_send(output) {
                 Ok(()) => {
-                    hash = Some(next);
+                    if rendered {
+                        hash = Some(next);
+                    }
                     let _ = proxy.send_event(Wake::Output);
                 }
                 Err(std::sync::mpsc::TrySendError::Full(output)) => intents = output.intents,
                 Err(_) => return Ok(()),
             }
         }
+        trace_frame(runtime.args.trace_frames, "work", runtime.ticks, work_start);
         if runtime
             .args
             .quit_after_ticks
@@ -399,13 +395,20 @@ fn run_runtime(
         }
     }
 }
+struct RuntimeStartup {
+    args: Args,
+    inputs: Receiver<Input>,
+    outputs: SyncSender<Output>,
+    proxy: EventLoopProxy<Wake>,
+}
 struct Host {
-    window: Option<Rc<Window>>,
-    surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
+    window: Option<Arc<Window>>,
+    surface: Option<gpu::Presentation>,
+    startup: Option<RuntimeStartup>,
     tx: SyncSender<Input>,
     rx: Receiver<Output>,
     pending: VecDeque<Input>,
-    frame: Option<Output>,
+    frame: Option<(u64, Arc<gpu::Target>)>,
     title: String,
     viewport: (u32, u32),
     fixed: bool,
@@ -416,6 +419,7 @@ struct Host {
     clipboard: Option<arboard::Clipboard>,
     ready: bool,
     announce_ready: bool,
+    trace_frames: bool,
     failure: Option<String>,
 }
 impl Host {
@@ -478,29 +482,12 @@ impl Host {
         else {
             return Ok(());
         };
-        let Some(pixels) = &frame.pixels else {
-            return Ok(());
-        };
-        let size = window.inner_size();
-        if size.width == 0 || size.height == 0 {
+        let (tick, target) = frame;
+        let start = Instant::now();
+        if !surface.present(window, target)? {
             return Ok(());
         }
-        surface
-            .resize(
-                NonZeroU32::new(size.width).unwrap(),
-                NonZeroU32::new(size.height).unwrap(),
-            )
-            .map_err(|e| anyhow!(e.to_string()))?;
-        let mut buffer = surface.buffer_mut().map_err(|e| anyhow!(e.to_string()))?;
-        for y in 0..size.height {
-            for x in 0..size.width {
-                let sx = (x as u64 * frame.width as u64 / size.width as u64) as usize;
-                let sy = (y as u64 * frame.height as u64 / size.height as u64) as usize;
-                buffer[y as usize * size.width as usize + x as usize] =
-                    pixels[sy * frame.width as usize + sx];
-            }
-        }
-        buffer.present().map_err(|e| anyhow!(e.to_string()))?;
+        trace_frame(self.trace_frames, "present-submit", *tick, start);
         if !self.ready {
             self.ready = true;
             if self.announce_ready {
@@ -515,7 +502,7 @@ impl ApplicationHandler<Wake> for Host {
         if self.window.is_some() {
             return;
         }
-        let window = Rc::new(
+        let window = Arc::new(
             event_loop
                 .create_window(
                     Window::default_attributes()
@@ -526,9 +513,35 @@ impl ApplicationHandler<Wake> for Host {
                 .expect("create window"),
         );
         window.set_ime_allowed(true);
-        let context = softbuffer::Context::new(window.clone()).expect("pixel context");
-        self.surface =
-            Some(softbuffer::Surface::new(&context, window.clone()).expect("pixel surface"));
+        let presentation = match gpu::Presentation::new(window.clone()) {
+            Ok(presentation) => presentation,
+            Err(error) => {
+                self.failure = Some(format!("GPU initialization: {error:#}"));
+                event_loop.exit();
+                return;
+            }
+        };
+        let gpu = presentation.gpu.clone();
+        self.surface = Some(presentation);
+        let RuntimeStartup {
+            args,
+            inputs,
+            outputs,
+            proxy,
+        } = self.startup.take().expect("runtime startup");
+        if let Err(error) = thread::Builder::new()
+            .name("pocket-runtime".into())
+            .spawn(move || {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    run_runtime(args, inputs, outputs, proxy.clone(), gpu)
+                }))
+                .unwrap_or_else(|_| Err(anyhow!("Runtime worker panicked")));
+                let _ = proxy.send_event(Wake::Exit(result.err().map(|e| format!("{e:#}"))));
+            })
+        {
+            self.failure = Some(format!("Runtime startup: {error}"));
+            event_loop.exit();
+        }
         self.window = Some(window);
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Wake) {
@@ -587,8 +600,8 @@ impl ApplicationHandler<Wake> for Host {
                             _ => {}
                         }
                     }
-                    if output.pixels.is_some() {
-                        self.frame = Some(output);
+                    if let Some(target) = output.target.take() {
+                        self.frame = Some((output.tick, target));
                         if let Some(window) = &self.window {
                             window.request_redraw();
                         }
@@ -616,6 +629,7 @@ impl ApplicationHandler<Wake> for Host {
             WindowEvent::RedrawRequested => {
                 if let Err(error) = self.present() {
                     log::error!("{error}");
+                    self.failure = Some(error.to_string());
                     event_loop.exit();
                 }
             }
@@ -625,6 +639,7 @@ impl ApplicationHandler<Wake> for Host {
                     (size.width as f64 / scale).round().clamp(240.0, 4096.0) as u32,
                     (size.height as f64 / scale).round().clamp(180.0, 4096.0) as u32,
                 ));
+                self.window.as_ref().unwrap().request_redraw();
             }
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             WindowEvent::Focused(false) => {
@@ -710,6 +725,7 @@ fn main() -> Result<()> {
     let mut host = Host {
         window: None,
         surface: None,
+        startup: None,
         tx,
         rx,
         pending: VecDeque::new(),
@@ -724,23 +740,32 @@ fn main() -> Result<()> {
         clipboard: arboard::Clipboard::new().ok(),
         ready: false,
         announce_ready: args.announce_ready,
+        trace_frames: args.trace_frames,
         failure: None,
     };
-    let proxy = event_loop.create_proxy();
-    thread::Builder::new()
-        .name("pocket-runtime".into())
-        .spawn(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_runtime(args, inputs, outputs, proxy.clone())
-            }))
-            .unwrap_or_else(|_| Err(anyhow!("Runtime worker panicked")));
-            let _ = proxy.send_event(Wake::Exit(result.err().map(|e| e.to_string())));
-        })?;
+    host.startup = Some(RuntimeStartup {
+        args,
+        inputs,
+        outputs,
+        proxy: event_loop.create_proxy(),
+    });
     event_loop.run_app(&mut host)?;
     if let Some(error) = host.failure {
         return Err(anyhow!(error));
     }
     Ok(())
+}
+
+// These are CPU submission durations, not GPU completion or display latency.
+fn trace_frame(enabled: bool, stage: &str, tick: u64, start: Instant) {
+    if enabled {
+        let elapsed = start.elapsed().as_micros();
+        let wall = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros();
+        eprintln!("FRAME_TRACE,{stage},{tick},{wall},{elapsed}");
+    }
 }
 
 include!("tests.rs");

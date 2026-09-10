@@ -3,6 +3,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn output_backpressure_reserves_before_gpu_submission() {
+        let available = Arc::new(AtomicBool::new(true));
+        let permit = OutputPermit::acquire(&available).unwrap();
+        assert!(OutputPermit::acquire(&available).is_none());
+        // Receipt/drop releases the slot even on presentation failure or exit.
+        drop(permit);
+        assert!(OutputPermit::acquire(&available).is_some());
+    }
+
+    #[test]
     fn app_supervisor_uses_lifecycle_focus_and_shell_painter_order() {
         let mut facts = [
             SchedulingFact {

@@ -19,20 +19,40 @@ hosts, the PSP GE walker, the ESP32-P4 PPA and Symbian GLES2 ports.
   core measures runs from the atlas advance tables
   (`engine/core/src/text.rs::measure_run`) and emits `GLYPH_RUN` ops —
   glyph ids and cell positions, nothing else.
-- **Pixels are byte-deterministic.** Same bundle + pak + input tape produce
-  the identical framebuffer on every portable host at the same density —
-  that is what `tests/golden.ts`, the PSP/Vita emulator goldens and
-  `tools/tape.ts` session hashes pin.
+- **Software pixels are byte-deterministic.** The Rust rasterizer produces
+  identical bytes for the same DrawList, resources and density on native and
+  WASM. GPU backends preserve DrawList geometry and painter order; blending,
+  filtering and triangle-edge rounding can differ. GPU tests compare selected
+  fixtures against software with explicit per-channel tolerances. Hardware
+  acceptance remains separate from emulator and software goldens.
 - The capability id is `text.glyphs.baked`; hosts that extend atlases at
   runtime (system-font rasterization + `loadFontAtlas` reload, note-widget's
   cjk.rs) add `text.glyphs.runtime`.
 
 ## The portable desktop host
 
-`hosts/desktop` now uses winit and softbuffer for window/input/pixel presentation.
-QuickJS guests, flex layout, software rasterization and the shared
-`engine/core/src/compositor.rs` painter execute on a runtime worker. Each
-AppInstance has an independent text worker through `io.offload`.
+`hosts/desktop` uses winit for windows/input and the existing `pocket-ui-wgpu`
+DrawList backend for drawing and composition (wgpu/Metal on macOS). It reuses
+`pocket3d::gpu::Gpu`; no extra renderer crate or guest API is introduced.
+QuickJS guests, flex layout and GPU command recording execute on a runtime
+worker. Each AppInstance has an independent text worker through `io.offload`.
+
+**Child surfaces stay on the GPU.** Each has an independent renderer/resource
+cache and retained texture. DrawList/resource revisions invalidate content;
+instance generations invalidate reopened apps. `SURFACE_QUAD` samples these
+textures at the shell's painter position, outside guest texture handles.
+The worker leases from a three-target frame pool and submits to a shared queue.
+The window thread presents the retained target with a GPU blit. Frame leases
+prevent reuse until presentation is submitted; queue ordering protects GPU
+reads. The handoff holds one output, and rendering retries when no target is
+available. An output reservation prevents recording more GPU work while the
+window thread has not consumed the previous output. Surface loss/outdated errors reconfigure and retry; fatal GPU errors
+exit with an error. Production presentation performs no framebuffer readback.
+
+The WASM host retains `engine/core/src/compositor.rs` and the software rasterizer.
+Vita/GXM and 3DS/PICA retain their own DrawList adapters and capability profiles;
+wgpu is not added to their dependency graph. Desktop composition support does
+not admit that capability on handheld targets.
 `text.layout.offload` wraps, shapes and rasterizes text using explicit package
 fonts in Rust, including through the same engine compiled to WASM. PSP requires
 a paired companion for this capability. See [TEXT-OFFLOAD.md](TEXT-OFFLOAD.md)
@@ -213,3 +233,9 @@ X,Y[,d|u|r]@TICK` (drags, right clicks), `--key
 
 The desktop benchmark against Tauri and Electron (harness, comparison
 apps, results) lives in its own stacked PR — pocket-stack/pocketjs#294.
+
+
+`hosts/desktop --trace-frames` emits CPU tick, render-submission, worker-total
+and presentation-submission timestamps. These durations exclude GPU completion
+and display scanout. Use a native input tape and record the binary/package hashes
+when comparing renderer changes.

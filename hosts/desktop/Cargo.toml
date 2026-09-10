@@ -10,8 +10,10 @@ pocketjs-core = { path = "../../engine/core", features = ["std"] }
 pocket-mod = { path = "../../engine/crates/pocket-mod" }
 pocket-ui-surface = { path = "../../engine/crates/pocket-ui-surface" }
 pocket-text = { path = "../../engine/crates/pocket-text" }
+pocket-ui-wgpu = { path = "../../engine/crates/pocket-ui-wgpu" }
+pocket3d = { path = "../../engine/pocket3d/crates/pocket3d", default-features = false }
+wgpu = "25"
 winit = "0.30"
-softbuffer = "0.4"
 arboard = { version = "3", default-features = false }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
