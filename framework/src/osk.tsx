@@ -39,7 +39,8 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Acce
 import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { animate } from "./anim.ts";
 import { simulationHz, virtualFrame } from "./clock.ts";
-import { Focusable, FocusScope, Portal, Text, View } from "./components.ts";
+import { AuxiliaryPortal, Focusable, FocusScope, Portal, Text, View } from "./components.ts";
+import { auxiliaryViewport, type SurfaceId } from "./display.ts";
 import { pushButtonHandlerBlock } from "./frame.ts";
 import { createGesture, pushTouchBlock } from "./gesture.ts";
 import { getOps, hostViewport } from "./host.ts";
@@ -112,6 +113,7 @@ const INK_DIM = { dark: "#8fa3ad", light: "#5f6b78" } as const;
 
 export interface OskProps {
   osk: OskController;
+  surface?: SurfaceId;
   /** Default "dark". */
   theme?: OskThemeName;
 }
@@ -121,16 +123,24 @@ export interface OskProps {
 export function Osk(props: OskProps): SolidJSX.Element {
   return (
     <Show when={props.osk.isOpen()}>
-      <OskPanel osk={props.osk} theme={props.theme ?? "dark"} />
+      <OskPanel osk={props.osk} theme={props.theme ?? "dark"} surface={props.surface ?? "primary"} />
     </Show>
   );
 }
 
-const INNER_W = SCREEN_W - 2 * OSK_PAD;
+function keyboardViewport(surface: SurfaceId) {
+  if(surface === "auxiliary") {
+    const viewport = auxiliaryViewport();
+    if(!viewport) throw new Error("Auxiliary keyboard requires display.auxiliary");
+    return { w: viewport.width, h: viewport.height };
+  }
+  return hostViewport(getOps()) ?? { w: SCREEN_W, h: SCREEN_H };
+}
 
-function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.Element {
+function OskPanel(props: { osk: OskController; theme: OskThemeName; surface: SurfaceId }): SolidJSX.Element {
+  const viewport = keyboardViewport(props.surface), innerWidth = viewport.w - 2 * OSK_PAD;
   const [layer, setLayer] = createSignal<OskLayerName>("lower");
-  const rows = createMemo(() => layoutRows(OSK_LAYERS[layer()], INNER_W));
+  const rows = createMemo(() => layoutRows(OSK_LAYERS[layer()], innerWidth));
 
   // -- modality: mute app button handlers AND app gestures while the panel
   //    lives (the list under the keyboard sees onCancel the frame it opens).
@@ -238,12 +248,12 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
     }
   };
   createGesture({
+    surface: props.surface,
     region: {
       node: () => rootNode,
       rect: () => {
         // Dock-at-the-bottom geometry for hosts without hitTest.
-        const vh = hostViewport(getOps())?.h ?? SCREEN_H;
-        return { x: 0, y: vh - OSK_H, w: SCREEN_W, h: OSK_H };
+        return { x: 0, y: viewport.h - OSK_H, w: viewport.w, h: OSK_H };
       },
     },
     allowWhenBlocked: true, // exempt from the OSK's own touch block
@@ -301,12 +311,11 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
   });
 
   const resolveTouch = (x: number, y: number): OskKeyRect | null => {
-    const node = hitFocusable(x, y);
+    const node = hitFocusable(x, y, props.surface);
     if (node) return nodeInfo.get(node) ?? null;
-    if (getOps().hitTest) return null; // exact miss — not a key
+    if (props.surface === "auxiliary" ? getOps().hitTestAuxiliary : getOps().hitTest) return null;
     // No hitTest op: assume the panel is docked at the bottom of the screen.
-    const vh = hostViewport(getOps())?.h ?? SCREEN_H;
-    const pos = keyAtPoint(rows(), x - OSK_PAD, y - (vh - OSK_H) - OSK_PAD);
+    const pos = keyAtPoint(rows(), x - OSK_PAD, y - (viewport.h - OSK_H) - OSK_PAD);
     return pos ? rows()[pos.row][pos.col] : null;
   };
 
@@ -324,7 +333,7 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
         rootNode = n;
       }}
       class={props.theme === "light" ? PANEL_LIGHT : PANEL_DARK}
-      style={{ height: OSK_H, width: SCREEN_W, translateY: OSK_H }}
+      style={{ height: OSK_H, width: viewport.w, translateY: OSK_H }}
     >
       {/* Structural reactivity must ride <For> — a bare `{rows().map(…)}`
           child compiles to a static insert and never re-renders on a layer
@@ -333,7 +342,7 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
         {(row, r) => (
           <View
             class="absolute"
-            style={{ insetT: OSK_PAD + r() * (OSK_ROW_H + OSK_GAP), insetL: OSK_PAD, width: INNER_W, height: OSK_ROW_H }}
+            style={{ insetT: OSK_PAD + r() * (OSK_ROW_H + OSK_GAP), insetL: OSK_PAD, width: innerWidth, height: OSK_ROW_H }}
           >
             <For each={row}>
               {(rect) => (
@@ -370,6 +379,7 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
 // ---------------------------------------------------------------------------
 
 export interface TextFieldProps {
+  surface?: SurfaceId;
   /** The bound text (application state stays the only authority). */
   value: Accessor<string>;
   onInput: (next: string) => void;
@@ -384,6 +394,8 @@ export interface TextFieldProps {
 }
 
 export function TextField(props: TextFieldProps): SolidJSX.Element {
+  const surface = props.surface ?? "primary", viewport = keyboardViewport(surface);
+  const Overlay = surface === "auxiliary" ? AuxiliaryPortal : Portal;
   const osk = createOsk({
     value: props.value,
     setValue: (next) => props.onInput(next),
@@ -416,12 +428,12 @@ export function TextField(props: TextFieldProps): SolidJSX.Element {
     // The keyboard docks over the overlay layer (hitPass keeps the empty
     // layer hit-transparent; the panel itself claims normally) and blocks
     // buttons + gestures beneath while it lives — the OSK's own modality.
-    Portal({
+    Overlay({
       children: () =>
         View({
-          style: { posType: ENUMS.PosType.Absolute, insetB: 0, insetL: 0, width: SCREEN_W, hitPass: 1 },
+          style: { posType: ENUMS.PosType.Absolute, insetB: 0, insetL: 0, width: viewport.w, hitPass: 1 },
           get children() {
-            return Osk({ osk, get theme() { return props.theme; } });
+            return Osk({ osk, surface, get theme() { return props.theme; } });
           },
         }),
     }),
