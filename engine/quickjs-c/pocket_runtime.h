@@ -137,4 +137,9 @@ size_t pocket_runtime_length(void);
 const char *pocket_runtime_error(void);
 void pocket_runtime_shutdown(void);
 
+#ifdef POCKET_DEV_RUNTIME
+/* Parse only plan metadata in an isolated, bounded realm; never evaluate it. */
+int pocket_runtime_validate_plan(const uint8_t *plan, size_t length, int width, int height);
+#endif
+
 #endif

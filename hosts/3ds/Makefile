@@ -154,6 +154,8 @@ $(BUILD)/offload.o: $(SOURCE)/offload.h $(SOURCE)/offload_queue.h
 $(BUILD)/qjs.o: $(SOURCE)/offload.h $(SOURCE)/offload_coverage.h
 $(BUILD)/media.o: $(SOURCE)/media.h $(SOURCE)/media_wire.h $(SOURCE)/media_adpcm.h
 $(BUILD)/main.o $(BUILD)/qjs.o $(BUILD)/gfx.o: $(SOURCE)/media.h
+$(BUILD)/dev_protocol.o: $(CURDIR)/../../engine/runtime/dev_protocol.c $(CURDIR)/../../engine/runtime/dev_protocol.h
+$(BUILD)/devserver.o $(BUILD)/svcwire.o: $(CURDIR)/../../engine/runtime/dev_protocol.h
 
 $(ELF): $(OBJECTS) $(POCKETJS_CORE_LIB) $(POCKETJS_QUICKJS_DIR)/libquickjs.a
 	$(CC) $(LDFLAGS) $(OBJECTS) $(POCKETJS_CORE_LIB) $(POCKETJS_QUICKJS_DIR)/libquickjs.a \

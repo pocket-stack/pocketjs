@@ -5,6 +5,13 @@ on:
     paths:
       - ".github/workflows/native-c-harness.yml"
       - "engine/quickjs-c/**"
+      - "engine/runtime/**"
+      - "hosts/ios-legacy/**"
+      - "hosts/ipodtouch4/**"
+      - "tools/ipodtouch4*.ts"
+      - "tools/pocket-runtime-client.ts"
+      - "tests/ipodtouch4*.test.ts"
+      - "tests/fixtures/ipodtouch4-runtime.c"
       - "engine/ui-cabi/**"
       - "engine/core/**"
       - "framework/src/**"
@@ -25,6 +32,13 @@ on:
     paths:
       - ".github/workflows/native-c-harness.yml"
       - "engine/quickjs-c/**"
+      - "engine/runtime/**"
+      - "hosts/ios-legacy/**"
+      - "hosts/ipodtouch4/**"
+      - "tools/ipodtouch4*.ts"
+      - "tools/pocket-runtime-client.ts"
+      - "tests/ipodtouch4*.test.ts"
+      - "tests/fixtures/ipodtouch4-runtime.c"
       - "engine/ui-cabi/**"
       - "engine/core/**"
       - "framework/src/**"
@@ -74,5 +88,17 @@ jobs:
         run: cargo test --locked --manifest-path engine/ui-cabi/Cargo.toml --features harness-access
       - name: Link and execute the real C allocator
         run: bun test tests/ui-cabi-allocator.test.ts
+      - name: Fetch the pinned legacy Apple QuickJS sources
+        run: |
+          bun -e '
+            import { ensureQuickJsCheckout } from "./tools/native-source.ts";
+            const { compiler: c } = await Bun.file("tools/cli/iphone4s-toolchain.json").json();
+            ensureQuickJsCheckout("iPod runtime harness", process.env.RUNNER_TEMP + "/pocketjs-qjs", {
+              repository: c.quickJsRepository, revision: c.quickJsRevision, version: c.quickJsVersion,
+            });'
+      - name: Pocket Runtime upload, admission, recovery and real guest
+        env:
+          POCKETJS_QUICKJS_SOURCE: ${{ runner.temp }}/pocketjs-qjs/libquickjs-sys/embed/quickjs
+        run: bun test tests/ipodtouch4-package.test.ts tests/ipodtouch4-runtime.test.ts
       - name: Contract drift
         run: bun tests/contract.ts

@@ -36,6 +36,7 @@ pub mod extension;
     not(feature = "software-only")
 ))]
 mod gl;
+pub mod package;
 
 /// `malloc` and the supported host allocator ABIs provide `max_align_t`
 /// storage: 16 bytes on their 64-bit targets and 8 on 32-bit ARM. Core texture

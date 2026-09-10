@@ -1,4 +1,9 @@
 #include "pocket_runtime.h"
+#ifdef POCKET_DEV_RUNTIME
+#include "guest_runtime.h"
+static int g_dev_started;
+static int g_dev_suspended;
+#endif
 /* The svc transport's state, for the acceptance record: "absent" on builds
  * without the network channel, else discover / connecting / hello / up /
  * up-usb / backoff (svcwire.c). */
@@ -13,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
@@ -645,7 +651,11 @@ static void stop_timer(void) {
 static void fail_runtime(const char *message) {
   copy_status_message(message);
   g_state = POCKET_STATE_FAILED;
+#ifdef POCKET_DEV_RUNTIME
+  pocket_dev_runtime_failed(g_status_message);
+#else
   stop_timer();
+#endif
   pocket_runtime_shutdown();
   g_framebuffer = NULL;
   g_framebuffer_width = 0;
@@ -1012,6 +1022,12 @@ static void teardown_gl(void) {
     g_gl_renderbuffer = 0;
   }
   g_gl_ready = 0;
+#ifdef POCKET_DEV_RUNTIME
+  if (g_gl_context != NULL) {
+    send_bool_class_object(objc_getClass("EAGLContext"), "setCurrentContext:", NULL);
+    send_void(g_gl_context, "release");
+  }
+#endif
   g_gl_context = NULL;
   g_gl_width = 0;
   g_gl_height = 0;
@@ -1042,6 +1058,9 @@ static int setup_gl(id view) {
   g_gl_context = send_id_int(send_id((id)eagl, "alloc"), "initWithAPI:", 1);
   if (g_gl_context == NULL) return 0;
   if (!send_bool_class_object(eagl, "setCurrentContext:", g_gl_context)) {
+#ifdef POCKET_DEV_RUNTIME
+    send_void(g_gl_context, "release");
+#endif
     g_gl_context = NULL;
     return 0;
   }
@@ -1181,12 +1200,8 @@ static int present_gl(unsigned long *submitted_us) {
   ) ? 1 : 0;
 }
 
-static int boot_embedded_runtime(void) {
-  size_t java_script_length = 0;
-  size_t pack_length = 0;
-  const uint8_t *java_script = getsectdata("__DATA", "__pocket_js", &java_script_length);
-  const uint8_t *pack = getsectdata("__DATA", "__pocket_pak", &pack_length);
-
+static int boot_runtime_bytes(const uint8_t *java_script, size_t java_script_length,
+  const uint8_t *pack, size_t pack_length) {
   /* The packager adds a C terminator for diagnostics; JS_Eval wants byte length. */
   if (java_script != NULL && java_script_length > 0 && java_script[java_script_length - 1] == 0) {
     java_script_length -= 1;
@@ -1232,6 +1247,51 @@ static int boot_embedded_runtime(void) {
   }
 #endif
   return 1;
+}
+
+#ifdef POCKET_DEV_RUNTIME
+static void dev_stop_guest(void) {
+  if (g_gl_ready) glFinish();
+  teardown_gl();
+  pocket_runtime_shutdown();
+  g_framebuffer = NULL;
+  /* UITouch identities from the old tree must not address new node handles. */
+  memset(g_touch_slots, 0, sizeof g_touch_slots);
+  g_touch_awaiting_completion = 0;
+}
+static int dev_boot_guest(const PocketGuestPackage *guest) {
+  g_guest_frames = g_last_record_attempt_frame = g_observed_action_sequence = 0;
+  g_window_start_frame = g_window_start_us = g_window_frames = g_window_us = 0;
+  g_frame_us_total = g_present_us_total = g_submit_us_total = g_timed_frames = 0;
+  g_state = POCKET_STATE_STARTING;
+  return boot_runtime_bytes(guest->javascript, guest->javascript_length, guest->pak, guest->pak_length);
+}
+static int dev_validate_plan(const uint8_t *plan, size_t length) {
+  return pocket_runtime_validate_plan(plan, length, POCKET_LOGICAL_WIDTH, POCKET_LOGICAL_HEIGHT);
+}
+static const char *dev_guest_error(void) { return g_status_message; }
+#endif
+
+static int boot_embedded_runtime(void) {
+  size_t java_script_length = 0, pack_length = 0;
+  const uint8_t *java_script = getsectdata("__DATA", "__pocket_js", &java_script_length);
+  const uint8_t *pack = getsectdata("__DATA", "__pocket_pak", &pack_length);
+#ifdef POCKET_DEV_RUNTIME
+  PocketGuestPackage recovery = {0};
+  recovery.javascript = java_script;
+  recovery.javascript_length = java_script_length;
+  recovery.pak = pack;
+  recovery.pak_length = pack_length;
+  const PocketDevHost callbacks = {dev_boot_guest, dev_stop_guest, dev_validate_plan, dev_guest_error};
+  g_dev_started = 1;
+  if (!pocket_dev_runtime_init(POCKET_DEV_RUNTIME_ROOT, &callbacks, &recovery, POCKET_RUNTIME_WIRE_PORT)) {
+    fail_runtime("Cannot initialize Pocket Runtime storage");
+    return 0;
+  }
+  return pocket_dev_runtime_running();
+#else
+  return boot_runtime_bytes(java_script, java_script_length, pack, pack_length);
+#endif
 }
 
 /*
@@ -1286,11 +1346,18 @@ static void pocket_tick(id self, SEL command, id timer) {
   (void)command;
   (void)timer;
 
+#ifdef POCKET_DEV_RUNTIME
+  if (g_dev_suspended) return;
+  if (!g_dev_started) boot_embedded_runtime();
+  pocket_dev_runtime_pump();
+  if (!pocket_dev_runtime_running()) return;
+#else
   if (g_state == POCKET_STATE_STARTING) {
     if (!boot_embedded_runtime()) {
       return;
     }
   }
+#endif
   if (g_state != POCKET_STATE_RUNNING) {
     return;
   }
@@ -1381,6 +1448,10 @@ static void pocket_tick(id self, SEL command, id timer) {
      */
     capture_software_frame_if_requested();
   }
+#ifdef POCKET_DEV_RUNTIME
+  if (g_guest_frames == 1 && g_gl_ready) glFinish();
+  pocket_dev_runtime_presented();
+#endif
   finished_us = now_us();
   if (finished_us >= frame_started_us) {
     g_frame_us_total += present_started_us - frame_started_us;
@@ -1845,6 +1916,9 @@ static void terminate_application(void) {
   g_state = POCKET_STATE_TERMINATED;
   copy_status_message("Application terminated");
   write_acceptance_record();
+#ifdef POCKET_DEV_RUNTIME
+  pocket_dev_runtime_shutdown();
+#endif
   teardown_gl();
   pocket_runtime_shutdown();
   g_framebuffer = NULL;
@@ -1951,6 +2025,22 @@ static Class register_view_class(void) {
   return cls;
 }
 
+#ifdef POCKET_DEV_RUNTIME
+static void dev_resign_active(id self, SEL command, id application) {
+  (void)self; (void)command; (void)application;
+  g_dev_suspended = 1;
+  memset(g_touch_slots, 0, sizeof g_touch_slots);
+  g_touch_awaiting_completion = 0;
+  pocket_devwire_suspend(1);
+  if (g_gl_ready) glFinish();
+}
+static void dev_become_active(id self, SEL command, id application) {
+  (void)self; (void)command; (void)application;
+  g_dev_suspended = 0;
+  pocket_devwire_suspend(0);
+}
+#endif
+
 static Class register_delegate_class(void) {
   Class cls = objc_allocateClassPair(objc_getClass("NSObject"), "PocketJSRuntimeDelegate", 0);
   BOOL methods_added;
@@ -1984,6 +2074,11 @@ static Class register_delegate_class(void) {
   if (!methods_added) {
     return NULL;
   }
+#ifdef POCKET_DEV_RUNTIME
+  if (!class_addMethod(cls, sel_registerName("applicationWillResignActive:"), (void (*)(void))dev_resign_active, "v@:@") ||
+      !class_addMethod(cls, sel_registerName("applicationDidEnterBackground:"), (void (*)(void))dev_resign_active, "v@:@") ||
+      !class_addMethod(cls, sel_registerName("applicationDidBecomeActive:"), (void (*)(void))dev_become_active, "v@:@")) return NULL;
+#endif
   objc_registerClassPair(cls);
   return cls;
 }

@@ -44,7 +44,7 @@ afterEach(() => {
 
 describe("Nintendo 3DS Pocket Runtime wire", () => {
   test("keeps TypeScript and C protocol constants byte-exact", () => {
-    const header = readFileSync(join(ROOT, "hosts/3ds/src/dev_protocol.h"), "utf8");
+    const header = readFileSync(join(ROOT, "engine/runtime/dev_protocol.h"), "utf8");
     expect(header).toContain("#define POCKET_RUNTIME_WIRE_MAGIC 0x54524b50u");
     expect(header).toContain("#define POCKET_RUNTIME_DISCOVERY_MAGIC 0x44524b50u");
     expect(header).toContain("#define POCKET_RUNTIME_WIRE_PORT 8131u");

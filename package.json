@@ -257,6 +257,7 @@
     "iphone4s": "bun tools/iphone4s.ts",
     "ipodtouch": "bun tools/ipodtouch.ts",
     "ipodtouch4": "bun tools/ipodtouch4.ts",
+    "ipodtouch4:runtime": "bun tools/ipodtouch4-runtime.ts",
     "meizu-m8": "bun tools/meizu-m8.ts",
     "blackberry-android": "bun tools/blackberry-android.ts",
     "blackberry-qnx": "bun tools/blackberry-qnx.ts",

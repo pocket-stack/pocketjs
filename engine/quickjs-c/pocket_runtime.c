@@ -3,6 +3,9 @@
 #include "pocket_ui_cabi.h"
 #include "pocket_spec.h"
 #include "quickjs.h"
+#ifdef POCKET_DEV_RUNTIME
+#include "dev_server.h"
+#endif
 #ifdef POCKET_SVC_WIRE
 #include "svcwire.h"
 #endif
@@ -72,6 +75,11 @@ typedef enum {
   HostDebugPause,
   HostDebugStep,
   HostReportAppAction,
+#ifdef POCKET_DEV_RUNTIME
+  HostDbgActive,
+  HostDbgPoll,
+  HostDbgSend,
+#endif
 #ifdef POCKET_SVC_WIRE
   /* spec ops 30..32 — the host service channel over the PKNT wire
    * (svcwire.c). Present only in builds whose companion is on the network,
@@ -94,6 +102,35 @@ static char reported_action_name[POCKETJS_ACTION_NAME_CAPACITY];
 static int32_t reported_action_value;
 static unsigned long reported_action_sequence;
 static int runtime_failed;
+#ifdef POCKET_DEV_RUNTIME
+static uint64_t guest_deadline;
+static char dev_poll_buffer[32769];
+static int interrupt_guest(JSRuntime *rt, void *opaque) {
+  (void)rt;
+  (void)opaque;
+  return pocket_devwire_now_ms() >= guest_deadline;
+}
+
+static JSValue dev_console(JSContext *ctx, JSValueConst this_value,
+  int argc, JSValueConst *argv, int level) {
+  (void)this_value;
+  char message[512] = {0};
+  size_t length = 0;
+  for (int i = 0; i < argc && length + 2 < sizeof message; ++i) {
+    const char *text = JS_ToCString(ctx, argv[i]);
+    if (!text) return JS_EXCEPTION;
+    if (i) message[length++] = ' ';
+    size_t count = strlen(text);
+    if (count > sizeof message - length - 1) count = sizeof message - length - 1;
+    memcpy(message + length, text, count);
+    length += count;
+    message[length] = 0;
+    JS_FreeCString(ctx, text);
+  }
+  pocket_devwire_log(level == 1 ? "warn" : level == 2 ? "error" : "log", message);
+  return JS_UNDEFINED;
+}
+#endif
 #ifdef POCKET_SVC_WIRE
 /* spec SVC_POLL_BUF (8192) + terminator: one svcPoll batch. */
 static char svc_poll_buffer[8193];
@@ -446,6 +483,19 @@ static JSValue host_operation(
       reported_action_sequence += 1;
       JS_FreeCString(ctx, text);
       return JS_UNDEFINED;
+#ifdef POCKET_DEV_RUNTIME
+    case HostDbgActive:
+      return JS_NewBool(ctx, 1);
+    case HostDbgPoll: {
+      size_t length = pocket_devwire_poll(dev_poll_buffer, sizeof dev_poll_buffer - 1);
+      return JS_NewStringLen(ctx, dev_poll_buffer, length);
+    }
+    case HostDbgSend:
+      if (!string_argument(ctx, argc, argv, 0, &text, &text_length)) return JS_EXCEPTION;
+      pocket_devwire_send(text, text_length);
+      JS_FreeCString(ctx, text);
+      return JS_UNDEFINED;
+#endif
 #ifdef POCKET_SVC_WIRE
     case HostSvcOpen: {
       int open;
@@ -490,6 +540,24 @@ static int add_host_operation(
 static int install_host(int width, int height) {
   JSValue ui = JS_NewObject(context);
   if (JS_IsException(ui)) return 0;
+#ifdef POCKET_DEV_RUNTIME
+  if (!add_host_operation(context, ui, "__dbgActive", 0, HostDbgActive) ||
+      !add_host_operation(context, ui, "__dbgPoll", 0, HostDbgPoll) ||
+      !add_host_operation(context, ui, "__dbgSend", 1, HostDbgSend)) {
+    JS_FreeValue(context, ui);
+    return 0;
+  }
+  JSValue console = JS_NewObject(context);
+  const char *methods[] = {"log", "info", "debug", "warn", "error"};
+  for (size_t i = 0; i < sizeof methods / sizeof methods[0]; ++i) {
+    JS_SetPropertyStr(context, console, methods[i], JS_NewCFunctionMagic(context,
+      dev_console, methods[i], 1, JS_CFUNC_generic_magic, i == 3 ? 1 : i == 4 ? 2 : 0));
+  }
+  if (JS_SetPropertyStr(context, global, "console", console) < 0) {
+    JS_FreeValue(context, ui);
+    return 0;
+  }
+#endif
   if (!add_host_operation(context, ui, "createNode", 1, HostCreateNode) ||
       !add_host_operation(context, ui, "destroyNode", 1, HostDestroyNode) ||
       !add_host_operation(context, ui, "insertBefore", 3, HostInsertBefore) ||
@@ -563,6 +631,12 @@ static int install_host(int width, int height) {
 
 static int drain_jobs(void) {
   for (;;) {
+#ifdef POCKET_DEV_RUNTIME
+    if (pocket_devwire_now_ms() >= guest_deadline) {
+      set_error("guest job drain exceeded its time budget");
+      return 0;
+    }
+#endif
     JSContext *pending_context = 0;
     int result = JS_ExecutePendingJob(runtime, &pending_context);
     if (result > 0) continue;
@@ -575,6 +649,9 @@ static int drain_jobs(void) {
 }
 
 void pocket_runtime_shutdown(void) {
+#if defined(POCKET_DEV_RUNTIME) && defined(POCKET_SVC_WIRE)
+  svcwire_shutdown();
+#endif
   if (context != 0) {
 #if defined(POCKET_RUNTIME_HARNESS)
     if (!JS_IsUndefined(harness_function)) JS_FreeValue(context, harness_function);
@@ -622,6 +699,11 @@ int pocket_runtime_boot(
   }
   REPORT_BOOT_STAGE(4);
   JS_SetMaxStackSize(runtime, 256 * 1024);
+#ifdef POCKET_DEV_RUNTIME
+  JS_SetMemoryLimit(runtime, 32u * 1024u * 1024u);
+  guest_deadline = pocket_devwire_now_ms() + 2000;
+  JS_SetInterruptHandler(runtime, interrupt_guest, NULL);
+#endif
   context = JS_NewContext(runtime);
   if (context == 0) {
     set_error("QuickJS context allocation failed");
@@ -704,6 +786,9 @@ static int run_frame(
   unsigned int tick;
   unsigned int index;
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
+#ifdef POCKET_DEV_RUNTIME
+  guest_deadline = pocket_devwire_now_ms() + 500;
+#endif
 #ifdef POCKET_SVC_WIRE
   /* Bounded, non-blocking: discovery, connect, rx and tx progress once per
    * guest turn, before the guest polls. */
@@ -989,3 +1074,82 @@ size_t pocket_runtime_length(void) {
 const char *pocket_runtime_error(void) {
   return last_error;
 }
+
+#ifdef POCKET_DEV_RUNTIME
+static int plan_number(JSContext *ctx, JSValueConst object, const char *name, int expected) {
+  JSValue value = JS_GetPropertyStr(ctx, object, name);
+  double number = 0;
+  int ok = JS_IsNumber(value) && JS_ToFloat64(ctx, &number, value) == 0 && number == expected;
+  JS_FreeValue(ctx, value);
+  return ok;
+}
+static int plan_string(JSContext *ctx, JSValueConst object, const char *name, const char *expected) {
+  JSValue value = JS_GetPropertyStr(ctx, object, name);
+  size_t length = 0;
+  const char *text = JS_IsString(value) ? JS_ToCStringLen(ctx, &length, value) : NULL;
+  int ok = text && length == strlen(expected) && memcmp(text, expected, length) == 0;
+  if (text) JS_FreeCString(ctx, text);
+  JS_FreeValue(ctx, value);
+  return ok;
+}
+static int plan_dimensions(JSContext *ctx, JSValueConst object, const char *name, int width, int height) {
+  JSValue array = JS_GetPropertyStr(ctx, object, name);
+  int ok = JS_IsArray(ctx, array) == 1 && plan_number(ctx, array, "length", 2) &&
+    plan_number(ctx, array, "0", width) && plan_number(ctx, array, "1", height);
+  JS_FreeValue(ctx, array);
+  return ok;
+}
+int pocket_runtime_validate_plan(const uint8_t *bytes, size_t length, int width, int height) {
+  if (!bytes || !length || length > 256u * 1024u) return 0;
+  JSRuntime *rt = JS_NewRuntime();
+  if (!rt) return 0;
+  JS_SetMemoryLimit(rt, 4u * 1024u * 1024u);
+  JS_SetMaxStackSize(rt, 128u * 1024u);
+  JSContext *ctx = JS_NewContext(rt);
+  if (!ctx) { JS_FreeRuntime(rt); return 0; }
+  /* JSON parsing does not evaluate package JavaScript or expose host APIs. */
+  JSValue plan = JS_ParseJSON(ctx, (const char *)bytes, length, "plan.json");
+  if (JS_IsException(plan) || !JS_IsObject(plan)) {
+    JS_FreeValue(ctx, plan);
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+    return 0;
+  }
+  JSValue target = JS_GetPropertyStr(ctx, plan, "target");
+  JSValue viewport = JS_GetPropertyStr(ctx, plan, "viewport");
+  JSValue surfaces = JS_GetPropertyStr(ctx, plan, "surfaces");
+  JSValue extension = JS_GetPropertyStr(ctx, plan, "hostExtension");
+  JSValue features = JS_GetPropertyStr(ctx, plan, "features");
+  int ok = JS_IsObject(plan) && !JS_IsException(plan) &&
+    plan_string(ctx, target, "id", POCKETJS_TARGET_ID) &&
+    plan_number(ctx, target, "hostAbi", POCKETJS_HOST_ABI) &&
+    plan_dimensions(ctx, viewport, "logical", width, height) &&
+    plan_dimensions(ctx, viewport, "physical", width * POCKET_RASTER_DENSITY, height * POCKET_RASTER_DENSITY) &&
+    plan_number(ctx, viewport, "rasterDensity", POCKET_RASTER_DENSITY) &&
+    plan_string(ctx, viewport, "presentation", "native") &&
+    JS_IsUndefined(surfaces) && JS_IsUndefined(extension) && JS_IsObject(features);
+  JSPropertyEnum *properties = NULL;
+  uint32_t count = 0;
+  if (ok && JS_GetOwnPropertyNames(ctx, &properties, &count, features, JS_GPN_STRING_MASK | JS_GPN_ENUM_ONLY) == 0) {
+    for (uint32_t i = 0; i < count; ++i) {
+      const char *name = JS_AtomToCString(ctx, properties[i].atom);
+      JSValue value = JS_GetProperty(ctx, features, properties[i].atom);
+      if (!JS_IsBool(value) || (JS_ToBool(ctx, value) && (!name ||
+          (strcmp(name, "input.touch") && strcmp(name, "text.glyphs.baked"))))) ok = 0;
+      JS_FreeValue(ctx, value);
+      if (name) JS_FreeCString(ctx, name);
+      JS_FreeAtom(ctx, properties[i].atom);
+    }
+    js_free(ctx, properties);
+  } else ok = 0;
+  JS_FreeValue(ctx, features);
+  JS_FreeValue(ctx, extension);
+  JS_FreeValue(ctx, surfaces);
+  JS_FreeValue(ctx, viewport);
+  JS_FreeValue(ctx, target);
+  JS_FreeValue(ctx, plan);
+  JS_FreeContext(ctx);
+  JS_FreeRuntime(rt);
+  return ok;
+}
+#endif

@@ -3,6 +3,7 @@
 /* Every User app owns its tmp directory. Resolve it at runtime because iOS
  * chooses a container UUID at installation and may change it on update. */
 extern void *NSTemporaryDirectory(void);
+extern void *NSHomeDirectory(void);
 extern void *sel_registerName(const char *name);
 extern void *objc_msgSend(void);
 static const char *pocket_ipod_receipt_path(unsigned index, const char *suffix) {
@@ -21,6 +22,17 @@ static const char *pocket_ipod_receipt_path(unsigned index, const char *suffix) 
 #define POCKET_PREFER_GL_PATH pocket_ipod_receipt_path(4, "gles1")
 #define POCKET_GL_DEFAULT 1
 #define POCKET_REQUIRE_GL 1
+
+#ifdef POCKET_DEV_RUNTIME
+static const char *pocket_ipod_runtime_root(void) {
+  static char path[1024];
+  const char *home = ((const char *(*)(void *, void *))objc_msgSend)(
+    NSHomeDirectory(), sel_registerName("UTF8String"));
+  snprintf(path, sizeof path, "%s/Library/PocketRuntime", home);
+  return path;
+}
+#define POCKET_DEV_RUNTIME_ROOT pocket_ipod_runtime_root()
+#endif
 
 /* The iPod touch 4 shares the iPhone 4S legacy UIKit implementation. */
 #include "../ios-legacy/runtime.c"

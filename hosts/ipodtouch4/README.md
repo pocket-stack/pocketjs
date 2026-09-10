@@ -23,3 +23,11 @@ data; uninstall removes the container and its runtime receipt files.
 
 Use `bun ipodtouch4 doctor`, then the build, deploy, launch, status, capture,
 and uninstall commands documented in `docs/IPODTOUCH4.md`.
+
+`bun ipodtouch4:runtime deploy` builds a separate `PocketRuntime.app`. After
+`pair` and `launch`, `push` replaces the guest with a validated `.pocket`, and
+`dev` watches source changes and bridges DevTools. USB uses the pinned SSH
+forwarder; `--lan` uses paired discovery and the shared 3DS Runtime protocol.
+The native shell confirms an update after its first GLES presentation and
+retains a previous accepted package for recovery. See the persistent Runtime
+section of `docs/IPODTOUCH4.md` for commands and acceptance boundaries.
