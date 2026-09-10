@@ -59,7 +59,14 @@ MVD video processing is available on New 3DS. The host requests CPU speedup,
 uses MVD for H.264 and color conversion, PICA for scaling, and NDSP for audio
 output. See the [devkitPro MVD example](https://github.com/devkitPro/3ds-examples/tree/master/mvd)
 and [libctru MVD interface](https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/services/mvd.h).
-Unavailable MVD or DSP firmware yields a playback error. The 3DS profile remains
+Unavailable MVD or DSP firmware yields a playback error. **NDSP requires a DSP
+component from `/3ds/dspfirm.cdc` or the Homebrew Launcher `hb:ndsp` handle.**
+If neither is available, status identifies the missing firmware. Luma3DS users
+can press L + D-pad Down + SELECT, choose Miscellaneous options → Dump DSP
+firmware in Rosalina, then reopen the media source. The dump reads firmware
+from the console; the application does not distribute firmware. See the
+[devkitPro audio setup](https://github.com/devkitPro/3ds-examples/blob/master/audio/README.md).
+The 3DS profile remains
 private and its host ABI is 10; ABI 8 launchers require a native replacement.
 The CIA declares `mvd:STD` service access and the MVD system-module dependency
 listed in [3dbrew's title table](https://www.3dbrew.org/wiki/Title_list#00040130_-_System_Modules).

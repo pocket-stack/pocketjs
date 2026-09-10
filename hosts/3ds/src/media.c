@@ -340,7 +340,11 @@ void media_snapshot(char *out,size_t capacity) {
   else if(atomic_load_explicit(&status_generation,memory_order_acquire)!=atomic_load(&requested)) { p=OPENING; e=0; now=until=0; }
   const char *name=p<6 ? names[p] : "error";
   if(atomic_load(&paused) && (p==PLAYING || p==BUFFERING)) name="paused";
-  char message[120]; snprintf(message,sizeof message,"%s%s%08lx",e<10 ? errors[e] : "Media failed",e ? " (0x" : "",(unsigned long)atomic_load(&result_code));
+  unsigned code=atomic_load(&result_code);
+  const char *detail=e<sizeof errors/sizeof errors[0] ? errors[e] : "Media failed";
+  if(e==ERR_AUDIO && code==(unsigned)MAKERESULT(RL_PERMANENT,RS_NOTFOUND,RM_DSP,RD_NOT_FOUND))
+    detail="DSP firmware missing; dump it in Rosalina";
+  char message[120]; snprintf(message,sizeof message,"%s%s%08lx",detail,e ? " (0x" : "",(unsigned long)code);
   if(e) strncat(message,")",sizeof message-strlen(message)-1); else message[0]=0;
   snprintf(out,capacity,"{\"phase\":\"%s\",\"positionMs\":%u,\"bufferedMs\":%u,\"decodedFrames\":%u,\"presentedFrames\":%u,\"droppedFrames\":%u,\"receivedBytes\":%u,\"decodeMaxUs\":%u,\"audioUnderruns\":%u,\"hardware\":%s,\"error\":\"%s\"}",name,now,until>now ? until-now : 0,atomic_load(&decoded),atomic_load(&presented),atomic_load(&dropped),atomic_load(&received),atomic_load(&decode_max),atomic_load(&underruns),atomic_load(&hardware) ? "true" : "false",message);
 }
