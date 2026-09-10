@@ -128,6 +128,7 @@ export interface ThreeDsArguments {
   /** Bare app name (apps/<app>/pocket.json); empty when --plan is given. */
   readonly app: string;
   readonly planPath?: string;
+  readonly manifestPath?: string;
   readonly projectRoot: string;
   /** Where tools/build.ts writes <app>.js and <app>.pak (trailing slash). */
   readonly outputDir: string;
@@ -159,6 +160,7 @@ export function parse3dsArguments(
   const root = options.repositoryRoot ?? repository;
   let app = "";
   let planPath: string | undefined;
+  let manifestPath: string | undefined;
   let projectRoot = options.workingDirectory ?? process.cwd();
   let outputDir = `${root}dist/3ds/guest/`;
   let packageDir = `${root}dist/3ds`;
@@ -177,6 +179,7 @@ export function parse3dsArguments(
     else if (a === "--pocket-only") pocketOnly = true;
     else if (a === "--skip-build") skipBuild = true;
     else if (a.startsWith("--plan=")) planPath = resolvePath(a.slice("--plan=".length));
+    else if (a.startsWith("--manifest=")) manifestPath = resolvePath(a.slice("--manifest=".length));
     else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
     else if (a.startsWith("--outdir=")) outputDir = resolvePath(a.slice("--outdir=".length)) + "/";
     else if (a.startsWith("--package-outdir=")) packageDir = resolvePath(a.slice("--package-outdir=".length));
@@ -193,6 +196,7 @@ export function parse3dsArguments(
   return {
     app,
     planPath,
+    manifestPath,
     projectRoot,
     outputDir,
     packageDir,
@@ -565,9 +569,9 @@ async function loadBuildPlan(
     const checked = assert3dsPlan(plan, args.planPath);
     const entry = resolvePath(args.projectRoot, checked.app.entry);
     let directory = dirname(entry);
-    let manifestPath = "";
+    let manifestPath = args.manifestPath ?? "";
     const boundary = resolvePath(args.projectRoot);
-    for (;;) {
+    while (!manifestPath) {
       const candidate = join(directory, "pocket.json");
       if (existsSync(candidate)) {
         manifestPath = candidate;
