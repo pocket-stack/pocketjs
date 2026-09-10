@@ -38,8 +38,8 @@ static ndspWaveBuf waves[AUDIO_SLOTS];
 static void *audio_buffers[AUDIO_SLOTS];
 static uint32_t audio_pts[AUDIO_SLOTS];
 static bool audio_live, audio_started, was_starved, last_paused;
-static bool startup_ready;
-static uint32_t origin_position;
+static bool startup_ready, draining;
+static uint32_t origin_position, buffer_origin;
 static unsigned last_volume=101;
 static uint8_t *nal_buffer;
 static unsigned current_generation;
@@ -52,21 +52,29 @@ static void fail(unsigned error, uint32_t result) {
 }
 static void audio_tick(void) {
   if (!audio_live) return;
-  if(!startup_ready && atomic_load(&decoded) && atomic_load(&buffered_until)>=origin_position+300) startup_ready=true;
+  if(!startup_ready && atomic_load(&decoded) && atomic_load(&buffered_until)>=buffer_origin+300) startup_ready=true;
   bool stop=atomic_load(&paused) || !startup_ready;
   if(stop!=last_paused) { ndspChnSetPaused(AUDIO_CHANNEL,stop); last_paused=stop; }
   unsigned volume=atomic_load(&volume_percent);
   if (volume!=last_volume) { float mix[12]={0}; mix[0]=mix[1]=volume/100.f; ndspChnSetMix(AUDIO_CHANNEL,mix); last_volume=volume; }
-  bool playing=false;
+  bool playing=false, queued=false;
   for (unsigned i=0;i<AUDIO_SLOTS;i++) {
+    if(waves[i].status==NDSP_WBUF_QUEUED) queued=true;
     if (waves[i].status==NDSP_WBUF_PLAYING) {
       atomic_store(&position,audio_pts[i]+ndspChnGetSamplePos(AUDIO_CHANNEL)*1000/MEDIA_SAMPLE_RATE);
       playing=true;
       audio_started=true;
     }
   }
-  if (audio_started && !stop && !playing && !was_starved && atomic_load(&phase)!=ENDED) atomic_fetch_add(&underruns,1);
-  was_starved=audio_started && !stop && !playing;
+  bool starved=audio_started && !stop && !playing && !queued && !draining;
+  if(starved && !was_starved) {
+    atomic_fetch_add(&underruns,1);
+    buffer_origin=atomic_load(&buffered_until);
+    atomic_store(&position,buffer_origin);
+    startup_ready=false; audio_started=false;
+    atomic_store(&phase,BUFFERING);
+  }
+  was_starved=starved;
 }
 static bool receive_exact(int fd, void *data, size_t count) {
   uint8_t *p=data; uint64_t deadline=osGetTime()+10000;
@@ -182,6 +190,7 @@ static void play(const Command *cmd) {
   if (!receive_exact(fd,header,32)) { fail(ERR_SOCKET,errno); goto done; }
   if (!media_header_valid(header)) { fail(ERR_HEADER,0); goto done; }
   origin_position=media_u32(header+24);
+  buffer_origin=origin_position;
   atomic_store(&position,origin_position);
   packet=malloc(MEDIA_PACKET_BYTES);
   if (!packet) { fail(ERR_MEMORY,0); goto done; }
@@ -191,7 +200,7 @@ static void play(const Command *cmd) {
   result=ndspInit();
   if (R_FAILED(result)) { fail(ERR_AUDIO,result); goto done; }
   audio_live=true; audio_started=false; was_starved=false; last_volume=101; last_paused=false;
-  startup_ready=false;
+  startup_ready=false; draining=false;
   ndspSetOutputMode(NDSP_OUTPUT_STEREO);
   ndspChnReset(AUDIO_CHANNEL); ndspChnSetInterp(AUDIO_CHANNEL,NDSP_INTERP_LINEAR);
   ndspChnSetRate(AUDIO_CHANNEL,MEDIA_SAMPLE_RATE); ndspChnSetFormat(AUDIO_CHANNEL,NDSP_FORMAT_STEREO_PCM16);
@@ -211,7 +220,7 @@ static void play(const Command *cmd) {
     if (size && !receive_exact(fd,packet,size)) { fail(ERR_SOCKET,errno); break; }
     if (header[0]==1 && !decode_video(&config,packet,size,pts)) break;
     if (header[0]==2 && !put_audio(packet,size,pts)) break;
-    if (!atomic_load(&decoded) && (header[0]==1 || header[0]==2) && pts-origin_position>2000) { fail(ERR_MVD_DECODE,0); break; }
+    if (!atomic_load(&decoded) && (header[0]==1 || header[0]==2) && pts-origin_position>500) { fail(ERR_MVD_DECODE,0); break; }
     if (header[0]==4) { fail(ERR_REMOTE,0); break; }
     if(header[0]==1 || header[0]==2) {
       char credit=1; bool acknowledged=false;
@@ -224,7 +233,7 @@ static void play(const Command *cmd) {
     }
     if (header[0]==3) {
       if(!atomic_load(&decoded)) { fail(ERR_MVD_DECODE,0); break; }
-      startup_ready=true;
+      startup_ready=true; draining=true;
       while (current()) {
         audio_tick(); bool queued=false; uint32_t end=atomic_load(&position);
         for (unsigned i=0;i<AUDIO_SLOTS;i++) {
