@@ -5,6 +5,7 @@ struct AppCatalogEntry {
 }
 
 struct AppInstance {
+    generation: u64,
     package: SystemPackagePlan,
     surface_handle: u32,
     surface: UiSurface,
@@ -18,6 +19,7 @@ struct AppInstance {
 }
 
 struct AppSupervisor {
+    next_generation: u64,
     catalog: Vec<AppCatalogEntry>,
     instances: Vec<AppInstance>,
     suppressed: HashSet<u32>,
@@ -66,6 +68,7 @@ impl AppSupervisor {
     fn new(system: Option<&ResolvedSystemPlan>, shell: &UiSurface) -> Result<Self> {
         let Some(system) = system else {
             return Ok(Self {
+                next_generation: 0,
                 catalog: Vec::new(),
                 instances: Vec::new(),
                 suppressed: HashSet::new(),
@@ -89,6 +92,7 @@ impl AppSupervisor {
             });
         }
         Ok(Self {
+            next_generation: 0,
             catalog,
             instances: Vec::new(),
             suppressed: HashSet::new(),
@@ -137,7 +141,9 @@ impl AppSupervisor {
             return Err(anyhow!("{output} evaluated but installed no frame()"));
         }
 
+        self.next_generation += 1;
         self.instances.push(AppInstance {
+            generation: self.next_generation,
             package: entry.package.clone(),
             surface_handle: entry.surface_handle,
             surface,
@@ -307,7 +313,7 @@ impl AppSupervisor {
                 continue;
             }
             instance.surface.with_ui(|ui| {
-                let draw_hash = fnv1a64(&ui.draw().words);
+                let draw_hash = fnv1a64(&ui.draw().words) ^ instance.generation.rotate_left(23);
                 let raster_revision = ui.raster_revision();
                 mix_app_instance_repaint_hash(
                     &mut hash,

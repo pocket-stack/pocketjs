@@ -250,6 +250,8 @@ struct Args {
     /// Print "READY <epoch_ms>" on the first painted frame — the desktop
     /// benchmark runner's cold-start marker (PR #294). Off by default.
     announce_ready: bool,
+    /// Emit CPU stage timestamps for native frame profiling.
+    trace_frames: bool,
 }
 
 fn parse_args() -> Result<Args> {
@@ -271,6 +273,7 @@ fn parse_args() -> Result<Args> {
         quit_after_ticks: None,
         storm: None,
         announce_ready: false,
+        trace_frames: false,
     };
     let mut system_plan_path = None;
     let mut it = std::env::args().skip(1);
@@ -381,6 +384,7 @@ fn parse_args() -> Result<Args> {
             }
             "--quit-after" => args.quit_after_ticks = Some(val("--quit-after")?.parse()?),
             "--announce-ready" => args.announce_ready = true,
+            "--trace-frames" => args.trace_frames = true,
             "--press" => {
                 // --press NAME@TICK (console button script: up/down/left/
                 // right/cross/circle/square/triangle/l/r/start/select)

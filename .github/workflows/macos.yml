@@ -1,6 +1,6 @@
 name: macOS portable renderer
 
-# Native and WASM software rendering share the Rust core. Text executes in
+# Native GPU and WASM software rendering share the Rust DrawList core. Text executes in
 # bounded worker adapters; neither host depends on the legacy gpui backend.
 
 on:
@@ -22,6 +22,8 @@ on:
       - "apps/text-offload/**"
       - "engine/wasm/**"
       - "hosts/desktop/**"
+      - "engine/crates/pocket-ui-wgpu/**"
+      - "engine/pocket3d/crates/pocket3d/**"
       - "tools/macos.ts"
       - "framework/src/components*.ts*"
       - "framework/src/host.ts"
@@ -60,6 +62,8 @@ on:
       - "apps/text-offload/**"
       - "engine/wasm/**"
       - "hosts/desktop/**"
+      - "engine/crates/pocket-ui-wgpu/**"
+      - "engine/pocket3d/crates/pocket3d/**"
       - "tools/macos.ts"
       - "framework/src/components*.ts*"
       - "framework/src/host.ts"
