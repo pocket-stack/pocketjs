@@ -1162,14 +1162,18 @@ async function snapshot(source?: string): Promise<void> {
   console.log(`snapshot installed with SHA-256 readback; launch Pocket Fold to load it\n${png}`);
 }
 
-async function foldControl(operation?: string, value?: string): Promise<void> {
+async function foldControl(operation?: string, value?: string, pitchValue?: string, rollValue?: string): Promise<void> {
   if (!APP.foldSurface) throw new Error("fold-command requires POCKETJS_IPODTOUCH4_APP=fold");
   const degrees = Number(value);
+  const pitch = Number(pitchValue), roll = Number(rollValue);
+  const pose = operation === "pose" && value !== undefined && pitchValue !== undefined && rollValue !== undefined &&
+    [degrees,pitch,roll].every(angle => Number.isFinite(angle) && Math.abs(angle) <= 85);
   if (operation !== "calibrate" && operation !== "motion" &&
-      !(operation === "manual" && value !== undefined && Number.isFinite(degrees) && Math.abs(degrees) <= 85)) {
-    throw new Error("fold-command calibrate|motion|manual <degrees from -85 to 85>");
+      !pose && !(operation === "manual" && value !== undefined && Number.isFinite(degrees) && Math.abs(degrees) <= 85)) {
+    throw new Error("fold-command calibrate|motion|manual <degrees>|pose <yaw> <pitch> <roll>; angles from -85 to 85");
   }
-  const command = JSON.stringify(operation === "manual" ? { op: operation, degrees } : { op: operation });
+  const command = JSON.stringify(pose ? { op: "pose", yaw: degrees, pitch, roll } :
+    operation === "manual" ? { op: operation, degrees } : { op: operation });
   await withTunnel(async (port) => {
     const app = installedApp(port);
     const path = `${app.Container}/tmp/fold.command`;
@@ -1216,6 +1220,7 @@ function usage(): void {
   bun ipodtouch4 tunnel
   bun ipodtouch4 snapshot [portrait.png]       # fold app; SpringBoard visible
   bun ipodtouch4 fold-command calibrate|motion|manual <degrees>
+  bun ipodtouch4 fold-command pose <yaw> <pitch> <roll>
   bun ipodtouch4 fold-status`);
 }
 
@@ -1253,7 +1258,7 @@ export async function main(args: readonly string[] = Bun.argv.slice(2)): Promise
       await snapshot(args[1]);
       break;
     case "fold-command":
-      await foldControl(args[1], args[2]);
+      await foldControl(args[1], args[2], args[3], args[4]);
       break;
     case "fold-status":
       await foldStatus();

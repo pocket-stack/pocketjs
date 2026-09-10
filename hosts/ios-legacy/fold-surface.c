@@ -62,7 +62,10 @@ static id manager;
 static unsigned textures[FOLD_LEVELS];
 static int initialized, available, active = 1, loaded, opened, manual;
 static int reference_valid, convention = -1, pending_calibrate;
-static double reference[9], angle, manual_degrees, last_timestamp;
+static FoldQuaternion reference, attitude = {0,0,0,1};
+static FoldQuaternion manual_attitude = {0,0,0,1};
+static double angle, manual_degrees, last_timestamp;
+static double normal_x, normal_y, normal_z = 1;
 static double min_angle, max_angle, last_rate, sensor_age;
 static unsigned long samples, calibrations, frames;
 static int dirty = 1;
@@ -80,7 +83,10 @@ static void start_motion(void) {
 void pocket_fold_active(int value) {
   active = value;
   if (manager) {
-    if (active) { reference_valid = 0; last_timestamp = 0; angle = 0; start_motion(); }
+    if (active) {
+      reference_valid = 0; last_timestamp = 0; angle = 0;
+      attitude = (FoldQuaternion){0,0,0,1}; start_motion();
+    }
     else send0(manager, "stopDeviceMotionUpdates");
   }
   dirty = 1;
@@ -145,27 +151,36 @@ static void sample_motion(void) {
   MotionVector gravity = vector(motion, "gravity");
   MotionVector rate = vector(motion, "rotationRate");
   for (int i = 0; i < 9; ++i) if (!isfinite(raw.m[i])) return;
-  if (!isfinite(rate.y) || !isfinite(gravity.x) || !isfinite(gravity.y) || !isfinite(gravity.z)) return;
+  if (!isfinite(rate.x) || !isfinite(rate.y) || !isfinite(rate.z) ||
+      !isfinite(gravity.x) || !isfinite(gravity.y) || !isfinite(gravity.z)) return;
   if (convention == -1) {
     double rows = -(gravity.x * raw.m[2] + gravity.y * raw.m[5] + gravity.z * raw.m[8]);
     double columns = -(gravity.x * raw.m[6] + gravity.y * raw.m[7] + gravity.z * raw.m[8]);
     if (fabs(rows - columns) > 0.2) {
       convention = rows > columns;
-      reference_valid = 0; /* Never compare poses in different matrix conventions. */
+      /* Default is transpose. Resolving the same convention must not reset the
+       * plane when the user first moves out of an ambiguous launch pose. */
+      if (convention != 1) reference_valid = 0;
     }
   }
   double current[9];
   fold_device_matrix(raw.m, convention == -1 ? 1 : convention, current);
+  FoldQuaternion current_attitude = fold_quaternion(current);
   if (!reference_valid || pending_calibrate) {
-    memcpy(reference, current, sizeof reference);
+    reference = current_attitude;
     reference_valid = 1; pending_calibrate = 0;
+    attitude = (FoldQuaternion){0,0,0,1};
     angle = 0; min_angle = 0; max_angle = 0; calibrations++;
   } else {
-    double prediction = fold_tilt(reference, current) + rate.y * 0.04;
+    FoldQuaternion prediction = fold_predict(fold_relative(reference, current_attitude),
+      rate.x, rate.y, rate.z, 0.04);
     double alpha = 1 - pow(0.3, fold_clamp(dt, 0, 0.1) * 60);
-    angle += (fold_clamp(prediction, -1.48353, 1.48353) - angle) * alpha;
-    min_angle = fmin(min_angle, angle); max_angle = fmax(max_angle, angle);
+    attitude = fold_smooth(attitude, prediction, alpha);
   }
+  double rotation[9]; fold_matrix(attitude, rotation);
+  normal_x = rotation[2]; normal_y = rotation[5]; normal_z = rotation[8];
+  angle = acos(fold_clamp(normal_z, -1, 1));
+  min_angle = fmin(min_angle, angle); max_angle = fmax(max_angle, angle);
   samples++; last_rate = rate.y;
 }
 
@@ -180,10 +195,24 @@ void pocket_host_service_send(const char *line, size_t length) {
   } else if (!strcmp(command, "{\"op\":\"motion\"}")) {
     manual = !available;
   } else {
-    double degrees; int consumed = 0;
-    if (sscanf(command, "{\"op\":\"manual\",\"degrees\":%lf}%n", &degrees, &consumed) != 1 ||
-        consumed != (int)length || !isfinite(degrees) || degrees < -85 || degrees > 85) return;
-    manual = 1; manual_degrees = degrees;
+    double degrees, yaw, pitch, roll; int consumed = 0;
+    if (sscanf(command, "{\"op\":\"manual\",\"degrees\":%lf}%n", &degrees, &consumed) == 1 &&
+        consumed == (int)length && isfinite(degrees) && fabs(degrees) <= 85) {
+      manual_degrees = degrees;
+      manual_attitude = fold_predict((FoldQuaternion){0,0,0,1},0,degrees*M_PI/180,0,1);
+    } else {
+      consumed = 0;
+      if (sscanf(command, "{\"op\":\"pose\",\"yaw\":%lf,\"pitch\":%lf,\"roll\":%lf}%n",
+          &yaw, &pitch, &roll, &consumed) != 3 || consumed != (int)length ||
+          !isfinite(yaw) || !isfinite(pitch) || !isfinite(roll) ||
+          fabs(yaw)>85 || fabs(pitch)>85 || fabs(roll)>85) return;
+      FoldQuaternion q = fold_predict((FoldQuaternion){0,0,0,1},0,0,roll*M_PI/180,1);
+      q = fold_predict(q,0,yaw*M_PI/180,0,1);
+      manual_attitude = fold_predict(q,pitch*M_PI/180,0,0,1);
+      double m[9]; fold_matrix(manual_attitude,m);
+      manual_degrees = acos(fold_clamp(m[8],-1,1))*180/M_PI;
+    }
+    manual = 1;
   }
   dirty = 1;
 }
@@ -192,11 +221,13 @@ static int status_json(char *out, size_t capacity) {
     "{\"t\":\"fold.state\",\"source\":%s,\"available\":%s,\"active\":%s,"
     "\"manual\":%s,\"degrees\":%.2f,\"sensorDegrees\":%.2f,\"samples\":%lu,"
     "\"calibrations\":%lu,\"minDegrees\":%.2f,\"maxDegrees\":%.2f,"
+    "\"normalX\":%.5f,\"normalY\":%.5f,\"normalZ\":%.5f,"
     "\"rateY\":%.5f,\"sensorAgeMs\":%.2f,\"frames\":%lu,\"error\":\"%s\"}\n",
     loaded ? "true" : "false", available ? "true" : "false", active ? "true" : "false",
     manual ? "true" : "false", manual ? manual_degrees : angle * 180 / M_PI,
     angle * 180 / M_PI, samples, calibrations, min_angle * 180 / M_PI,
-    max_angle * 180 / M_PI, last_rate, sensor_age * 1000, frames, texture_error);
+    max_angle * 180 / M_PI, normal_x, normal_y, normal_z,
+    last_rate, sensor_age * 1000, frames, texture_error);
 }
 size_t pocket_host_service_poll(char *out, size_t capacity) {
   if (!opened || !dirty || capacity < 640) return 0;
@@ -228,26 +259,23 @@ static void telemetry(void) {
   }
 }
 
-/* Projective (s,t,0,q) texture coordinates reproduce the ray-plane mapping
- * within each quad. Linear interpolation between baked disk-blur levels
- * replaces Metal's per-pixel 32-tap kernel. Seven bands need <= 14 draws. */
-static void band(double x0, double x1, int level, double tilt) {
-  float positions[20], uv[40], colors[40];
-  for (int pass = 0; pass < 2; ++pass) {
-    for (int column = 0; column < 5; ++column) {
-      double x = x0 + (x1 - x0) * column / 4;
-      for (int row = 0; row < 2; ++row) {
-        int i = column * 2 + row;
-        double y = row * FOLD_HEIGHT;
-        FoldRay ray = fold_ray(x, y, tilt, FOLD_WIDTH, FOLD_HEIGHT, 2053.54);
-        positions[i*2] = x; positions[i*2+1] = y;
-        uv[i*4] = (ray.x + FOLD_PADDING) * ray.depth / FOLD_TEXTURE_WIDTH;
-        uv[i*4+1] = (ray.y + FOLD_PADDING) * ray.depth / FOLD_TEXTURE_HEIGHT;
-        uv[i*4+2] = 0; uv[i*4+3] = ray.depth;
-        colors[i*4] = colors[i*4+1] = colors[i*4+2] = ray.attenuation;
-        colors[i*4+3] = pass ? fold_clamp((ray.radius - fold_radii[level]) /
-          (fold_radii[level+1] - fold_radii[level]), 0, 1) : 1;
-      }
+/* Projective (s,t,0,q) coordinates cancel the complete screen homography.
+ * Clip along the two-dimensional blur gradient: seven blended bands plus
+ * one capped-radius band need <= 15 draws and no per-frame texture uploads. */
+static void band(const FoldPose *pose, const FoldPoint *polygon, int count, int level) {
+  float positions[16], uv[32], colors[32];
+  int passes = level < FOLD_LEVELS-1 && pose->lift > 0.00001 ? 2 : 1;
+  for (int pass = 0; pass < passes; ++pass) {
+    for (int i = 0; i < count; ++i) {
+      double x = polygon[i].x, y = polygon[i].y;
+      FoldRay ray = fold_ray(pose, x, y);
+      positions[i*2] = x; positions[i*2+1] = y;
+      uv[i*4] = (ray.x + FOLD_PADDING) * ray.depth / FOLD_TEXTURE_WIDTH;
+      uv[i*4+1] = (ray.y + FOLD_PADDING) * ray.depth / FOLD_TEXTURE_HEIGHT;
+      uv[i*4+2] = 0; uv[i*4+3] = ray.depth;
+      colors[i*4] = colors[i*4+1] = colors[i*4+2] = ray.attenuation;
+      colors[i*4+3] = pass ? fold_clamp((ray.radius - fold_radii[level]) /
+        (fold_radii[level+1] - fold_radii[level]), 0, 1) : 1;
     }
     if (pass) { glEnable(0x0BE2); glBlendFunc(0x0302, 0x0303); }
     else glDisable(0x0BE2);
@@ -255,8 +283,7 @@ static void band(double x0, double x1, int level, double tilt) {
     glVertexPointer(2, 0x1406, 0, positions);
     glTexCoordPointer(4, 0x1406, 0, uv);
     glColorPointer(4, 0x1406, 0, colors);
-    glDrawArrays(0x0005, 0, 10);
-    if (fabs(tilt) < 0.00001) break;
+    glDrawArrays(0x0006, 0, count); /* GL_TRIANGLE_FAN */
   }
 }
 
@@ -268,6 +295,9 @@ int pocket_fold_render(int width, int height) {
   glViewport(0, 0, width, height);
   glClearColor(0, 0, 0, 1); glClear(0x4000);
   if (!loaded) return 1;
+  FoldQuaternion rotation = manual ? manual_attitude : attitude;
+  FoldPose pose = fold_pose(rotation, FOLD_WIDTH, FOLD_HEIGHT, 2053.54);
+  if (pose.rotation[8] <= 0) return 1; /* Back of the calibrated screen. */
   glActiveTexture(0x84C0); glClientActiveTexture(0x84C0);
   glBindBuffer(0x8892, 0); glBindBuffer(0x8893, 0);
   glMatrixMode(0x1701); glLoadIdentity(); glOrthof(0, FOLD_WIDTH, FOLD_HEIGHT, 0, -1, 1);
@@ -275,16 +305,14 @@ int pocket_fold_render(int width, int height) {
   glMatrixMode(0x1702); glLoadIdentity(); glMatrixMode(0x1700);
   glEnable(0x0DE1); glTexEnvi(0x2300, 0x2200, 0x2100); /* MODULATE */
   glEnableClientState(0x8074); glEnableClientState(0x8076); glEnableClientState(0x8078);
-  double tilt = manual ? manual_degrees * M_PI / 180 : angle;
-  double spread = 0.12 * sin(fabs(tilt));
-  if (spread < 0.00001) band(0, FOLD_WIDTH, 0, 0);
-  else for (int i = 0; i < FOLD_LEVELS-1; ++i) {
-    double d0 = fmin(FOLD_WIDTH, fold_radii[i] / spread);
-    double d1 = fmin(FOLD_WIDTH, fold_radii[i+1] / spread);
-    if (d1 <= d0) continue;
-    double x0 = tilt > 0 ? FOLD_WIDTH-d1 : d0;
-    double x1 = tilt > 0 ? FOLD_WIDTH-d0 : d1;
-    band(x0, x1, i, tilt);
+  FoldPoint screen[4] = {{0,0},{FOLD_WIDTH,0},{FOLD_WIDTH,FOLD_HEIGHT},{0,FOLD_HEIGHT}};
+  if (pose.lift < 0.00001) band(&pose, screen, 4, 0);
+  else for (int i = 0; i < FOLD_LEVELS; ++i) {
+    FoldPoint first[8], polygon[8];
+    int n = fold_clip(&pose, screen, 4, first, fold_radii[i]/0.12, 1);
+    n = fold_clip(&pose, first, n, polygon,
+      i+1 < FOLD_LEVELS ? fold_radii[i+1]/0.12 : pose.lift*2+1, 0);
+    if (n >= 3) band(&pose, polygon, n, i);
   }
   glDisableClientState(0x8076); /* core sets the remaining UI state */
   return glGetError() == 0;

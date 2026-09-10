@@ -17,7 +17,7 @@ export function parseFoldState(line: string): FoldState | null {
     const value = JSON.parse(line);
     if (value?.t !== "fold.state" ||
       ![value.source, value.available, value.active, value.manual].every(v => typeof v === "boolean") ||
-      !Number.isFinite(value.degrees) || Math.abs(value.degrees) > 85.01 ||
+      !Number.isFinite(value.degrees) || Math.abs(value.degrees) > 180.01 ||
       !Number.isSafeInteger(value.samples) || value.samples < 0 ||
       !Number.isSafeInteger(value.calibrations) || value.calibrations < 0) return null;
     return value;
