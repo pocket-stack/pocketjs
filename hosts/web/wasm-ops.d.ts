@@ -9,6 +9,8 @@ export declare const FB_H: number;
 export interface WasmUi {
   ops: HostOps;
   exports: WebAssembly.Exports & { memory: WebAssembly.Memory };
+  createAuxiliarySurface(width: number, height: number): number;
+  renderAuxiliary(): Uint8Array;
   /** Reset the core and set raster samples per logical pixel (default 1). */
   init(rasterDensity?: number): void;
   /** Resize a dynamic browser viewport. */

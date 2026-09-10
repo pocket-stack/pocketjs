@@ -19,7 +19,7 @@
 
 enum { IDLE, OPENING, BUFFERING, PLAYING, ENDED, FAILED };
 enum { ERR_NONE, ERR_MEMORY, ERR_SOCKET, ERR_HEADER, ERR_PACKET, ERR_MVD_INIT, ERR_MVD_DECODE, ERR_MVD_RENDER, ERR_AUDIO, ERR_REMOTE };
-enum { VIDEO_SLOTS=4, AUDIO_SLOTS=24, COMMAND_SLOTS=4, AUDIO_CHANNEL=0 };
+enum { VIDEO_SLOTS=16, AUDIO_SLOTS=24, COMMAND_SLOTS=4, AUDIO_CHANNEL=0 };
 typedef struct { char host[16], token[65]; unsigned port, generation; } Command;
 typedef struct { uint8_t *pixels; uint32_t pts, generation; } VideoFrame;
 static Command commands[COMMAND_SLOTS];
@@ -38,6 +38,8 @@ static ndspWaveBuf waves[AUDIO_SLOTS];
 static void *audio_buffers[AUDIO_SLOTS];
 static uint32_t audio_pts[AUDIO_SLOTS];
 static bool audio_live, audio_started, was_starved, last_paused;
+static bool startup_ready;
+static uint32_t origin_position;
 static unsigned last_volume=101;
 static uint8_t *nal_buffer;
 static unsigned current_generation;
@@ -50,7 +52,8 @@ static void fail(unsigned error, uint32_t result) {
 }
 static void audio_tick(void) {
   if (!audio_live) return;
-  bool stop=atomic_load(&paused);
+  if(!startup_ready && atomic_load(&decoded) && atomic_load(&buffered_until)>=origin_position+300) startup_ready=true;
+  bool stop=atomic_load(&paused) || !startup_ready;
   if(stop!=last_paused) { ndspChnSetPaused(AUDIO_CHANNEL,stop); last_paused=stop; }
   unsigned volume=atomic_load(&volume_percent);
   if (volume!=last_volume) { float mix[12]={0}; mix[0]=mix[1]=volume/100.f; ndspChnSetMix(AUDIO_CHANNEL,mix); last_volume=volume; }
@@ -87,7 +90,7 @@ static bool put_audio(const uint8_t *data, unsigned size, uint32_t pts) {
       waves[i].nsamples=count; waves[i].looping=false; audio_pts[i]=pts;
       ndspChnWaveBufAdd(AUDIO_CHANNEL,&waves[i]);
       atomic_store(&buffered_until,pts+count*1000/MEDIA_SAMPLE_RATE);
-      if(atomic_load(&decoded)) atomic_store(&phase,PLAYING);
+      if(startup_ready) atomic_store(&phase,PLAYING);
       return true;
     }
     svcSleepThread(1000000);
@@ -178,7 +181,8 @@ static void play(const Command *cmd) {
   uint8_t header[32];
   if (!receive_exact(fd,header,32)) { fail(ERR_SOCKET,errno); goto done; }
   if (!media_header_valid(header)) { fail(ERR_HEADER,0); goto done; }
-  atomic_store(&position,media_u32(header+24));
+  origin_position=media_u32(header+24);
+  atomic_store(&position,origin_position);
   packet=malloc(MEDIA_PACKET_BYTES);
   if (!packet) { fail(ERR_MEMORY,0); goto done; }
   Result result=mvdstdInit(MVDMODE_VIDEOPROCESSING,MVD_INPUT_H264,MVD_OUTPUT_RGB565,MVD_DEFAULT_WORKBUF_SIZE,NULL);
@@ -187,6 +191,7 @@ static void play(const Command *cmd) {
   result=ndspInit();
   if (R_FAILED(result)) { fail(ERR_AUDIO,result); goto done; }
   audio_live=true; audio_started=false; was_starved=false; last_volume=101; last_paused=false;
+  startup_ready=false;
   ndspSetOutputMode(NDSP_OUTPUT_STEREO);
   ndspChnReset(AUDIO_CHANNEL); ndspChnSetInterp(AUDIO_CHANNEL,NDSP_INTERP_LINEAR);
   ndspChnSetRate(AUDIO_CHANNEL,MEDIA_SAMPLE_RATE); ndspChnSetFormat(AUDIO_CHANNEL,NDSP_FORMAT_STEREO_PCM16);
@@ -218,6 +223,7 @@ static void play(const Command *cmd) {
     }
     if (header[0]==3) {
       if(!atomic_load(&decoded)) { fail(ERR_MVD_DECODE,0); break; }
+      startup_ready=true;
       while (current()) {
         audio_tick(); bool queued=false; uint32_t end=atomic_load(&position);
         for (unsigned i=0;i<AUDIO_SLOTS;i++) {

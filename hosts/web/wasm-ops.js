@@ -162,6 +162,23 @@ export async function createWasmUi(wasm, options = {}) {
   return {
     ops,
     exports: ex,
+    createAuxiliarySurface(width, height) {
+      width = integerInRange(width, "auxiliary width", 1, 4096);
+      height = integerInRange(height, "auxiliary height", 1, 4096);
+      if (!ex.ui_create_auxiliary_surface) throw new Error("Rebuild pocketjs.wasm for auxiliary output");
+      const root = ex.ui_create_auxiliary_surface(width, height);
+      if (!root) throw new Error("Auxiliary surface allocation failed");
+      ops.__auxiliarySurface = { root, w: width, h: height };
+      ops.hitTestAuxiliary = (x, y) => ex.ui_hit_test_auxiliary(x, y);
+      ops.hitTestBoundsAuxiliary = (x, y) => ex.ui_hit_test_bounds_auxiliary(x, y);
+      return root;
+    },
+    renderAuxiliary() {
+      if (!ops.__auxiliarySurface) throw new Error("No auxiliary surface");
+      const { w, h } = ops.__auxiliarySurface;
+      const ptr = ex.ui_render_auxiliary();
+      return new Uint8Array(ex.memory.buffer, ptr, w * h * 4);
+    },
     /** Reset the core and set raster samples per logical pixel (default 1). */
     init,
     /** Resize a dynamic browser viewport and keep the guest-visible fact aligned. */

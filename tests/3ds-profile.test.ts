@@ -371,6 +371,9 @@ describe("private Nintendo 3DS build profile", () => {
   });
 
   test("supports a guest-only package build without native toolchains", () => {
+    expect(parse3dsArguments(["--plan=/tmp/app.plan.json", "--manifest=/tmp/pocket.3ds.json"])).toMatchObject({
+      planPath: "/tmp/app.plan.json", manifestPath: "/tmp/pocket.3ds.json", cargoArgs: [],
+    });
     expect(parse3dsArguments(["3ds-demo", "--pocket-only"])).toMatchObject({
       app: "3ds-demo",
       pocketOnly: true,

@@ -31,6 +31,7 @@ use pocketjs_core::raster;
 static mut UI: Option<Ui> = None;
 static mut FRAMEBUFFER: Vec<u8> = Vec::new();
 use pocketjs_core::compositor::CompositorRaster;
+static mut AUXILIARY_FRAMEBUFFER: Vec<u8> = Vec::new();
 
 /// Browser System hosts upload visible child AppInstance framebuffers here.
 /// Values are arbitrary-size RGBA rasters indexed by the shell's compositor
@@ -76,6 +77,7 @@ pub extern "C" fn ui_init(raster_density: u32) {
     unsafe {
         UI = Some(Ui::new_with_raster_density(raster_density.max(1)));
         FRAMEBUFFER.clear();
+        AUXILIARY_FRAMEBUFFER.clear();
         COMPOSITOR_RASTERS.clear();
         COMPOSITOR_FRAMES.clear();
         DAMAGE_TRACKER = DamageTracker::new();
@@ -87,6 +89,41 @@ pub extern "C" fn ui_init(raster_density: u32) {
 #[no_mangle]
 pub extern "C" fn ui_set_viewport(width: f32, height: f32) {
     ui().set_viewport(width, height);
+}
+
+#[no_mangle]
+pub extern "C" fn ui_create_auxiliary_surface(width: f32, height: f32) -> i32 {
+    if !width.is_finite() || !height.is_finite() || width < 1.0 || height < 1.0 || width > 4096.0 || height > 4096.0 { return 0; }
+    ui().create_auxiliary_surface(width, height)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_hit_test_auxiliary(x: f32, y: f32) -> i32 { ui().hit_test_auxiliary(x, y) }
+#[no_mangle]
+pub extern "C" fn ui_hit_test_bounds_auxiliary(x: f32, y: f32) -> i32 { ui().hit_test_bounds_auxiliary(x, y) }
+
+struct AuxiliaryResources<'a>(&'a Ui);
+impl pocketjs_core::resources::RenderResources for AuxiliaryResources<'_> {
+    fn viewport(&self) -> (f32, f32) { self.0.auxiliary_viewport().unwrap() }
+    fn raster_revision(&self) -> u64 { self.0.raster_revision() }
+    fn texture(&self, handle: i32) -> Option<pocketjs_core::TexView<'_>> { self.0.texture(handle) }
+    fn font_atlas(&self, slot: u8) -> Option<pocketjs_core::resources::FontView<'_>> {
+        pocketjs_core::resources::RenderResources::font_atlas(self.0, slot)
+    }
+}
+
+/// Auxiliary pixels share textures and frame time, with their own viewport.
+#[no_mangle]
+pub extern "C" fn ui_render_auxiliary() -> *const u8 {
+    let u = ui();
+    let Some((width, height)) = u.auxiliary_viewport() else { return core::ptr::null(); };
+    let Some(draw) = u.draw_auxiliary() else { return core::ptr::null(); };
+    let words = draw.words.clone();
+    unsafe {
+        AUXILIARY_FRAMEBUFFER.resize(width as usize * height as usize * 4, 0);
+        raster::render(&AuxiliaryResources(u), &words, &mut AUXILIARY_FRAMEBUFFER);
+        AUXILIARY_FRAMEBUFFER.as_ptr()
+    }
 }
 
 /// Allocate `len` bytes of scratch in linear memory for host -> wasm buffers.
