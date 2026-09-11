@@ -15,12 +15,25 @@ const probe = `(async () => {
   const order = [...document.querySelectorAll('.hero .pe-entry')].map(link=>link.dataset.openApp);
   if (order.join(',')!=='pspman,pocket-shell,openstrike,pocket-voxel') throw Error('Unexpected hero case order');
   if (document.querySelectorAll('#motion [data-pocket-stage]').length!==1 || !document.querySelector('#motion [data-motion-stage]')) throw Error('Keep the original PSP in Motion');
+  function reachable(element) {
+    const r=element.getBoundingClientRect();
+    if (r.height<44 || r.width<44) throw Error('Control target is too small');
+    // Direct .click() bypasses overlapping canvases; check actual hit targets.
+    for (const x of [.15,.5,.85]) for (const y of [.15,.5,.85]) {
+      const hit=document.elementFromPoint(r.left+r.width*x,r.top+r.height*y);
+      if (hit!==element && !element.contains(hit)) throw Error('Control target is covered: '+element.textContent);
+    }
+  }
   for (const root of roots) {
     const canvas = root.querySelector('[data-stage-canvas]'), rect=canvas.getBoundingClientRect();
     if (rect.left<0 || rect.right>document.documentElement.clientWidth+1) throw Error('Device viewport extends outside page');
+    if (root.querySelector('figcaption>span')) throw Error('Remove the demo subtitle below the model');
     const details=root.querySelector('.hero-device-tools');
+    reachable(details.querySelector('summary'));
     details.querySelector('summary').click();
     if (!details.open || getComputedStyle(details.querySelector('.handheld-controls')).visibility==='hidden') throw Error('Device controls did not open');
+    for (const button of details.querySelectorAll('button')) reachable(button);
+    reachable(details.querySelector('summary'));
     details.querySelector('summary').click();
   }
   document.querySelector('.hero .pe-entry').click();
