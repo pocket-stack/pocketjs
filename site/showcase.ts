@@ -37,8 +37,8 @@ export const SHOWCASE_APPS: ShowcaseApp[] = [
   {
     id: "pocket-doc", name: "Pocket Doc", category: "Productivity", devices: ["3ds"],
     description: "Your Markdown library on two screens. Read above, edit and navigate below.",
-    image: "/assets/showcase/pocket-doc-hardware.jpg", imageAlt: "Pocket Doc running on a real Nintendo 3DS with Markdown above two touchpads",
-    imageCredit: "Hardware photo · Pocket Stack", imageSource: gh + "pocket-doc#screenshots", owner: "Pocket Stack",
+    image: "/assets/showcase/pocket-doc-3ds.png", imageAlt: "Pocket Doc's 3DS interface: a file list and rendered Markdown above two scrolling touchpads",
+    imageCredit: "WASM interface capture · Pocket Stack", imageSource: gh + "pocket-doc#screenshots", owner: "Pocket Stack",
     imageFit: "contain",
     availability: "Build from source", requirement: "3DS Homebrew Launcher + paired Mac over Wi-Fi", action: "Set up on 3DS", href: gh + "pocket-doc#run", source: gh + "pocket-doc",
     steps: ["Clone the project with its runtime and install the 3DS build prerequisites.", "Build the app, then deploy its .3dsx and pairing key with ftpd.", "Start the Mac companion and open Pocket Doc from Homebrew Launcher."],

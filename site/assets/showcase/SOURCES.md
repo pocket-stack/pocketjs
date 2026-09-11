@@ -7,7 +7,7 @@ their inclusion does not imply that PSPMAN or its artwork is open source.
 
 | Local file | Published source |
 | --- | --- |
-| `pocket-doc-hardware.jpg` | [Pocket Doc, hardware photo](https://github.com/pocket-stack/pocket-doc/blob/8cae6a679bdabcba64e694a487c2d8443f79ec2c/docs/hardware-reader.jpg) |
+| `pocket-doc-3ds.png` | [Pocket Doc, dual-screen WASM interface capture](https://github.com/pocket-stack/pocket-doc/blob/edd774b802c436940033e79665cf0824907cd9a0/docs/read.png) |
 | `pocket-shell.png` | [Pocket Shell, 3DS capture](https://github.com/pocket-stack/pocket-shell/blob/2a3ee64b866b113a17a7adcc2c2e2c0b4ecaa641/media/hw/tiled.png) |
 | `pocket-term.png` | [Pocket Term, native 3DS capture in Azahar](https://github.com/pocket-stack/pocket-term/blob/34f27c816ac1903ed3d53b08f8f81f5ec2ec43b4/docs/screenshots/terminal.png) |
 | `pocket-youtube-3ds.png` | [Pocket YouTube, 3DS interface replay in WASM](https://github.com/pocket-stack/pocket-youtube/blob/243e164a89b98b99fa80410fe8a74d09ce4927a7/docs/media/3ds-playback.gif), frame at 6 seconds |
