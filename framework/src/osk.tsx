@@ -70,6 +70,7 @@ import {
 } from "./osk-layout.ts";
 import type { NodeMirror } from "./renderer.ts";
 
+export { createKeyboardTouch, KEY_HOLD } from "./keyboard-touch.ts";
 export { OSK_H, OSK_LAYERS, type OskKeyDef, type OskLayerName } from "./osk-layout.ts";
 
 // ---------------------------------------------------------------------------

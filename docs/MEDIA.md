@@ -88,3 +88,8 @@ placement and touch hit queries use that surface. Modality blocks application
 input until the keyboard closes. `createWasmUi().createAuxiliarySurface(w, h)`
 and `renderAuxiliary()` expose the same separate roots and shared resources for
 application tests and visual review.
+
+The 3DS decoder requests **`MVD_OUTPUT_BGR565` (0x40002)** for the packed words
+consumed by `GX_TRANSFER_FMT_RGB565` and `GPU_RGB565`. The MVD and GPU names use
+different channel-order conventions. Selecting MVD's `RGB565` exchanges red
+and blue; the companion must retain the source colors.

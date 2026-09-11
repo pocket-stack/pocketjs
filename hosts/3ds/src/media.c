@@ -194,7 +194,10 @@ static void play(const Command *cmd) {
   atomic_store(&position,origin_position);
   packet=malloc(MEDIA_PACKET_BYTES);
   if (!packet) { fail(ERR_MEMORY,0); goto done; }
-  Result result=mvdstdInit(MVDMODE_VIDEOPROCESSING,MVD_INPUT_H264,MVD_OUTPUT_RGB565,MVD_DEFAULT_WORKBUF_SIZE,NULL);
+  /* MVD's BGR565 (0x40002) is the packed order consumed by GX/GPU_RGB565.
+   * MVD_OUTPUT_RGB565 reverses red and blue; do not compensate in the encoder.
+   * Matches devkitPro/3ds-examples mvd/source/main.c. */
+  Result result=mvdstdInit(MVDMODE_VIDEOPROCESSING,MVD_INPUT_H264,MVD_OUTPUT_BGR565,MVD_DEFAULT_WORKBUF_SIZE,NULL);
   if (R_FAILED(result)) { fail(ERR_MVD_INIT,result); goto done; }
   mvd=true; atomic_store(&hardware,true);
   result=ndspInit();
