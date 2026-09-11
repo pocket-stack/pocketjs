@@ -15,7 +15,7 @@ function appEntry(a: ShowcaseApp): string {
 }
 
 function appShelf(): string {
-  return `<aside class="pe-shelf pe-strip" aria-label="Apps built with PocketJS"><div class="pe-shelf-heading"><span class="hud">Built with PocketJS</span></div><div class="pe-entries">${["pocket-shell", "openstrike", "pocket-voxel", "pspman"].map(id => appEntry(app(id))).join("")}</div></aside>`;
+  return `<aside class="pe-shelf pe-strip" aria-label="Apps built with PocketJS"><div class="pe-shelf-heading"><span class="hud">Built with PocketJS</span></div><div class="pe-entries">${["pspman", "pocket-shell", "openstrike", "pocket-voxel"].map(id => appEntry(app(id))).join("")}</div></aside>`;
 }
 
 function ecosystemCard(a: ShowcaseApp): string {

@@ -53,6 +53,35 @@
         <a class="btn btn--sec" href="https://github.com/pocket-stack/pocketjs">Star on GitHub</a>
       </div>
     </div>
+    <div class="handheld-grid hero-handhelds" aria-label="Try PocketJS on New Nintendo 3DS and PS Vita">
+      <figure class="pg-stage motion-stage handheld-stage" data-pocket-stage data-handheld="new-nintendo-3ds">
+        <figcaption><h3>New Nintendo 3DS</h3><span>Contacts · two screens</span></figcaption>
+        <div class="pg-stage__viewport" data-stage-viewport role="group" aria-label="Interactive white New Nintendo 3DS standard model with dual-screen Contacts demo">
+          <canvas class="pg-stage__canvas" data-stage-canvas aria-hidden="true"></canvas>
+          <canvas class="pg-stage__screen" data-stage-screen width="400" height="240" aria-label="Contact details"></canvas>
+          <canvas class="pg-stage__screen" data-stage-auxiliary width="320" height="240" aria-label="Contacts list"></canvas>
+          <div class="pg-stage__status" data-stage-status role="status">Loading New Nintendo 3DS</div>
+        </div>
+        <details class="hero-device-tools"><summary>Controls</summary><div class="handheld-controls">
+          <button type="button" data-device-view="front">Front</button><button type="button" data-device-view="rear">Back</button><button type="button" data-device-view="detail">Angle</button>
+          <button type="button" data-lid-toggle aria-expanded="true">Close lid</button>
+          <label>Hinge <input type="range" min="0" max="175" value="155" data-lid-angle aria-label="Lid opening angle in degrees"></label>
+        </div></details>
+        <p class="stage-hint">Drag the shell to rotate. Drag the lower screen to scroll, or use the arrow keys.</p>
+      </figure>
+      <figure class="pg-stage motion-stage handheld-stage" data-pocket-stage data-handheld="ps-vita-2000">
+        <figcaption><h3>PS Vita 2000</h3><span>Motion studies</span></figcaption>
+        <div class="pg-stage__viewport" data-stage-viewport role="group" aria-label="Interactive black PlayStation Vita PCH-2000 running PocketJS motion studies">
+          <canvas class="pg-stage__canvas" data-stage-canvas aria-hidden="true"></canvas>
+          <canvas class="pg-stage__screen" data-stage-screen width="960" height="544" aria-label="PocketJS motion studies"></canvas>
+          <div class="pg-stage__status" data-stage-status role="status">Loading PlayStation Vita 2000</div>
+        </div>
+        <details class="hero-device-tools"><summary>Controls</summary><div class="handheld-controls">
+          <button type="button" data-device-view="front">Front</button><button type="button" data-device-view="rear">Back</button><button type="button" data-device-view="detail">Angle</button>
+        </div></details>
+        <p class="stage-hint">Drag to inspect the shell, rear touch pad, cameras and ports.</p>
+      </figure>
+    </div>
     {{SHOWCASE_HERO}}
   </div>
 </section>
@@ -210,35 +239,7 @@
         <figcaption class="stage-hint">Press left or right on the d-pad, or the L and R shoulders, to switch studies.</figcaption>
       </figure>
     </div>
-    <div class="handheld-grid">
-      <figure class="pg-stage motion-stage handheld-stage" data-pocket-stage data-handheld="new-nintendo-3ds">
-        <figcaption><h3>New Nintendo 3DS</h3><p>One contacts app, two screens. Touch the list below to change the card above.</p></figcaption>
-        <div class="pg-stage__viewport" data-stage-viewport role="group" aria-label="Interactive white New Nintendo 3DS standard model with dual-screen Contacts demo">
-          <canvas class="pg-stage__canvas" data-stage-canvas aria-hidden="true"></canvas>
-          <canvas class="pg-stage__screen" data-stage-screen width="400" height="240" aria-label="Contact details"></canvas>
-          <canvas class="pg-stage__screen" data-stage-auxiliary width="320" height="240" aria-label="Contacts list"></canvas>
-          <div class="pg-stage__status" data-stage-status role="status">Loading New Nintendo 3DS</div>
-        </div>
-        <div class="handheld-controls">
-          <button type="button" data-device-view="front">Front</button><button type="button" data-device-view="rear">Back</button><button type="button" data-device-view="detail">Angle</button>
-          <button type="button" data-lid-toggle aria-expanded="true">Close lid</button>
-          <label>Hinge <input type="range" min="0" max="175" value="155" data-lid-angle aria-label="Lid opening angle in degrees"></label>
-        </div>
-        <p class="stage-hint">Drag the shell to rotate. Drag the lower screen to scroll, or use the arrow keys.</p>
-      </figure>
-      <figure class="pg-stage motion-stage handheld-stage" data-pocket-stage data-handheld="ps-vita-2000">
-        <figcaption><h3>PlayStation Vita 2000</h3><p>The motion studies on a five-inch screen. Press the d-pad or shoulders to switch studies.</p></figcaption>
-        <div class="pg-stage__viewport" data-stage-viewport role="group" aria-label="Interactive black PlayStation Vita PCH-2000 running PocketJS motion studies">
-          <canvas class="pg-stage__canvas" data-stage-canvas aria-hidden="true"></canvas>
-          <canvas class="pg-stage__screen" data-stage-screen width="960" height="544" aria-label="PocketJS motion studies"></canvas>
-          <div class="pg-stage__status" data-stage-status role="status">Loading PlayStation Vita 2000</div>
-        </div>
-        <div class="handheld-controls">
-          <button type="button" data-device-view="front">Front</button><button type="button" data-device-view="rear">Back</button><button type="button" data-device-view="detail">Angle</button>
-        </div>
-        <p class="stage-hint">Drag to inspect the shell, rear touch pad, cameras and ports.</p>
-      </figure>
-    </div>
+
   </div>
 </section>
 

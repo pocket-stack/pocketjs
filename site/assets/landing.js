@@ -1,4 +1,8 @@
 import "./showcase.js";
+// Review three compositions against the same homepage and live device models.
+// No layout selector is added to the public page.
+const heroLayout = new URL(location.href).searchParams.get("hero");
+document.documentElement.dataset.heroLayout = ["cascade", "duet", "stack"].includes(heroLayout) ? heroLayout : "cascade";
 const handhelds = document.querySelector("[data-handheld]");
 if (handhelds) {
   const approach = new IntersectionObserver((entries) => {

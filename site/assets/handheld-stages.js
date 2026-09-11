@@ -146,6 +146,7 @@ async function boot(root) {
     if (!stage) { host.dispose(); return; }
     host.onBlit = stage.refreshScreen;
     stage.refreshScreen();
+    if (root.closest(".hero") && document.documentElement.dataset.heroLayout !== "duet") stage.setView("detail");
     for (const button of root.querySelectorAll("[data-device-view]")) {
       button.addEventListener("click", () => stage.setView(button.dataset.deviceView));
     }

@@ -9,6 +9,10 @@ const probe = `(async () => {
   document.querySelector('.handheld-grid').scrollIntoView({block:'center',behavior:'instant'});
   for(let i=0;i<180 && roots.some(r=>r.dataset.ready!=='true');i++) await sleep(100);
   if(roots.some(r=>r.dataset.ready!=='true')) throw Error('Handheld startup failed: '+roots.map(r=>r.querySelector('[data-stage-status]').textContent).join('; '));
+  // Hero variants start at different camera angles. Input projections below
+  // use each profile's front camera, also available through the page controls.
+  roots.forEach(root=>root.querySelector('[data-device-view="front"]').click());
+  await sleep(900);
   const receipt = id => globalThis['__'+id.replaceAll('-','_')+'Receipt']();
   const waitFor = async (condition) => { for(let i=0;i<100;i++){if(condition()) return; await sleep(50);} };
   const hash = (root,selector='[data-stage-screen]') => {
@@ -30,6 +34,7 @@ const probe = `(async () => {
   }
   const pointer=(root,type,xy)=>{
     const c=root.querySelector('[data-stage-canvas]');c.setPointerCapture=()=>{};c.releasePointerCapture=()=>{};
+    if(type==='pointerdown' && document.elementFromPoint(...xy)!==c) throw Error('Another element covers the '+root.dataset.handheld+' input point: '+document.elementFromPoint(...xy)?.outerHTML.slice(0,160));
     c.dispatchEvent(new PointerEvent(type,{clientX:xy[0],clientY:xy[1],pointerId:1,pointerType:'mouse',button:0,buttons:type==='pointerup'?0:1,bubbles:true,cancelable:true}));
   };
   const layoutWidth=document.documentElement.clientWidth;

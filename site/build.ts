@@ -670,6 +670,13 @@ async function main() {
   //    landing.js (the framework code tabs). Not wrapped in the shared
   //    header/footer (those stay for docs + playground).
   write("index.html", renderHome());
+  // Unlisted visual-review gallery; the homepage itself has no review toolbar.
+  copy(SITE + "hero-layouts.html", "hero-layouts/index.html");
+  if (existsSync(SITE + "assets/hero-layouts/")) {
+    for (const file of readdirSync(SITE + "assets/hero-layouts/")) {
+      if (file.endsWith(".png")) copy(SITE + "assets/hero-layouts/" + file, "assets/hero-layouts/" + file);
+    }
+  }
   // The homepage ships one stylesheet: the same tokens and chrome the Tailwind
   // build imports, plus the landing sections, concatenated in layer order.
   write("assets/landing.css", ["tokens.css", "base.css", "chrome.css", "landing.css", "showcase.css"]

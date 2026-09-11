@@ -1,0 +1,58 @@
+// Capture the review gallery from the live homepage, using isolated Chrome.
+// Start site/preview.ts, then run: bun site/verify-hero-layouts.ts [base URL]
+import { mkdirSync } from "node:fs";
+const base = process.argv[2] ?? "http://127.0.0.1:4173/";
+const images = new URL("./assets/hero-layouts/", import.meta.url).pathname;
+const receipts = new URL("../dist/handheld-models/", import.meta.url).pathname;
+mkdirSync(images, { recursive: true });
+mkdirSync(receipts, { recursive: true });
+const probe = `(async () => {
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const roots = [...document.querySelectorAll('.hero [data-handheld]')];
+  for (let i=0; i<300 && roots.some(root=>!root.dataset.demo); i++) await sleep(100);
+  if (roots.length!==2 || roots.some(root=>!root.dataset.demo)) throw Error('Both hero devices must boot');
+  await sleep(1600);
+  const order = [...document.querySelectorAll('.hero .pe-entry')].map(link=>link.dataset.openApp);
+  if (order.join(',')!=='pspman,pocket-shell,openstrike,pocket-voxel') throw Error('Unexpected hero case order');
+  if (document.querySelectorAll('#motion [data-pocket-stage]').length!==1 || !document.querySelector('#motion [data-motion-stage]')) throw Error('Keep the original PSP in Motion');
+  for (const root of roots) {
+    const canvas = root.querySelector('[data-stage-canvas]'), rect=canvas.getBoundingClientRect();
+    if (rect.left<0 || rect.right>document.documentElement.clientWidth+1) throw Error('Device viewport extends outside page');
+    const details=root.querySelector('.hero-device-tools');
+    details.querySelector('summary').click();
+    if (!details.open || getComputedStyle(details.querySelector('.handheld-controls')).visibility==='hidden') throw Error('Device controls did not open');
+    details.querySelector('summary').click();
+  }
+  document.querySelector('.hero .pe-entry').click();
+  if (!document.querySelector('#try-pspman').open) throw Error('First case must open PSPMAN');
+  document.querySelector('#try-pspman').close();
+  document.activeElement?.blur();
+  // Use one video frame in all screenshots so only the composition changes.
+  const video=document.querySelector('.hero video');video.pause();video.currentTime=0;
+  await sleep(250);
+  const rect=selector=>document.querySelector(selector).getBoundingClientRect().toJSON();
+  return {layout:document.documentElement.dataset.heroLayout,order,hero:rect('.hero'),text:rect('.hero .col'),pair:rect('.hero-handhelds'),
+    devices:roots.map(root=>({id:root.dataset.handheld,ready:root.dataset.ready,rect:root.getBoundingClientRect().toJSON()})),
+    loadedModels:performance.getEntriesByType('resource').filter(e=>e.decodedBodySize>0 && new URL(e.name).pathname.endsWith('.glb')).map(e=>e.name)};
+})()`;
+for (const size of ["desktop", "mobile"]) {
+  for (const layout of ["cascade", "duet", "stack"]) {
+    const mobile = size === "mobile";
+    const url = new URL(base); url.searchParams.set("hero", layout);
+    const screenshot = `${images}${layout}-${size}.png`;
+    const child = Bun.spawn(["bun", new URL("./verify.ts", import.meta.url).pathname, url.href, "1000", probe], {
+      env: { ...process.env, WIDTH: mobile ? "390" : "1440", HEIGHT: mobile ? "844" : "960", MOBILE: mobile ? "1" : "",
+        SHOT: screenshot, POCKETJS_VERIFY_SELECTOR: ".hero", POCKETJS_VERIFY_CDP_TIMEOUT: "60000" },
+      stdout: "pipe", stderr: "inherit",
+    });
+    const result = await new Response(child.stdout).text();
+    if (await child.exited !== 0) throw Error(`${layout} ${size} verification failed`);
+    const report = JSON.parse(result);
+    await Bun.write(`${receipts}hero-${layout}-${size}-receipt.json`, result);
+    const completed = new Set(report.probe.loadedModels.map((url: string) => `net::ERR_ABORTED: ${url} (type=Fetch, canceled=true)`));
+    if (report.pageErrors.length || report.consoleErrors.length || report.networkErrors.some((error: string) => !completed.has(error))) {
+      throw Error(`${layout} ${size} reported browser errors: ${result}`);
+    }
+    console.log(`${layout} ${size}: passed → ${screenshot}`);
+  }
+}

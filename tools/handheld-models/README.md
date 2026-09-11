@@ -41,6 +41,19 @@ The source scene stays editable; export batches static objects by material and
 hinge parent. Displays keep separate materials and full-panel UVs. Fine rear
 touch-panel markings are flat ink geometry, with no cylindrical sidewalls.
 
+The homepage hero presents both devices beside the existing heading, with
+PSPMAN first in the four-case strip. The Motion chapter retains its PSP.
+The unlisted `/hero-layouts/` gallery compares three compositions, with desktop
+and mobile screenshots and links to their live pages:
+
+- `/?hero=cascade`: angled devices, 3DS at upper left and Vita at lower right.
+- `/?hero=duet`: front views side by side.
+- `/?hero=stack`: angled devices arranged above and below each other.
+
+The default preview is `cascade`. Each device's **Controls** menu contains the
+front, rear and angled views; the 3DS menu also contains the lid controls.
+The heading, CTA row and case strip use the same structure in all three layouts.
+
 The homepage loads the device packages as they approach the viewport. Each new
 device owns an AppInstance iframe and WebAssembly instance. New 3DS runs the
 existing `apps/3ds-demo` Contacts app at **400×240 plus 320×240**. Vita runs
@@ -56,6 +69,9 @@ bun site/preview.ts --no-build --port=4173
 bun site/verify-handhelds.ts http://127.0.0.1:4173/
 WIDTH=390 HEIGHT=1200 MOBILE=1 SHOT=dist/handheld-models/homepage-handhelds-mobile.png \
   bun site/verify-handhelds.ts http://127.0.0.1:4173/
+# Capture all three hero layouts at 1440 and 390 CSS pixels, then rebuild the gallery:
+bun site/verify-hero-layouts.ts http://127.0.0.1:4173/
+bun site/build.ts
 ```
 
 The browser verifier checks contact selection, lower-screen scrolling, lid

@@ -41,7 +41,7 @@ test("approved hero strip exposes four setup routes without a second all-cases l
   const html = renderHomeShowcase(home);
   const shelf = html.match(/<aside class="pe-shelf[\s\S]*?<\/aside>/)![0];
   expect([...shelf.matchAll(/data-open-app="([^"]+)"/g)].map((match) => match[1]))
-    .toEqual(["pocket-shell", "openstrike", "pocket-voxel", "pspman"]);
+    .toEqual(["pspman", "pocket-shell", "openstrike", "pocket-voxel"]);
   expect(shelf).not.toContain("All cases");
   expect(shelf).toContain("Nintendo 3DS");
   expect(shelf).toContain("PS Vita");
