@@ -467,10 +467,11 @@
     <text x="279.4" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">160</text>
     <text x="336.3" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">165</text>
     <text x="194.0" y="284" fill="#8e80ac" font-size="15" text-anchor="middle">tallest bar: 6 of 60 runs</text>
-    <rect x="412" y="10" width="332" height="286" fill="#231b3b" stroke="#ffd23f" stroke-opacity=".45"/>
-    <text x="578.0" y="42" fill="#fcf6ff" font-size="20" font-weight="600" text-anchor="middle">frame clock, 60 runs</text>
-    <text x="578.0" y="68" fill="#ffd23f" font-size="16" text-anchor="middle">1 outcome &#183; assertion 60/60</text>
-    <rect x="476.2" y="84.0" width="10" height="148.0" fill="#ffd23f" rx="1.5"/>
+    <g class="hist-frame-clock">
+    <rect x="412" y="10" width="332" height="286" fill="#231b3b" stroke="var(--frame-clock)" stroke-opacity=".45"/>
+    <text x="578.0" y="42" fill="var(--frame-clock)" font-size="20" font-weight="600" text-anchor="middle">frame clock, 60 runs</text>
+    <text x="578.0" y="68" fill="var(--frame-clock)" font-size="16" text-anchor="middle">1 outcome &#183; assertion 60/60</text>
+    <rect x="476.2" y="84.0" width="10" height="148.0" fill="var(--frame-clock)" rx="1.5"/>
     <line x1="426" y1="232" x2="730" y2="232" stroke="#5b4e7d"/>
     <text x="435.7" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">140</text>
     <text x="492.6" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">145</text>
@@ -479,6 +480,7 @@
     <text x="663.4" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">160</text>
     <text x="720.3" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">165</text>
     <text x="578.0" y="284" fill="#8e80ac" font-size="15" text-anchor="middle">frame 144, every run, forever</text>
+    </g>
 </svg>
           <p class="note sm">Same app, same awaited confirmation, same assertion. Driven by requestAnimationFrame
             against a wall clock it lands on <strong>22 different frames</strong>, and the timing assertion passes

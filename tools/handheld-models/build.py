@@ -398,6 +398,38 @@ def vita_shell(name,rings,mat):
     return mesh(name,v,f,mat)
 
 
+def corner_prism(name,points,low,high,mat=None,bevel=0):
+    # Keep the curved cut contour after reflecting to the other three corners.
+    if sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(points,points[1:]+points[:1]))<0:
+        points=list(reversed(points))
+    n=len(points)
+    return mesh(name,[(x,y,z) for z in [low,high] for x,y in points],
+        [tuple(reversed(range(n))),tuple(range(n,2*n))]+
+        [(i,(i+1)%n,(i+1)%n+n,i+n) for i in range(n)],mat,bevel)
+
+
+def vita_corner():
+    # The front plate turns inward at each corner, then rejoins the outer rim.
+    # This is an inverse-radius cut, not a strip parallel to the endcap ellipse.
+    a,b,c,d=Vector((61.5,46)),Vector((63,31.5)),Vector((74,32)),Vector((87,30))
+    curve=[]
+    for i in range(49):
+        t=i/48; p=(1-t)**3*a+3*(1-t)**2*t*b+3*(1-t)*t*t*c+t**3*d
+        curve.append(tuple(p))
+    def band(gap,outer_inset):
+        inside=[]; outside=[]
+        for i in range(81):
+            x=62+i*.25
+            j=next(j for j in range(len(curve)-1) if curve[j][0]<=x<=curve[j+1][0])
+            p,q=curve[j],curve[j+1]
+            inner=p[1]+(q[1]-p[1])*(x-p[0])/(q[0]-p[0])+gap
+            outer=42.55*math.sqrt(1-((x-56.3)/35.5)**2)-outer_inset
+            if outer>inner+.15:
+                inside.append((x,inner));outside.append((x,outer))
+        return outside+list(reversed(inside))
+    return curve+[(110,30),(110,60),(55,60)],band
+
+
 def vita():
     setup()
     shell=material('PCH-2000 charcoal ABS',(.022,.025,.028),.4,0,.16)
@@ -406,12 +438,29 @@ def vita():
     keys=material('PCH-2000 polished buttons',(.009,.012,.015),.24,0,.35)
     rubber=material('PCH-2000 textured stick rubber',(.032,.034,.035),.79)
     legend=material('PCH-2000 silver legends',(.43,.47,.49),.4,.15)
-    trigger=material('PCH-2000 translucent shoulder resin',(.25,.28,.29),.23,.24,.45)
+    trigger=material('PCH-2000 translucent shoulder resin',(.014,.018,.023),.16,0,.45)
     backpad=material('PCH-2000 rear touch panel',(.009,.012,.014),.3,0,.25)
     pattern=material('PCH-2000 touch pattern',(.032,.039,.043),.57)
     base=vita_shell('Rear moulded shell',[(167,73,-7.5),(176,79,-6.5),(181.8,83.5,-3.5),(183.6,85.1,-.5)],shell)
-    vita_shell('Perimeter assembly seam',[(183.5,85,-.6),(183.6,85.1,-.2)],BLACK)
+    seam=vita_shell('Perimeter assembly seam',[(183.5,85,-.6),(183.6,85.1,-.2)],BLACK)
     face=vita_shell('Front moulded shell',[(183.6,85.1,-.18),(183.0,84.6,3.3),(180.6,83.4,5.9),(177.8,81.7,7.1)],front)
+    notch,corner_band=vita_corner()
+    for side,label in [(-1,'L'),(1,'R')]:
+        for end in [-1,1]:
+            pts=[(side*x,end*y) for x,y in notch]
+            cut(face,corner_prism(label+(' lower' if end<0 else ' shoulder')+' inverse radius',pts,-.4,12))
+        # Shoulder buttons fill a pocket cut into the body, below the face lip.
+        pts=[(side*x,y) for x,y in notch]
+        cut(base,corner_prism(label+' shoulder body pocket',pts,-3.2,12))
+        cut(seam,corner_prism(label+' shoulder seam clearance',pts,-3.2,12))
+        pts=[(side*x,y) for x,y in corner_band(.55,.1)]
+        corner_prism(label+' shoulder',pts,-2.75,5.5,trigger,.35)
+        text(label+' shoulder legend',label,(side*72.8,36.5,5.53),2.2,legend)
+        # The lower corner is open, with a curved outer bridge for the strap.
+        # Cut every shell layer so the seam cannot cap the passage in black.
+        pts=[(side*x,-y) for x,y in corner_band(.2,1.2)]
+        for part in [base,seam]:
+            cut(part,corner_prism(label+' lower strap passage',pts,-12,12))
     slab('Continuous central lens',(0,0,7.17),(125.4,81,.28),4.2,glass,.11)
     slab('LCD black border',(0,2.0,7.36),(112.6,64.2,.12),.5,BLACK,.02)
     surface('Screen_Primary',(0,2.0,7.45),110.7,62.75,'dynamic_screen')
@@ -444,22 +493,6 @@ def vita():
         disc(label+' socket',(x,-24.4,6.86),3.45,.5,BLACK,.15)
         disc(label+' key',(x,-24.4,7.15),2.96,.65,keys,.28)
         text(label+' legend',label,(x,-24.4,7.5),1.03,legend)
-    for side,label in [(-1,'L'),(1,'R')]:
-        # The translucent triggers follow the curved upper endcaps.
-        arc=[math.radians(49+i*39/24) for i in range(25)]
-        outer=[(side*(56.3+35.5*math.cos(a)),42.55*math.sin(a)) for a in arc]
-        inner=[(side*(56.3+34.7*math.cos(a)),42.55*math.sin(a)-3.6) for a in reversed(arc)]
-        pts=outer+inner
-        if side<0: pts.reverse()
-        n=len(pts)
-        def crescent(name,lo,hi,mat,bevel):
-            return mesh(name,[(x,y,z) for z in [lo,hi] for x,y in pts],
-                [tuple(reversed(range(n))),tuple(range(n,2*n))]+
-                [(i,(i+1)%n,(i+1)%n+n,i+n) for i in range(n)],mat,bevel)
-        cut(face,crescent(label+' trigger aperture',-.3,12,None,0))
-        crescent(label+' trigger seat',0,.8,BLACK,.1)
-        crescent(label+' shoulder',.7,5.6,trigger,.4)
-        text(label+' shoulder legend',label,(side*72.8,36.5,5.7),2.7,legend)
     # Top rim controls and game card door.
     block('Top control strip seam',(0,41.9,1.7),(122,1.3,8.6),BLACK,1.1)
     block('Top control strip',(0,42.2,1.7),(121.5,.95,8.1),shell,1)
@@ -520,12 +553,6 @@ def vita():
             cut(base,disc('Screw countersink',(x,y,-7),1.55,6,None,0))
             screw('Rear chassis screw',x,y,-7)
     text('Rear model identification','SONY   PCH-2000   PlayStation Vita',(0,-31.5,-7.58),1.55,legend,(0,PI,0))
-    for x in [-72,72]:
-        # Open strap channels cut all the way through the housing.
-        o=slab('Strap opening',(x,-33,0),(12,3.7,22),1.8,None,0)
-        o.rotation_euler.z=math.radians(25 if x>0 else -25); cut(base,o)
-        o=slab('Strap opening',(x,-33,0),(12,3.7,22),1.8,None,0)
-        o.rotation_euler.z=math.radians(25 if x>0 else -25); cut(face,o)
     return 'ps-vita-2000',None
 
 
@@ -599,7 +626,8 @@ def setup_studio():
 
 def render_views(device,pivot):
     scene=bpy.context.scene; obj=scene.camera; camera=obj.data
-    views=[('front',(0,0,330),(0,0,0),220),('three-quarter',(135,-190,330),(0,-4,4),228),('rear',(80,140,-300),(0,0,0),220)]
+    views=[('front',(0,0,330),(0,0,0),220),('three-quarter',(135,-190,330),(0,-4,4),228),('rear',(80,140,-300),(0,0,0),220),
+           ('right-corners',(140,-20,170),(68,0,0),120)]
     if pivot:
         views=[('open-front',(0,-115,370),(0,-5,8),220),('three-quarter',(125,-220,300),(0,-3,12),260),('rear',(90,160,-280),(0,-5,15),220),
                ('closed',(100,-170,240),(0,-37,8),195),('closed-rear',(-70,130,-180),(0,-37,8),195),('hinge-side',(240,-90,80),(0,-32,10),190)]

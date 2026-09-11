@@ -59,14 +59,17 @@ const probe = `(async () => {
   contacts.querySelector('[data-lid-toggle]').click();await waitFor(()=>receipt(contacts.dataset.handheld).lidAngle===155);
   if(receipt(contacts.dataset.handheld).lidAngle!==155) throw Error('Lid did not reopen');
   vita.scrollIntoView({block:'center',behavior:'instant'});await sleep(300);
-  const button=project(vita,profiles[1],[-81,13.3,8.7]);
-  pointer(vita,'pointerdown',button);await sleep(350);pointer(vita,'pointerup',button);await sleep(500);
-  if(receipt(vita.dataset.handheld).lastPressedPart!=='dpad_left') throw Error('Vita physical button raycast missed');
-  if(receipt(vita.dataset.handheld).pressedPart) throw Error('Vita button remained held');
+  for(const name of ['dpad_left','shoulder_l','shoulder_r']) {
+    const part=profiles[1].parts.find(p=>p.name===name);
+    const button=project(vita,profiles[1],part.center_mm);
+    pointer(vita,'pointerdown',button);await sleep(350);pointer(vita,'pointerup',button);await sleep(500);
+    if(receipt(vita.dataset.handheld).lastPressedPart!==name) throw Error('Vita '+name+' raycast missed');
+    if(receipt(vita.dataset.handheld).pressedPart) throw Error('Vita '+name+' remained held');
+  }
   const r=roots.map(x=>receipt(x.dataset.handheld));
   document.querySelector('.handheld-grid').scrollIntoView({block:'center',behavior:'instant'});await sleep(300);
   const loadedModels=performance.getEntriesByType('resource').filter(e=>e.decodedBodySize>0 && new URL(e.name).pathname.endsWith('.glb')).map(e=>e.name);
-  return {viewport:[layoutWidth,document.documentElement.clientHeight],loadedModels,checks:['dual display boot','uncropped device framing','auxiliary contact selects primary card','auxiliary drag scrolls','lid close and reopen','Vita button raycast and release'],receipts:r};
+  return {viewport:[layoutWidth,document.documentElement.clientHeight],loadedModels,checks:['dual display boot','uncropped device framing','auxiliary contact selects primary card','auxiliary drag scrolls','lid close and reopen','Vita d-pad and L/R raycast and release'],receipts:r};
 })()`;
 const child = Bun.spawn(["bun", new URL("./verify.ts", import.meta.url).pathname, url, "1500", probe], {
   env: { ...process.env, SHOT: process.env.SHOT ?? out + "homepage-handhelds.png", POCKETJS_VERIFY_SELECTOR: ".handheld-grid", POCKETJS_VERIFY_CDP_TIMEOUT: "60000" },

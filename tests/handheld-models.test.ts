@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync, existsSync } from "node:fs";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { Box3, Vector3 } from "three";
+import { Box3, Raycaster, Vector3 } from "three";
 import { createWasmUi } from "../hosts/web/wasm-ops.js";
 import { NODE_TYPE, PROP, ROOT_ID } from "../contracts/spec/spec.ts";
 
@@ -64,6 +64,26 @@ test("3DS exported hinge moves the upper display and clears the lower glass when
   scene.updateMatrixWorld(true);
   expect(upper.getWorldPosition(new Vector3()).distanceTo(closed)).toBeGreaterThan(50);
   expect(lower.getWorldPosition(new Vector3()).distanceTo(baseBefore)).toBeLessThan(.0001);
+});
+
+test("Vita shoulder pockets sit below the front lip and lower strap passages stay open", async () => {
+  const { scene } = await model("ps-vita-2000");
+  const hits = (x: number, y: number) => new Raycaster(
+    new Vector3(x, y, 100), new Vector3(0, 0, -1),
+  ).intersectObject(scene, true);
+  for (const side of [-1, 1]) {
+    // Probe the interior of both corner openings, away from their bevels.
+    for (const [x, y] of [[71, 36], [74, 35]]) {
+      const shoulder = hits(side * x, y)[0];
+      expect(shoulder).toBeDefined();
+      expect(shoulder.object.name).toContain("shoulder_resin");
+      expect(shoulder.point.z).toBeLessThan(6);
+      // Neither the chassis nor its thin assembly-seam mesh may cap the hole.
+      expect(hits(side * x, -y)).toHaveLength(0);
+    }
+    // The outer strap bridge must survive the through-cut.
+    expect(hits(side * 71, -38).length).toBeGreaterThan(0);
+  }
 });
 
 test("WASM auxiliary output has separate dimensions, raster, hit root and reset lifetime", async () => {

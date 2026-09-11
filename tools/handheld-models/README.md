@@ -22,6 +22,14 @@ material values are estimates from the photographs.
 | ![Open 3DS](../../engine/pocket3d/examples/handheld/assets/new-nintendo-3ds/preview-three-quarter.png) | ![Vita front](../../engine/pocket3d/examples/handheld/assets/ps-vita-2000/preview-front.png) |
 | ![Closed 3DS](../../engine/pocket3d/examples/handheld/assets/new-nintendo-3ds/preview-closed.png) | ![Vita rear](../../engine/pocket3d/examples/handheld/assets/ps-vita-2000/preview-rear.png) |
 
+The Vita front panel has concave reliefs at all four corners. The L/R buttons
+sit in the upper chassis pockets and complete the outer curve below the front
+lip. The lower reliefs open through the chassis and assembly seam, leaving the
+curved strap bridges. The corner geometry follows the 4Gamer PCH-2000 teardown
+close-ups in the reference manifest.
+
+![Vita shoulder pocket and lower strap bridge](../../engine/pocket3d/examples/handheld/assets/ps-vita-2000/preview-right-corners.png)
+
 The 3DS `Lid_Hinge` empty owns the lid, display, speakers, cameras and sliders.
 Its `Lid_OpenClose` clip runs closed at frame 1, open at 155 degrees at frames
 40–60, and closed at frame 100. The native Blender X rotation is

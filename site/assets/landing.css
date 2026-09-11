@@ -231,6 +231,7 @@
 }
 
 /* frame + effect animation */
+#frame{--frame-clock:#4ade80;--frame-clock-rgb:74,222,128}
 .tl{border:1px solid var(--line);background:var(--panel);padding:1.1rem 1.2rem 1.2rem;overflow:hidden}
 .tl .lb{font-family:var(--mono);font-size:.64rem;letter-spacing:.03em;color:var(--accent);margin-bottom:1.1rem}
 .lane{display:grid;grid-template-columns:5.6rem minmax(0,1fr);gap:.7rem;align-items:center;margin-bottom:.5rem}
@@ -256,13 +257,13 @@
   font-family:var(--mono);font-size:.6rem;color:var(--c3);white-space:nowrap;
   animation:arrive 4.8s linear infinite;opacity:0;
   background:rgba(var(--shade-rgb),.95);border:1px solid rgba(var(--c3-rgb),.55);padding:.14rem .35rem}
-.wallclock .arrive::after{content:"";position:absolute;left:.1rem;top:1.4rem;width:1px;height:.5rem;background:var(--c3)}
+.wallclock .arrive::after{content:"";position:absolute;left:.1rem;top:1.4rem;width:1px;height:.5rem;background:var(--frame-clock)}
 @keyframes arrive{0%,38%{opacity:0} 41%,49%{opacity:1} 52%,100%{opacity:0}}
-.deliver{position:absolute;left:calc(50% - 1px);top:-.1rem;bottom:-.1rem;width:2px;background:var(--accent);
-  box-shadow:0 0 10px rgba(var(--accent-rgb),.8);animation:deliver 4.8s linear infinite;opacity:0}
+.deliver{position:absolute;left:calc(50% - 1px);top:-.1rem;bottom:-.1rem;width:2px;background:var(--frame-clock);
+  box-shadow:0 0 10px rgba(var(--frame-clock-rgb),.8);animation:deliver 4.8s linear infinite;opacity:0}
 .deliver::after{content:"delivered at the boundary";position:absolute;left:.35rem;top:-1.55rem;
-  font-family:var(--mono);font-size:.6rem;color:var(--accent);white-space:nowrap;
-  background:rgba(var(--shade-rgb),.95);border:1px solid rgba(var(--accent-rgb),.45);padding:.14rem .35rem}
+  font-family:var(--mono);font-size:.6rem;color:var(--frame-clock);white-space:nowrap;
+  background:rgba(var(--shade-rgb),.95);border:1px solid rgba(var(--frame-clock-rgb),.45);padding:.14rem .35rem}
 @keyframes deliver{0%,49%{opacity:0} 51%,66%{opacity:1} 70%,100%{opacity:0}}
 .tl .pnote{margin-top:1rem;padding-top:.7rem;border-top:1px dashed var(--line);
   font-family:var(--mono);font-size:.66rem;color:var(--muted);line-height:1.7}
