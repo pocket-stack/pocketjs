@@ -17,6 +17,9 @@ export interface OffloadOps {
    * Foreground is ABGR; alpha comes from coverage. Optional columns provide one
    * lowercase hex palette index per pixel column; palette is 1..16 RGB hex colors.
    * Coloring uses the same scratch buffer and one upload. Returns a texture handle. */
+  /** 2-bit coverage; width 4..512 in multiples of 4, height 1..128.
+   * Power-of-two envelope: min width 8, min height 16, at most 8192 pixels.
+   * The shared scratch buffer and one-upload-per-frame budget are unchanged. */
   uploadCoverage?(base64: string, width: number, height: number, foreground: number, columns?: string, palette?: string): number;
 }
 export interface OffloadRequest { v: 1; id: number; method: string; payload: string }

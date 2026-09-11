@@ -42,7 +42,7 @@ describe("private iPod touch 4 profile", () => {
         presentations: ["native"],
         rasterDensity: IPODTOUCH4_RASTER_DENSITY,
       },
-      capabilities: ["input.touch", "text.glyphs.baked"],
+      capabilities: ["input.touch", "text.glyphs.baked", "io.offload"],
     });
     // Same legacy UIKit runtime, same op table, same guest protocol as the
     // iPhone 4S — the ABI is the protocol revision, the target id the device.

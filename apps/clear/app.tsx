@@ -549,19 +549,20 @@ export default () => {
     region: {
       rect: () =>
         screenName === "todos" && editor.editing()
-          ? { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H - KB_H }
+          ? { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H - kb.height() }
           : null,
     },
     onTap: () => editor.close(true),
   });
 
   // The keyboard claims its panel outright (registered last = top priority).
-  // Keys commit on the down edge; the key-cap popup lives until the lift.
+  // Contacts own holds and drags; a short space commits on release.
   createGesture({
     region: { rect: () => kb.rect() },
-    onDown: (c) => kb.pressAt(c.x, c.y, SCREEN_H),
-    onUp: () => kb.release(),
-    onCancel: () => kb.release(),
+    onDown: (c) => kb.pressAt(c.x, c.y, SCREEN_H, c.id),
+    onMove: (c) => kb.moveAt(c.x, c.y, c.id),
+    onUp: (c) => kb.release(c.id),
+    onCancel: (c) => kb.release(c.id, true),
   });
 
   // ------------------------------------------------------------ frame pump
@@ -595,6 +596,15 @@ export default () => {
   }
 
   onFrame(() => {
+    editor.step();
+    const edited = editor.editing(), editedSlot = edited ? slotByTodo.get(edited.id) : undefined;
+    const textHeight = edited ? SCREEN_H - kb.height() : SCREEN_H;
+    const textOffset = scroller.offset() + Math.max(0, editedSlot ? editedSlot.y - scroller.offset() + ROW_H - textHeight : 0);
+    for (const slot of slots) {
+      slot.textVisible = screenName !== "lists" && (slot.todoId !== -1 || slot.busy) &&
+        (slot === editedSlot || slot.y + ROW_H > textOffset - ROW_H && slot.y < textOffset + textHeight + ROW_H);
+      slot.textPriority = slot === editedSlot ? 0 : 2;
+    }
     if (screenName === "todos") {
       scroller.step();
       const off = scroller.offset();
