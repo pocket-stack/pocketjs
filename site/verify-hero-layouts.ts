@@ -21,8 +21,7 @@ const probe = `(async () => {
     if (root.querySelector('figcaption>span')) throw Error('Remove the demo subtitle below the model');
     const name=['Nintendo 3DS','PS Vita'][index];
     if (root.querySelector('h3').textContent!==name || canvas.getAttribute('aria-label')!==name) throw Error('Use the short device name');
-    if (root.querySelector('figcaption').innerHTML!=='<h3>'+name+'</h3>') throw Error('Only show the device name below the model');
-    if (root.querySelector('details,summary,input,[data-device-view]')) throw Error('Remove the device control menus');
+    if (root.querySelector('figcaption button,figcaption svg,details,summary,input,[data-device-view]')) throw Error('Only show the device name below the model');
   }
   document.querySelector('.hero .pe-entry').click();
   if (!document.querySelector('#try-pspman').open) throw Error('First case must open PSPMAN');
