@@ -147,19 +147,6 @@ async function boot(root) {
     host.onBlit = stage.refreshScreen;
     stage.refreshScreen();
     if (root.closest(".hero") && document.documentElement.dataset.heroLayout !== "duet") stage.setView("detail");
-    const toggle = root.querySelector("[data-lid-toggle]");
-    if (toggle) {
-      let open = true;
-      toggle.disabled = false;
-      toggle.addEventListener("click", () => {
-        open = !open;
-        stage.setLidAngle(open ? profile.hinge.default_angle_degrees : 0);
-        const label = `${open ? "Close" : "Open"} ${root.dataset.deviceLabel}`;
-        toggle.setAttribute("aria-label", label);
-        toggle.title = label;
-        toggle.setAttribute("aria-expanded", String(open));
-      });
-    }
     root.dataset.demo = profile.demo.output;
   } catch (error) {
     host?.dispose();

@@ -12,7 +12,6 @@ const probe = `(async () => {
   // Let the initial hero camera settle before projecting input points.
   await sleep(900);
   const receipt = id => globalThis['__'+id.replaceAll('-','_')+'Receipt']();
-  const waitFor = async (condition) => { for(let i=0;i<100;i++){if(condition()) return; await sleep(50);} };
   const hash = (root,selector='[data-stage-screen]') => {
     const c=root.querySelector(selector), d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
     let h=2166136261; for(let i=0;i<d.length;i++){h=Math.imul(h^d[i],16777619);} return h>>>0;
@@ -59,10 +58,6 @@ const probe = `(async () => {
   for(let i=1;i<=12;i++){pointer(contacts,'pointermove',from.map((v,j)=>v+(to[j]-v)*i/12));await sleep(40);}
   pointer(contacts,'pointerup',to);await sleep(750);
   if(listBefore===hash(contacts,'[data-stage-auxiliary]')) throw Error('Contacts drag did not scroll');
-  contacts.querySelector('[data-lid-toggle]').click();await waitFor(()=>receipt(contacts.dataset.handheld).lidAngle===0);
-  if(receipt(contacts.dataset.handheld).lidAngle!==0) throw Error('Lid did not close');
-  contacts.querySelector('[data-lid-toggle]').click();await waitFor(()=>receipt(contacts.dataset.handheld).lidAngle===155);
-  if(receipt(contacts.dataset.handheld).lidAngle!==155) throw Error('Lid did not reopen');
   vita.scrollIntoView({block:'center',behavior:'instant'});await sleep(300);
   for(const name of ['dpad_left','shoulder_l','shoulder_r']) {
     const part=profiles[1].parts.find(p=>p.name===name);
@@ -74,7 +69,7 @@ const probe = `(async () => {
   const r=roots.map(x=>receipt(x.dataset.handheld));
   document.querySelector('.handheld-grid').scrollIntoView({block:'center',behavior:'instant'});await sleep(300);
   const loadedModels=performance.getEntriesByType('resource').filter(e=>e.decodedBodySize>0 && new URL(e.name).pathname.endsWith('.glb')).map(e=>e.name);
-  return {viewport:[layoutWidth,document.documentElement.clientHeight],loadedModels,checks:['dual display boot','uncropped device framing','auxiliary contact selects primary card','auxiliary drag scrolls','lid close and reopen','Vita d-pad and L/R raycast and release'],receipts:r};
+  return {viewport:[layoutWidth,document.documentElement.clientHeight],loadedModels,checks:['dual display boot','uncropped device framing','auxiliary contact selects primary card','auxiliary drag scrolls','Vita d-pad and L/R raycast and release'],receipts:r};
 })()`;
 const child = Bun.spawn(["bun", new URL("./verify.ts", import.meta.url).pathname, url, "1500", probe], {
   env: { ...process.env, SHOT: process.env.SHOT ?? out + "homepage-handhelds.png", POCKETJS_VERIFY_SELECTOR: ".handheld-grid", POCKETJS_VERIFY_CDP_TIMEOUT: "60000" },

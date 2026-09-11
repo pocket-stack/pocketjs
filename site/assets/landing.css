@@ -469,18 +469,12 @@
 .hero-handhelds::before{content:"";position:absolute;inset:-2rem;z-index:-1;background:radial-gradient(ellipse,rgba(var(--shade-rgb),.5),transparent 72%);pointer-events:none}
 .hero-handhelds .handheld-stage{position:absolute;margin:0;padding:0;border:0;background:transparent;pointer-events:none}
 .hero-handhelds .pg-stage__canvas{pointer-events:auto}
-/* Keep the lid toggle above the Vita's transparent canvas. */
 .hero-handhelds .handheld-stage:first-child{width:66%;height:270px;left:-2%;top:-8px;z-index:2}
 .hero-handhelds .handheld-stage:last-child{width:78%;height:200px;right:-4%;bottom:0;z-index:1}
 .hero-handhelds .handheld-stage .pg-stage__viewport{height:calc(100% - 40px);overflow:visible}
 .hero-handhelds figcaption{position:absolute;left:0;right:0;bottom:-4px;display:flex;align-items:center;justify-content:center;gap:.5rem;min-height:44px;text-align:center;pointer-events:none}
 .hero-handhelds .handheld-stage h3{font:600 .72rem/1.5 var(--sans);margin:0;color:var(--ink-2);min-width:0}
 .hero-handhelds .stage-hint{display:none}
-.hero-lid-toggle{pointer-events:auto;flex:none;display:grid;place-items:center;width:44px;height:44px;margin-right:-.4rem;padding:0;border:0;background:transparent;color:var(--ink-2);cursor:pointer}
-.hero-lid-toggle:hover,.hero-lid-toggle:focus-visible{color:var(--ink)}
-.hero-lid-toggle:focus-visible{outline:1px solid var(--accent);outline-offset:-6px;border-radius:8px}
-.hero-lid-toggle:disabled{visibility:hidden}
-.hero-lid-toggle[aria-expanded="false"] .hero-lid-toggle__lid{transform:translateY(9px) scaleY(.3);transform-origin:0 0}
 .hero-handhelds .pg-stage__status{font-size:.65rem;text-align:center;max-width:100%}
 [data-hero-layout="duet"] .hero-handhelds .handheld-stage:first-child{width:54%;height:360px;left:-2%;top:32px}
 [data-hero-layout="duet"] .hero-handhelds .handheld-stage:last-child{width:57%;height:215px;right:-6%;bottom:55px}
