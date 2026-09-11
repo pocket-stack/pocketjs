@@ -164,6 +164,7 @@
     "./audio": "./framework/src/audio-api.ts",
     "./media": "./framework/src/media.ts",
     "./media/provider": "./tools/media-stream.ts",
+    "./media/download-provider": "./tools/media-download.ts",
     "./media/audio": "./contracts/spec/media-adpcm.ts",
     "./clock": "./framework/src/clock.ts",
     "./config": "./framework/src/config.ts",
