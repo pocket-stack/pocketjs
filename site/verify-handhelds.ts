@@ -9,9 +9,7 @@ const probe = `(async () => {
   document.querySelector('.handheld-grid').scrollIntoView({block:'center',behavior:'instant'});
   for(let i=0;i<180 && roots.some(r=>r.dataset.ready!=='true');i++) await sleep(100);
   if(roots.some(r=>r.dataset.ready!=='true')) throw Error('Handheld startup failed: '+roots.map(r=>r.querySelector('[data-stage-status]').textContent).join('; '));
-  // Hero variants start at different camera angles. Input projections below
-  // use each profile's front camera, also available through the page controls.
-  roots.forEach(root=>root.querySelector('[data-device-view="front"]').click());
+  // Let the initial hero camera settle before projecting input points.
   await sleep(900);
   const receipt = id => globalThis['__'+id.replaceAll('-','_')+'Receipt']();
   const waitFor = async (condition) => { for(let i=0;i<100;i++){if(condition()) return; await sleep(50);} };
@@ -23,7 +21,9 @@ const probe = `(async () => {
   const profiles=await Promise.all(roots.map(r=>fetch('/stage/'+r.dataset.handheld+'/profile.json').then(x=>x.json())));
   function project(root,p,world) {
     const c=root.querySelector('[data-stage-canvas]'),r=c.getBoundingClientRect();
-    const eye=p.view.desk_position_mm,target=p.view.desk_target_mm;
+    const target=p.view.desk_target_mm, distance=p.view.distance_mm;
+    const eye=root.closest('.hero') && document.documentElement.dataset.heroLayout!=='duet'
+      ? target.map((v,i)=>v+[distance*.35,-distance*.4,distance*.8][i]) : p.view.desk_position_mm;
     const unit=v=>{const n=Math.hypot(...v);return v.map(x=>x/n)};
     const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
     const dot=(a,b)=>a.reduce((n,v,i)=>n+v*b[i],0);

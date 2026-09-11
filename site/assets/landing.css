@@ -458,12 +458,6 @@
 .handheld-stage h3{font-size:1.1rem;margin:0 0 .5rem}
 .handheld-stage figcaption p{color:var(--ink-2);font-size:.85rem;line-height:1.65;max-width:34em;min-height:3.3em}
 .handheld-stage .pg-stage__viewport{height:420px;aspect-ratio:auto}
-.handheld-controls{display:flex;align-items:center;justify-content:center;gap:.45rem;flex-wrap:wrap;margin-top:.7rem}
-.handheld-controls button{font:inherit;font-size:.72rem;background:transparent;color:var(--ink-2);border:1px solid var(--line);border-radius:5px;padding:.4rem .65rem;cursor:pointer}
-.handheld-controls button:hover,.handheld-controls button:focus-visible{color:var(--ink);border-color:var(--ink-2)}
-.handheld-controls label{display:flex;gap:.4rem;align-items:center;font-size:.7rem;color:var(--ink-2)}
-.handheld-controls input{width:85px;accent-color:var(--ink-2)}
-.handheld-stage:not(.is-ready) .handheld-controls{visibility:hidden}
 @media(max-width:760px){.handheld-grid{grid-template-columns:1fr;gap:2.5rem}.handheld-stage .pg-stage__viewport{height:380px}}
 .spon-cta{margin-top:1.4rem;display:inline-flex;gap:.5rem;align-items:center}
 
@@ -475,26 +469,18 @@
 .hero-handhelds::before{content:"";position:absolute;inset:-2rem;z-index:-1;background:radial-gradient(ellipse,rgba(var(--shade-rgb),.5),transparent 72%);pointer-events:none}
 .hero-handhelds .handheld-stage{position:absolute;margin:0;padding:0;border:0;background:transparent;pointer-events:none}
 .hero-handhelds .pg-stage__canvas{pointer-events:auto}
-/* The Vita's transparent canvas must not intercept the 3DS menu trigger. */
+/* Keep the lid toggle above the Vita's transparent canvas. */
 .hero-handhelds .handheld-stage:first-child{width:66%;height:270px;left:-2%;top:-8px;z-index:2}
 .hero-handhelds .handheld-stage:last-child{width:78%;height:200px;right:-4%;bottom:0;z-index:1}
 .hero-handhelds .handheld-stage .pg-stage__viewport{height:calc(100% - 40px);overflow:visible}
 .hero-handhelds figcaption{position:absolute;left:0;right:0;bottom:-4px;display:flex;align-items:center;justify-content:center;gap:.5rem;min-height:44px;text-align:center;pointer-events:none}
 .hero-handhelds .handheld-stage h3{font:600 .72rem/1.5 var(--sans);margin:0;color:var(--ink-2);min-width:0}
 .hero-handhelds .stage-hint{display:none}
-.hero-device-tools{pointer-events:auto;flex:none;font:.68rem/1.5 var(--sans);color:var(--ink-2)}
-/* The left side of the 3DS caption leaves the Vita shoulder accessible. */
-.hero-handhelds .handheld-stage:first-child .hero-device-tools{order:-1}
-.hero-device-tools summary{cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.4rem;min-height:44px;min-width:88px;padding:0 .65rem;list-style:none;border:1px solid var(--line-2);border-radius:6px;background:rgba(var(--shade-rgb),.85)}
-.hero-device-tools summary::-webkit-details-marker{display:none}
-.hero-device-tools summary::after{content:"⌄";font-size:.85rem}
-.hero-device-tools[open] summary::after{content:"⌃"}
-.hero-device-tools summary:hover,.hero-device-tools summary:focus-visible{color:var(--ink);border-color:var(--accent);outline-color:var(--accent)}
-.hero-handhelds .handheld-controls{position:absolute;z-index:4;left:0;bottom:calc(100% + .4rem);width:max-content;max-width:310px;padding:.45rem .55rem;margin:0;background:rgba(var(--shade-rgb),.98);border:1px solid var(--line);border-radius:8px}
-.hero-handhelds .handheld-stage:last-child .handheld-controls{left:auto;right:0}
-.hero-handhelds .handheld-controls button{min-height:44px;min-width:44px}
-.hero-handhelds .handheld-controls input{height:44px}
-.hero-handhelds .handheld-stage:has(.hero-device-tools[open]){z-index:3}
+.hero-lid-toggle{pointer-events:auto;flex:none;display:grid;place-items:center;width:44px;height:44px;margin-right:-.4rem;padding:0;border:0;background:transparent;color:var(--ink-2);cursor:pointer}
+.hero-lid-toggle:hover,.hero-lid-toggle:focus-visible{color:var(--ink)}
+.hero-lid-toggle:focus-visible{outline:1px solid var(--accent);outline-offset:-6px;border-radius:8px}
+.hero-lid-toggle:disabled{visibility:hidden}
+.hero-lid-toggle[aria-expanded="false"] .hero-lid-toggle__lid{transform:translateY(9px) scaleY(.3);transform-origin:0 0}
 .hero-handhelds .pg-stage__status{font-size:.65rem;text-align:center;max-width:100%}
 [data-hero-layout="duet"] .hero-handhelds .handheld-stage:first-child{width:54%;height:360px;left:-2%;top:32px}
 [data-hero-layout="duet"] .hero-handhelds .handheld-stage:last-child{width:57%;height:215px;right:-6%;bottom:55px}
@@ -523,5 +509,4 @@
   [data-hero-layout="stack"] .hero-handhelds{height:350px}
   [data-hero-layout="stack"] .hero-handhelds .handheld-stage:first-child{width:63%;height:195px;left:18%;top:-6px}
   [data-hero-layout="stack"] .hero-handhelds .handheld-stage:last-child{width:74%;height:165px;right:7%;bottom:-4px}
-  .hero-handhelds .handheld-controls{max-width:235px}
 }

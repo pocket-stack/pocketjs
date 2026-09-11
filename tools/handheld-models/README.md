@@ -50,8 +50,9 @@ and mobile screenshots and links to their live pages:
 - `/?hero=duet`: front views side by side.
 - `/?hero=stack`: angled devices arranged above and below each other.
 
-The default preview is `cascade`. Each device's **Controls** menu contains the
-front, rear and angled views; the 3DS menu also contains the lid controls.
+The default preview is `cascade`. The captions read **Nintendo 3DS** and
+**PS Vita**. Drag the shell to rotate either device; the borderless clamshell
+icon beside Nintendo 3DS toggles its lid between closed and 155° open.
 The heading, CTA row and case strip use the same structure in all three layouts.
 
 The homepage loads the device packages as they approach the viewport. Each new

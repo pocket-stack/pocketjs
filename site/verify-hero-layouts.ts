@@ -24,18 +24,26 @@ const probe = `(async () => {
       if (hit!==element && !element.contains(hit)) throw Error('Control target is covered: '+element.textContent);
     }
   }
-  for (const root of roots) {
+  for (const [index,root] of roots.entries()) {
     const canvas = root.querySelector('[data-stage-canvas]'), rect=canvas.getBoundingClientRect();
     if (rect.left<0 || rect.right>document.documentElement.clientWidth+1) throw Error('Device viewport extends outside page');
     if (root.querySelector('figcaption>span')) throw Error('Remove the demo subtitle below the model');
-    const details=root.querySelector('.hero-device-tools');
-    reachable(details.querySelector('summary'));
-    details.querySelector('summary').click();
-    if (!details.open || getComputedStyle(details.querySelector('.handheld-controls')).visibility==='hidden') throw Error('Device controls did not open');
-    for (const button of details.querySelectorAll('button')) reachable(button);
-    reachable(details.querySelector('summary'));
-    details.querySelector('summary').click();
+    const name=['Nintendo 3DS','PS Vita'][index];
+    if (root.querySelector('h3').textContent!==name || canvas.getAttribute('aria-label')!==name) throw Error('Use the short device name');
+    if (root.querySelector('details,summary,input,[data-device-view]')) throw Error('Remove the device control menus');
   }
+  const toggle=roots[0].querySelector('[data-lid-toggle]');
+  reachable(toggle);
+  const waitForLid=async angle=>{
+    for (let i=0; i<100 && roots[0].dataset.lidAngle!==angle; i++) await sleep(50);
+    if (roots[0].dataset.lidAngle!==angle) throw Error('Lid did not reach '+angle+' degrees');
+  };
+  toggle.click();
+  await waitForLid('0');
+  if (toggle.getAttribute('aria-label')!=='Open Nintendo 3DS') throw Error('Lid toggle did not update its label');
+  toggle.click();
+  await waitForLid('155');
+  if (toggle.getAttribute('aria-label')!=='Close Nintendo 3DS') throw Error('Lid toggle did not restore its label');
   document.querySelector('.hero .pe-entry').click();
   if (!document.querySelector('#try-pspman').open) throw Error('First case must open PSPMAN');
   document.querySelector('#try-pspman').close();

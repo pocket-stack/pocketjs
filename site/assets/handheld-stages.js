@@ -53,7 +53,7 @@ class HandheldHost {
     const canvas = this.root.querySelector("[data-stage-canvas]");
     canvas.tabIndex = 0;
     canvas.setAttribute("aria-hidden", "false");
-    canvas.setAttribute("aria-label", this.profile.name + " controls");
+    canvas.setAttribute("aria-label", this.root.dataset.deviceLabel);
     canvas.addEventListener("keydown", (event) => {
       const bit = KEYS[event.code];
       if (bit) { event.preventDefault(); this.press(bit, true); }
@@ -147,22 +147,16 @@ async function boot(root) {
     host.onBlit = stage.refreshScreen;
     stage.refreshScreen();
     if (root.closest(".hero") && document.documentElement.dataset.heroLayout !== "duet") stage.setView("detail");
-    for (const button of root.querySelectorAll("[data-device-view]")) {
-      button.addEventListener("click", () => stage.setView(button.dataset.deviceView));
-    }
-    const slider = root.querySelector("[data-lid-angle]");
     const toggle = root.querySelector("[data-lid-toggle]");
-    if (slider && toggle) {
-      slider.addEventListener("input", () => {
-        stage.setLidAngle(Number(slider.value), false);
-        toggle.textContent = Number(slider.value) < 60 ? "Open lid" : "Close lid";
-        toggle.setAttribute("aria-expanded", String(Number(slider.value) >= 60));
-      });
+    if (toggle) {
+      let open = true;
+      toggle.disabled = false;
       toggle.addEventListener("click", () => {
-        const open = Number(slider.value) < 60;
-        slider.value = open ? "155" : "0";
-        stage.setLidAngle(Number(slider.value));
-        toggle.textContent = open ? "Close lid" : "Open lid";
+        open = !open;
+        stage.setLidAngle(open ? profile.hinge.default_angle_degrees : 0);
+        const label = `${open ? "Close" : "Open"} ${root.dataset.deviceLabel}`;
+        toggle.setAttribute("aria-label", label);
+        toggle.title = label;
         toggle.setAttribute("aria-expanded", String(open));
       });
     }
