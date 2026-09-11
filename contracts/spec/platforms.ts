@@ -171,6 +171,9 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // appends the id to its profile only when its native host ships the module
   // (the ring/thread discipline to copy is hosts/psp/src/audio.rs).
   "audio.pcm",
+  // Native encoded-media playback with bounded worker handoff, audio clock,
+  // pause/volume, texture output and observable decoder availability.
+  "media.playback",
   // Bounded whole-response HTTP through `fetch()` and the net module's own
   // namespace (`globalThis.net`, contracts/spec/net.ts). Transport adapters
   // remain host-owned; the browser dev host, deterministic sim and reference

@@ -9,6 +9,8 @@ export declare const FB_H: number;
 export interface WasmUi {
   ops: HostOps;
   exports: WebAssembly.Exports & { memory: WebAssembly.Memory };
+  createAuxiliarySurface(width: number, height: number): number;
+  renderAuxiliary(): Uint8Array;
   /** Reset the core and set raster samples per logical pixel (default 1). */
   init(rasterDensity?: number): void;
   /** Resize a dynamic browser viewport. */
@@ -34,8 +36,6 @@ export interface WasmUi {
   freeCompositorSurface(handle: number): void;
   /** Rasterize the byte-exact RGBA8 framebuffer at the logical viewport size. */
   render(): Uint8Array;
-  /** Rasterize the auxiliary root into its independent logical framebuffer. */
-  renderAuxiliary(): Uint8Array;
   /** Rasterize directly at an integer physical scale from 1 through 4. */
   renderScaled(scale: number): Uint8Array;
   /** Render child surfaces at their compositor instructions. */

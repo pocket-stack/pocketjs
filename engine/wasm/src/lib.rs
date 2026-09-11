@@ -30,8 +30,8 @@ use pocketjs_core::raster;
 
 static mut UI: Option<Ui> = None;
 static mut FRAMEBUFFER: Vec<u8> = Vec::new();
-static mut AUXILIARY_FRAMEBUFFER: Vec<u8> = Vec::new();
 use pocketjs_core::compositor::CompositorRaster;
+static mut AUXILIARY_FRAMEBUFFER: Vec<u8> = Vec::new();
 
 /// Browser System hosts upload visible child AppInstance framebuffers here.
 /// Values are arbitrary-size RGBA rasters indexed by the shell's compositor
@@ -91,64 +91,37 @@ pub extern "C" fn ui_set_viewport(width: f32, height: f32) {
     ui().set_viewport(width, height);
 }
 
-/// Create the second output before the guest mounts, as the native 3DS host does.
 #[no_mangle]
-pub extern "C" fn ui_create_auxiliary_surface(width: u32, height: u32) -> i32 {
-    if !(1..=4096).contains(&width) || !(1..=4096).contains(&height) {
-        return 0;
-    }
-    ui().create_auxiliary_surface(width as f32, height as f32)
+pub extern "C" fn ui_create_auxiliary_surface(width: f32, height: f32) -> i32 {
+    if !width.is_finite() || !height.is_finite() || width < 1.0 || height < 1.0 || width > 4096.0 || height > 4096.0 { return 0; }
+    ui().create_auxiliary_surface(width, height)
 }
 
 #[no_mangle]
-pub extern "C" fn ui_hit_test_bounds_auxiliary(x: f32, y: f32) -> i32 {
-    ui().hit_test_bounds_auxiliary(x, y)
-}
-
+pub extern "C" fn ui_hit_test_auxiliary(x: f32, y: f32) -> i32 { ui().hit_test_auxiliary(x, y) }
 #[no_mangle]
-pub extern "C" fn ui_hit_test_auxiliary(x: f32, y: f32) -> i32 {
-    ui().hit_test_auxiliary(x, y)
-}
+pub extern "C" fn ui_hit_test_bounds_auxiliary(x: f32, y: f32) -> i32 { ui().hit_test_bounds_auxiliary(x, y) }
 
-/// Borrow the shared image/font resources with this output's viewport.
-struct AuxiliaryResources<'a> {
-    ui: &'a Ui,
-    viewport: (f32, f32),
-}
-
+struct AuxiliaryResources<'a>(&'a Ui);
 impl pocketjs_core::resources::RenderResources for AuxiliaryResources<'_> {
-    fn viewport(&self) -> (f32, f32) {
-        self.viewport
-    }
-    fn raster_revision(&self) -> u64 {
-        self.ui.raster_revision()
-    }
-    fn texture(&self, handle: i32) -> Option<pocketjs_core::TexView<'_>> {
-        self.ui.texture(handle)
-    }
+    fn viewport(&self) -> (f32, f32) { self.0.auxiliary_viewport().unwrap() }
+    fn raster_revision(&self) -> u64 { self.0.raster_revision() }
+    fn texture(&self, handle: i32) -> Option<pocketjs_core::TexView<'_>> { self.0.texture(handle) }
     fn font_atlas(&self, slot: u8) -> Option<pocketjs_core::resources::FontView<'_>> {
-        pocketjs_core::resources::RenderResources::font_atlas(self.ui, slot)
+        pocketjs_core::resources::RenderResources::font_atlas(self.0, slot)
     }
 }
 
-/// Independent framebuffer; rendering either output preserves the other view.
+/// Auxiliary pixels share textures and frame time, with their own viewport.
 #[no_mangle]
 pub extern "C" fn ui_render_auxiliary() -> *const u8 {
     let u = ui();
-    let Some(viewport) = u.auxiliary_viewport() else {
-        return core::ptr::null();
-    };
-    let Some(dl) = u.draw_auxiliary() else {
-        return core::ptr::null();
-    };
-    let dl = dl as *const pocketjs_core::DrawList;
-    let resources = AuxiliaryResources {
-        ui: unsafe { &*(u as *const Ui) },
-        viewport,
-    };
+    let Some((width, height)) = u.auxiliary_viewport() else { return core::ptr::null(); };
+    let Some(draw) = u.draw_auxiliary() else { return core::ptr::null(); };
+    let words = draw.words.clone();
     unsafe {
-        AUXILIARY_FRAMEBUFFER.resize(viewport.0 as usize * viewport.1 as usize * 4, 0);
-        raster::render(&resources, &(*dl).words, &mut AUXILIARY_FRAMEBUFFER);
+        AUXILIARY_FRAMEBUFFER.resize(width as usize * height as usize * 4, 0);
+        raster::render(&AuxiliaryResources(u), &words, &mut AUXILIARY_FRAMEBUFFER);
         AUXILIARY_FRAMEBUFFER.as_ptr()
     }
 }
