@@ -69,6 +69,7 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
   audio: { file: "framework/src/audio-api.ts", aliases: TWINS },
   media: { file: "framework/src/media.ts", aliases: TWINS },
   "media/provider": { file: "tools/media-stream.ts" },
+  "media/download-provider": { file: "tools/media-download.ts" },
   "media/audio": { file: "contracts/spec/media-adpcm.ts" },
   clock: { file: "framework/src/clock.ts", aliases: TWINS },
   config: { file: "framework/src/config.ts" },
