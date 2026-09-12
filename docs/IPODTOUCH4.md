@@ -152,9 +152,16 @@ key in the application's container and stores its local copy under
 replacement. The listener starts after a valid key is present.
 
 **Guest updates use the 3DS Pocket Runtime wire protocol, with TCP and UDP on
-port 8131.** The shared codec lives in `engine/runtime/dev_protocol.*`; the
-desktop client lives in `tools/pocket-runtime-client.ts`. The default USB
-route forwards TCP through the pinned SSH connection. It supports
+port 8131, and the same server state machine the 3DS host compiles.**
+`engine/runtime/dev_protocol.*` is the codec; `engine/runtime/dev_server.*`
+owns pairing, the hello/ack handshake, frame dispatch, control records,
+uploads, screenshot streaming and the idle timeouts (3 s before the hello,
+15 s after). A host adds its socket pump and clock and nothing else:
+`engine/runtime/dev_wire_posix.*` for UIKit shells and the host harness,
+`hosts/3ds/src/devserver.c` for libctru. The generic desktop client lives in
+`tools/pocket-runtime-client.ts`; PICA200 surface decoding and the dual-screen
+PNG stay in `tools/3ds-runtime-client.ts`. The default USB route forwards TCP
+through the pinned SSH connection. It supports
 `POCKETJS_IPODTOUCH4_VIA` and requires no Wi-Fi connection on the device.
 The application service channel (`svcwire`, PKNT) has a separate connection
 and lifecycle from the Runtime development channel (PKRT).
@@ -178,8 +185,18 @@ The USB SSH route provides encryption through SSH.
 **`pack` builds a `.pocket` without compiling or signing native code.** It
 resolves the application's manifest against the private iPod profile and
 packages the plan, identity, JavaScript and asset pack. A package upload checks
-its manifest and plan on the desktop, then checks its footer, target, ABI,
-JavaScript terminator and viewport on the device before replacing the guest.
+its manifest and plan on the desktop, then checks its footer, target, ABI and
+JavaScript terminator on the device before replacing the guest. **After those
+checks the device admits the plan against the target contract baked into the
+shell:**
+`tools/target-contract.ts` renders `pocket_target_contract.h` for every native
+build from the verified plan (viewport, presentation, raster density) and the
+`ipodtouch4-dev` registry entry (capability list), and
+`pocket_package_validate_plan` in the package layer (`engine/core/src/plan.rs`
+through `engine/ui-cabi`) rejects a plan whose target, ABI, surfaces,
+presentation or enabled features differ from it. The QuickJS executor holds no
+device policy; the registry that resolves manifests on the desktop is the same
+source the device checks against.
 
 ```sh
 bun ipodtouch4:runtime pack --app clear
@@ -212,8 +229,9 @@ The Runtime TCP transport has no screenshot stream in this version.
 Runtime keeps uploaded packages and generation records under
 `<container>/Library/PocketRuntime`. Each transfer writes `upload.tmp` in
 bounded binary chunks, then flushes and validates the completed file. Admission
-failure leaves the running guest intact. A disconnected or incomplete upload
-is discarded.
+failure leaves the running guest intact. An incomplete upload is discarded when
+its connection closes or a new transfer begins; a completed upload is admitted
+on the next frame, and the desktop's connection state has no part in that.
 
 **A candidate becomes active after its first successful GLES presentation.**
 The shell releases the previous guest's textures and QuickJS realm, clears
@@ -243,15 +261,56 @@ SpringBoard deletion; removing it deletes its packages and development key.
 ### Validation
 
 ```sh
+bun test tests/pocket-runtime-server.test.ts
 bun test tests/ipodtouch4-package.test.ts
 bun test tests/ipodtouch4-runtime.test.ts
 ```
 
-The runtime tests link the real QuickJS sources, package reader and retained UI
-core into a host process. They exercise TCP transfer, admission failures,
-timeouts, guest replacement, recovery after restart and the compiled Clear
-application. `POCKETJS_QUICKJS_SOURCE` can select the pinned QuickJS C source
-directory; its default is the legacy Apple source cache. The Native C harness
-workflow acquires those sources from the repository's pinned revision and
-runs the tests on Linux and macOS. These tests do not exercise UIKit, device
+`pocket-runtime-server.test.ts` replays one transcript through the shared
+server without a transport, then drives the desktop client against the
+Nintendo 3DS socket pump (compiled on the host with libctru stubbed out) and
+the POSIX pump with one scenario: discovery, a rejected key, heartbeats,
+control records, uploads, transfer errors, rejected footers and, on the 3DS
+pump, a dual-screen screenshot. The runtime tests link the real QuickJS
+sources, package reader and retained UI core into a host process. They
+exercise TCP transfer, admission failures, target-contract policy, timeouts,
+guest replacement, recovery after restart and the compiled Clear application.
+`POCKETJS_QUICKJS_SOURCE` can select the pinned QuickJS C source directory;
+its default is the legacy Apple source cache. The Native C harness workflow
+acquires those sources from the repository's pinned revision and runs the
+tests on Linux and macOS. These tests do not exercise UIKit, device
 installation or the iPod GPU.
+
+### Device acceptance
+
+The host tests do not cover UIKit, EAGL, presentation, installation or USB
+forwarding. Before a Runtime build is treated as accepted, run this pass on an
+iPod touch 4 and record the results in the pull request:
+
+```sh
+bun ipodtouch4:runtime deploy && bun ipodtouch4:runtime pair && bun ipodtouch4:runtime launch
+bun ipodtouch4:runtime status            # phase accepted, generation 0, active 0
+bun ipodtouch4:runtime push --app clear  # accepted; status shows generation 1
+```
+
+1. **Repeated replacement.** Push Clear five times with a source edit between
+   pushes. Each push reports `accepted`; `status` advances the generation each
+   time and the device stays responsive to touch after every swap.
+2. **First-frame failure.** Push a guest whose `frame()` throws on its first
+   call. The report is `rejected`, `status` keeps the previous `active` hash
+   and the previous guest is back on screen.
+3. **Later-frame failure.** Push a guest that throws after a few seconds. The
+   push is `accepted`; after the failure `status` shows the previous package
+   as `active` with the failed hash absent from `lastGood`.
+4. **Foreground and background.** With `dev` attached, press Home, wait ten
+   seconds and reopen Runtime. `dev` logs the disconnect and the reconnect, a
+   push after the reconnect is `accepted`, and a transfer interrupted by the
+   Home press is reported as `transfer-error` and does not activate.
+5. **Reconnect.** Kill `dev` while connected, start it again with `--no-push`
+   and confirm the tree and eval answers return on the new connection.
+6. **GL teardown.** After steps 1–5, `bun ipodtouch4 status` (the wrapper's
+   acceptance record) must show an advancing frame counter and the 640×960
+   density-2 drawable, and `capture` must produce the current guest. Read the
+   process memory in the SSH session (`vmmap` or `ps -o rss`) before step 1
+   and after step 5: the resident size must not grow with the number of
+   swaps beyond one guest's working set.

@@ -1,6 +1,12 @@
 #include "pocket_runtime.h"
 #ifdef POCKET_DEV_RUNTIME
 #include "guest_runtime.h"
+/* Generated per build by tools/target-contract.ts from the target registry
+ * and the verified plan: the contract every uploaded plan must match. */
+#include "pocket_target_contract.h"
+#ifndef POCKET_DEV_RUNTIME_LABEL
+#error "POCKET_DEV_RUNTIME_LABEL must name the shell for discovery"
+#endif
 static int g_dev_started;
 static int g_dev_suspended;
 #endif
@@ -1267,7 +1273,7 @@ static int dev_boot_guest(const PocketGuestPackage *guest) {
   return boot_runtime_bytes(guest->javascript, guest->javascript_length, guest->pak, guest->pak_length);
 }
 static int dev_validate_plan(const uint8_t *plan, size_t length) {
-  return pocket_runtime_validate_plan(plan, length, POCKET_LOGICAL_WIDTH, POCKET_LOGICAL_HEIGHT);
+  return pocket_package_validate_plan(plan, length, &POCKET_TARGET_CONTRACT) == 0;
 }
 static const char *dev_guest_error(void) { return g_status_message; }
 #endif
@@ -1282,7 +1288,9 @@ static int boot_embedded_runtime(void) {
   recovery.javascript_length = java_script_length;
   recovery.pak = pack;
   recovery.pak_length = pack_length;
-  const PocketDevHost callbacks = {dev_boot_guest, dev_stop_guest, dev_validate_plan, dev_guest_error};
+  const PocketDevHost callbacks = {
+    dev_boot_guest, dev_stop_guest, dev_validate_plan, dev_guest_error, POCKET_DEV_RUNTIME_LABEL,
+  };
   g_dev_started = 1;
   if (!pocket_dev_runtime_init(POCKET_DEV_RUNTIME_ROOT, &callbacks, &recovery, POCKET_RUNTIME_WIRE_PORT)) {
     fail_runtime("Cannot initialize Pocket Runtime storage");

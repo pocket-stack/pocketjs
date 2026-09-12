@@ -32,6 +32,7 @@ import {
   PocketRuntimeSession,
   discoverPocketRuntimes,
   parsePocketRuntimeToken,
+  render3dsScreenshotPng,
   type DiscoveredPocketRuntime,
   type PocketRuntimeScreenshot,
 } from "./3ds-runtime-client.ts";
@@ -392,13 +393,14 @@ async function probe(): Promise<void> {
       shotPromise,
     ]);
     const output = screenshotPath(screenshot.frame);
+    const png = render3dsScreenshotPng(screenshot);
     mkdirSync(dirname(output), { recursive: true });
-    writeFileSync(output, screenshot.png);
+    writeFileSync(output, png);
     console.log(`status:     ${JSON.stringify(status)}`);
     console.log(`devStats:   ${JSON.stringify(stats.data)}`);
     console.log(`tree frame: ${String(tree.frame ?? "?")}`);
     console.log(`eval:       ${String(evaluation.value ?? "?")}`);
-    console.log(`screenshot: ${output} (${screenshot.png.length} bytes)`);
+    console.log(`screenshot: ${output} (${png.length} bytes)`);
   } finally {
     client.close();
   }
@@ -424,13 +426,14 @@ async function dev(): Promise<void> {
   let currentPackage = value("--package") ? resolve(value("--package")!) : "";
 
   const forwardScreenshot = (screenshot: PocketRuntimeScreenshot) => {
+    const png = render3dsScreenshotPng(screenshot);
     if (socket.readyState === WebSocket.OPEN) {
-      const data = `data:image/png;base64,${screenshot.png.toString("base64")}`;
+      const data = `data:image/png;base64,${png.toString("base64")}`;
       socket.send(JSON.stringify({ t: "screenshot", frame: screenshot.frame, data }));
     }
     const output = screenshotPath(screenshot.frame);
     mkdirSync(dirname(output), { recursive: true });
-    writeFileSync(output, screenshot.png);
+    writeFileSync(output, png);
     console.log(`screenshot ${output}`);
   };
   session.on("screenshot", forwardScreenshot);

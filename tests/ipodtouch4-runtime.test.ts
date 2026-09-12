@@ -1,15 +1,17 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, createConnection } from "node:net";
 import { encodePocketPackage, POCKET_SECTION } from "../contracts/spec/pocket-package.ts";
 import { canonicalJson } from "../framework/src/manifest/plan.ts";
-import { resolveIPodTouch4BuildPlan } from "../tools/ipodtouch4-profile.ts";
+import { extractHostBuildInputs } from "../framework/src/manifest/host-build-inputs.ts";
+import { IPODTOUCH4_DEV_CONTRACTS, resolveIPodTouch4BuildPlan } from "../tools/ipodtouch4-profile.ts";
 import { ipodtouch4QuickJsPath, IPODTOUCH4_TOOLCHAIN } from "../tools/ipodtouch4-toolchain.ts";
 import { makeVariant } from "../tools/pocket-pack.ts";
 import { buildIPodTouch4Package } from "../tools/ipodtouch4-package.ts";
 import { discoverPocketRuntimes, PocketRuntimeClient } from "../tools/pocket-runtime-client.ts";
+import { renderTargetContractHeader, resolveNativeTargetContract } from "../tools/target-contract.ts";
 import { encodePocketRuntimeFrame, encodePocketRuntimeHello, encodePocketRuntimePackageBegin,
   encodePocketRuntimePackageChunk, pocketPackageFooterHash, POCKET_RUNTIME_MSG } from "../contracts/spec/pocket-runtime-wire.ts";
 
@@ -23,6 +25,29 @@ const children: Bun.Subprocess[] = [];
 const clients: PocketRuntimeClient[] = [];
 let clearPackage: string;
 
+// The real QuickJS sources and the C ABI's pinned nightly are the
+// prerequisites; the Native C harness workflow provides both and names the
+// sources through POCKETJS_QUICKJS_SOURCE, which makes them mandatory. Without
+// that variable a checkout that lacks either reports a skip, not a failure.
+const quickjs = process.env.POCKETJS_QUICKJS_SOURCE ?? join(ipodtouch4QuickJsPath(), "libquickjs-sys/embed/quickjs");
+const toolchain = IPODTOUCH4_TOOLCHAIN.compiler.rustToolchain;
+const missing = [
+  ...(existsSync(join(quickjs, "quickjs.c")) ? [] : [`pinned QuickJS sources at ${quickjs}`]),
+  ...(Bun.spawnSync(["rustup", "which", "--toolchain", toolchain, "cargo"]).exitCode === 0 ? [] : [`rust toolchain ${toolchain}`]),
+  ...(Bun.which("cc") ? [] : ["a C compiler"]),
+];
+if (missing.length > 0 && process.env.POCKETJS_QUICKJS_SOURCE) {
+  throw new Error(`iPod runtime harness prerequisites are missing: ${missing.join(", ")}`);
+}
+const describeRuntime = missing.length === 0 ? describe : describe.skip;
+
+afterAll(async () => {
+  clients.forEach((client) => client.close());
+  for (const child of children) if (child.exitCode === null) child.kill();
+  await Promise.all(children.map((child) => child.exited));
+  rmSync(directory, { recursive: true, force: true });
+});
+
 async function run(command: string[], cwd = ROOT, env = process.env) {
   const process = Bun.spawn(command, { cwd, env, stdout: "pipe", stderr: "pipe" });
   const [code, out, err] = await Promise.all([process.exited,
@@ -30,16 +55,17 @@ async function run(command: string[], cwd = ROOT, env = process.env) {
   if (code) throw new Error(`${command.join(" ")}\n${out}${err}`);
   return out.trim();
 }
+describeRuntime("iPod touch 4 Pocket Runtime with the real QuickJS", () => {
 beforeAll(async () => {
-  const quickjs = process.env.POCKETJS_QUICKJS_SOURCE ?? join(ipodtouch4QuickJsPath(), "libquickjs-sys/embed/quickjs");
-  if (!existsSync(join(quickjs, "quickjs.c"))) throw new Error("set POCKETJS_QUICKJS_SOURCE to the pinned QuickJS source directory (see native-c-harness.yml)");
-  const toolchain = IPODTOUCH4_TOOLCHAIN.compiler.rustToolchain;
   const cargo = await run(["rustup", "which", "--toolchain", toolchain, "cargo"]);
   const rustc = await run(["rustup", "which", "--toolchain", toolchain, "rustc"]);
   const target = join(ROOT, ".pocket-build/ipodtouch4-runtime-tests/rust");
   await run([cargo, "build", "--locked", "--release", "--features", "bare-platform,software-only",
     "--manifest-path", join(ROOT, "engine/ui-cabi/Cargo.toml"), "--target-dir", target], ROOT,
   { ...process.env, RUSTC: rustc });
+  // The same generated contract the native build bakes into PocketRuntime.app.
+  writeFileSync(join(directory, "pocket_target_contract.h"),
+    renderTargetContractHeader(resolveNativeTargetContract(extractHostBuildInputs(plan), IPODTOUCH4_DEV_CONTRACTS)));
   const objects: string[] = [];
   for (const name of ["quickjs", "cutils", "dtoa", "libregexp", "libunicode"]) {
     const object = join(directory, `${name}.o`);
@@ -50,20 +76,14 @@ beforeAll(async () => {
   await run(["cc", "-std=c11", "-D_DEFAULT_SOURCE", "-D_GNU_SOURCE", "-Wall", "-Wextra", "-Werror",
     '-DPOCKETJS_TARGET_ID="ipodtouch4-dev"', "-DPOCKETJS_HOST_ABI=8", "-DPOCKET_RASTER_DENSITY=2", "-DPOCKET_DEV_RUNTIME",
     "-I", join(ROOT, "engine/runtime"), "-I", join(ROOT, "engine/quickjs-c"), "-I", join(ROOT, "engine/ui-cabi/include"),
-    "-I", join(ROOT, "contracts/generated"), "-isystem", quickjs,
+    "-I", join(ROOT, "contracts/generated"), "-I", directory, "-isystem", quickjs,
     join(ROOT, "tests/fixtures/ipodtouch4-runtime.c"), join(ROOT, "engine/quickjs-c/pocket_runtime.c"),
-    ...["dev_protocol", "dev_server", "guest_runtime"].map((name) => join(ROOT, `engine/runtime/${name}.c`)),
+    ...["dev_protocol", "dev_server", "dev_wire_posix", "guest_runtime"].map((name) => join(ROOT, `engine/runtime/${name}.c`)),
     ...objects, join(target, "release/libpocketjs_symbian_core.a"), "-lm", "-lpthread",
     ...(process.platform === "linux" ? ["-ldl"] : []), "-o", binary]);
   clearPackage = (await buildIPodTouch4Package({ manifest: "apps/clear/pocket.json", outdir: join(directory, "clear") })).path;
 }, 180000);
 
-afterAll(async () => {
-  clients.forEach((client) => client.close());
-  for (const child of children) if (child.exitCode === null) child.kill();
-  await Promise.all(children.map((child) => child.exited));
-  rmSync(directory, { recursive: true, force: true });
-});
 
 function packageBytes(source: string, mutate?: (variant: ReturnType<typeof makeVariant>) => void) {
   const variant = makeVariant({ target: plan.target.id, hostAbi: plan.target.hostAbi, planJson: canonicalJson(plan),
@@ -134,6 +154,21 @@ test("real QuickJS: accepts, rejects incompatible packages, rolls back eval/fram
     packageBytes("globalThis.frame = function() {};", (v) => {
       v.sections.find((s) => s.kind === POCKET_SECTION.plan)!.bytes = new TextEncoder().encode("{ invalid");
     }),
+    // Target-contract policy lives in the package layer: a presentation the
+    // shell does not offer, a feature outside the registry's capability list
+    // and a host extension the shell cannot carry are all refused.
+    packageBytes("globalThis.frame = function() {};", (v) => {
+      const section = v.sections.find((s) => s.kind === POCKET_SECTION.plan)!;
+      section.bytes = new TextEncoder().encode(canonicalJson({ ...plan, viewport: { ...plan.viewport, presentation: "fill" } }));
+    }),
+    packageBytes("globalThis.frame = function() {};", (v) => {
+      const section = v.sections.find((s) => s.kind === POCKET_SECTION.plan)!;
+      section.bytes = new TextEncoder().encode(canonicalJson({ ...plan, features: { ...plan.features, "input.buttons": true } }));
+    }),
+    packageBytes("globalThis.frame = function() {};", (v) => {
+      const section = v.sections.find((s) => s.kind === POCKET_SECTION.plan)!;
+      section.bytes = new TextEncoder().encode(canonicalJson({ ...plan, hostExtension: { kind: "idf-host", version: 1 } }));
+    }),
     packageBytes("this is not javascript!"),
     packageBytes("while (true) {}"),
     packageBytes("globalThis.frame = function() { throw new Error('first frame failed'); };"),
@@ -186,11 +221,12 @@ test("unpaired listener stays closed, pairing enables discovery, fragmented uplo
   expect((await status(client)).active).toBe(before.active);
   expect(existsSync(join(device.root, "upload.tmp"))).toBe(false);
   const discoveries = await discoverPocketRuntimes({ addresses: ["127.0.0.1"], port: device.address.port, timeoutMs: 100 });
-  expect(discoveries[0]?.target).toBe("ipodtouch4-dev");
+  expect(discoveries[0]).toMatchObject({ target: "ipodtouch4-dev", label: "Pocket Harness", hostAbi: 8 });
   client.close();
   await Bun.sleep(50);
+  // A wrong key is answered with a rejection ack, the same as on the 3DS.
   const unauthorized = new PocketRuntimeClient({ ...device.address, token: new Uint8Array(32), timeoutMs: 500 });
-  try { await expect(unauthorized.connect()).rejects.toThrow(); }
+  try { await expect(unauthorized.connect()).rejects.toThrow("rejected the pairing token (status 2)"); }
   finally { unauthorized.close(); }
   await Bun.sleep(50);
   // Actual TCP fragmentation, including a coalesced hello and status frame.
@@ -225,3 +261,4 @@ test("the compiled Clear app renders, answers DevTools, and recovers from a late
   }
   throw new Error("late guest failure did not restore Clear");
 }, 15000);
+});

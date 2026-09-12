@@ -65,14 +65,14 @@ static void stop_guest(void) {
   release(current);
   current = NULL;
   running = awaiting_frame = 0;
-  pocket_devwire_reset_guest();
+  pocket_devserver_reset_guest();
 }
 static LoadedPackage *load_package(const char *filename, uint64_t expected) {
   FILE *file = fopen(filename, "rb");
   if (!file) { error_text("cannot open stored package"); return NULL; }
   long size = -1;
   if (!fseek(file, 0, SEEK_END)) size = ftell(file);
-  if (size < 24 || (unsigned long)size > POCKET_DEV_MAX_PACKAGE || fseek(file, 0, SEEK_SET)) {
+  if (size < 24 || (unsigned long)size > POCKET_DEV_SERVER_MAX_PACKAGE_BYTES || fseek(file, 0, SEEK_SET)) {
     fclose(file); error_text("invalid package file size"); return NULL;
   }
   LoadedPackage *package = calloc(1, sizeof *package);
@@ -123,7 +123,7 @@ static void recover(void) {
   }
   if (!boot(NULL)) {
     strcpy(phase, "failed");
-    pocket_devwire_log("error", last_error);
+    pocket_devserver_report_log("error", last_error);
   }
 }
 static void load_state(void) {
@@ -200,7 +200,7 @@ static int commit(uint64_t active, uint64_t good) {
   ++generation;
   active_hash = active;
   last_good_hash = good;
-  pocket_devwire_state(generation, active_hash);
+  pocket_devserver_set_state(generation, active_hash);
   collect_old_files();
   return 1;
 }
@@ -214,7 +214,9 @@ void pocket_dev_runtime_status(char *out, size_t length) {
 }
 int pocket_dev_runtime_init(const char *root, const PocketDevHost *callbacks,
   const PocketGuestPackage *recovery, uint16_t port) {
-  if (initialized || !root || strlen(root) >= sizeof root_path || !callbacks || !recovery) return 0;
+  if (initialized || !root || strlen(root) >= sizeof root_path || !callbacks || !recovery ||
+      !callbacks->boot || !callbacks->stop || !callbacks->validate_plan || !callbacks->error ||
+      !callbacks->label) return 0;
   host = *callbacks;
   embedded = *recovery;
   strcpy(root_path, root);
@@ -229,9 +231,11 @@ int pocket_dev_runtime_init(const char *root, const PocketDevHost *callbacks,
   path(directory, "state");
   if (!mkdir_checked(directory)) return 0;
   load_state();
-  if (!pocket_devwire_init(root_path, POCKETJS_TARGET_ID, POCKETJS_HOST_ABI, port, pocket_dev_runtime_status)) return 0;
-  remove(pocket_devwire_upload_path());
-  pocket_devwire_state(generation, active_hash);
+  const PocketDevWireOptions wire = {root_path, POCKETJS_TARGET_ID, host.label,
+    POCKETJS_HOST_ABI, port, pocket_dev_runtime_status};
+  if (!pocket_devwire_init(&wire)) return 0;
+  remove(pocket_devserver_upload_path());
+  pocket_devserver_set_state(generation, active_hash);
   initialized = 1;
   recover();
   return 1;
@@ -246,8 +250,8 @@ void pocket_dev_runtime_pump(void) {
   if (!initialized) return;
   if (failure_pending) {
     failure_pending = 0;
-    pocket_devwire_log("error", last_error);
-    if (requested_hash) pocket_devwire_report("rejected", requested_hash, last_error);
+    pocket_devserver_report_log("error", last_error);
+    if (requested_hash) pocket_devserver_report_install("rejected", requested_hash, last_error);
     requested_hash = 0;
     reject_hash(running_hash);
     int embedded_failed = running_hash == 0;
@@ -258,28 +262,28 @@ void pocket_dev_runtime_pump(void) {
   pocket_devwire_pump();
   if (awaiting_frame && running) return;
   uint64_t hash;
-  if (!pocket_devwire_take_upload(&hash)) return;
-  LoadedPackage *candidate = load_package(pocket_devwire_upload_path(), hash);
+  if (!pocket_devserver_take_upload(&hash)) return;
+  LoadedPackage *candidate = load_package(pocket_devserver_upload_path(), hash);
   if (!candidate) {
-    pocket_devwire_report("rejected", hash, last_error);
-    remove(pocket_devwire_upload_path());
+    pocket_devserver_report_install("rejected", hash, last_error);
+    remove(pocket_devserver_upload_path());
     return;
   }
   char destination[POCKET_DEV_PATH_BYTES];
   blob_path(destination, hash);
-  if (rename(pocket_devwire_upload_path(), destination)) {
+  if (rename(pocket_devserver_upload_path(), destination)) {
     release(candidate);
-    pocket_devwire_report("rejected", hash, "cannot store admitted package");
-    remove(pocket_devwire_upload_path());
+    pocket_devserver_report_install("rejected", hash, "cannot store admitted package");
+    remove(pocket_devserver_upload_path());
     return;
   }
   stop_guest();
   rejected_count = 0;
   requested_hash = hash;
   if (boot(candidate)) {
-    pocket_devwire_report("staged", hash, "guest booted; waiting for presentation");
+    pocket_devserver_report_install("staged", hash, "guest booted; waiting for presentation");
   } else {
-    pocket_devwire_report("rejected", hash, last_error);
+    pocket_devserver_report_install("rejected", hash, last_error);
     requested_hash = 0;
     recover();
   }
@@ -300,7 +304,7 @@ void pocket_dev_runtime_presented(void) {
   awaiting_frame = 0;
   rejected_count = 0;
   strcpy(phase, "accepted");
-  if (requested_hash) pocket_devwire_report("accepted", requested_hash, "first frame presented");
+  if (requested_hash) pocket_devserver_report_install("accepted", requested_hash, "first frame presented");
   requested_hash = 0;
 }
 void pocket_dev_runtime_shutdown(void) {

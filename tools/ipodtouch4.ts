@@ -33,7 +33,9 @@ import {
   IPODTOUCH4_PHYSICAL_VIEWPORT,
   IPODTOUCH4_RASTER_DENSITY,
   resolveIPodTouch4BuildPlan,
+  IPODTOUCH4_DEV_CONTRACTS,
 } from "./ipodtouch4-profile.ts";
+import { renderTargetContractHeader, resolveNativeTargetContract } from "./target-contract.ts";
 
 import {
   IPOD_INSTALLER, ipodAppReceiptPaths, parseInstalledIPodApp, shellQuote, userDeploymentScript,
@@ -656,6 +658,14 @@ async function build(): Promise<void> {
   const cargoHome = join(ipodtouch4CacheRoot(), "build/cargo-home");
   rmSync(nativeBuild, { recursive: true, force: true });
   mkdirSync(nativeBuild, { recursive: true });
+  if (APP.devRuntime) {
+    // The plan admission contract the shell bakes in: viewport from the
+    // verified plan, capabilities from the target registry.
+    writeFileSync(
+      join(nativeBuild, "pocket_target_contract.h"),
+      renderTargetContractHeader(resolveNativeTargetContract(inputs, IPODTOUCH4_DEV_CONTRACTS)),
+    );
+  }
   mkdirSync(rustTarget, { recursive: true });
   mkdirSync(cargoHome, { recursive: true });
 
@@ -708,7 +718,9 @@ async function build(): Promise<void> {
 
   const firstParty = [
     ...warnings,
-    ...(APP.devRuntime ? ["-DPOCKET_DEV_RUNTIME", "-I", join(REPOSITORY, "engine/runtime")] : []),
+    ...(APP.devRuntime
+      ? ["-DPOCKET_DEV_RUNTIME", "-I", join(REPOSITORY, "engine/runtime"), "-I", join(REPOSITORY, "engine/ui-cabi/include"), "-I", nativeBuild]
+      : []),
     `-DPOCKET_LOGICAL_WIDTH=${inputs.viewport.logical[0]}`,
     `-DPOCKET_LOGICAL_HEIGHT=${inputs.viewport.logical[1]}`,
     `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`,
@@ -721,7 +733,7 @@ async function build(): Promise<void> {
   const devDefines = APP.devRuntime ? ["-DPOCKET_DEV_RUNTIME", "-I", join(REPOSITORY, "engine/runtime")] : [];
   const devObjects: string[] = [];
   if (APP.devRuntime) {
-    for (const name of ["dev_protocol", "dev_server", "guest_runtime"]) {
+    for (const name of ["dev_protocol", "dev_server", "dev_wire_posix", "guest_runtime"]) {
       const object = join(nativeBuild, `${name}.o`);
       compile(join(REPOSITORY, `engine/runtime/${name}.c`), object, [...warnings,
         `-DPOCKETJS_TARGET_ID=\"${inputs.target}\"`, `-DPOCKETJS_HOST_ABI=${inputs.hostAbi}`]);

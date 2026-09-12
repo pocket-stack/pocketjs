@@ -23,14 +23,18 @@ import {
   type PocketRuntimeFrame,
   type PocketRuntimeScreenshotBegin,
 } from "../contracts/spec/pocket-runtime-wire.ts";
-import { encodePNG } from "../tests/png.ts";
 
+// Generic Pocket Runtime (PKRT) client and session: discovery, pairing,
+// heartbeats, control records, uploads and the raw screenshot surfaces every
+// Runtime streams. Surface decoding is a host concern; the Nintendo 3DS
+// module (3ds-runtime-client.ts) turns PICA200 surfaces into PNGs.
+
+/** Both raw surfaces of one screenshot, exactly as the device streamed them. */
 export interface PocketRuntimeScreenshot {
   readonly frame: number;
   readonly top: Uint8Array;
   readonly auxiliary: Uint8Array;
   readonly metadata: PocketRuntimeScreenshotBegin;
-  readonly png: Buffer;
 }
 
 export interface PocketRuntimeClientOptions {
@@ -469,13 +473,11 @@ export class PocketRuntimeClient extends EventEmitter {
             shot.auxiliaryReceived !== shot.auxiliary.length) {
           throw new Error("Pocket Runtime screenshot ended before both surfaces were complete");
         }
-        const png = combinePocketRuntimeScreens(shot.metadata, shot.top, shot.auxiliary);
         const result: PocketRuntimeScreenshot = {
           frame: frameNumber,
           top: shot.top,
           auxiliary: shot.auxiliary,
           metadata: shot.metadata,
-          png,
         };
         this.#screenshot = null;
         this.emit("screenshot", result);
@@ -596,66 +598,6 @@ export class PocketRuntimeSession extends EventEmitter {
     }).catch(() => {});
     return task;
   }
-}
-
-/** PICA target RGB8 is B,G,R in rotated column-major screen order. */
-export function decodePocketRuntimeSurface(
-  bytes: Uint8Array,
-  width: number,
-  height: number,
-): Uint8Array {
-  if (bytes.length !== width * height * 3) {
-    throw new Error("Pocket Runtime surface has the wrong RGB8 byte count");
-  }
-  const rgba = new Uint8Array(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const source = (x * height + (height - 1 - y)) * 3;
-      const destination = (y * width + x) * 4;
-      rgba[destination] = bytes[source + 2];
-      rgba[destination + 1] = bytes[source + 1];
-      rgba[destination + 2] = bytes[source];
-      rgba[destination + 3] = 255;
-    }
-  }
-  return rgba;
-}
-
-export function combinePocketRuntimeScreens(
-  metadata: PocketRuntimeScreenshotBegin,
-  top: Uint8Array,
-  auxiliary: Uint8Array,
-): Buffer {
-  const width = Math.max(metadata.topWidth, metadata.auxiliaryWidth);
-  const height = metadata.topHeight + metadata.auxiliaryHeight;
-  const rgba = new Uint8Array(width * height * 4);
-  for (let index = 3; index < rgba.length; index += 4) rgba[index] = 255;
-  const copy = (surface: Uint8Array, sourceWidth: number, sourceHeight: number, x: number, y: number) => {
-    for (let row = 0; row < sourceHeight; row++) {
-      const sourceAt = row * sourceWidth * 4;
-      const destinationAt = ((y + row) * width + x) * 4;
-      rgba.set(surface.subarray(sourceAt, sourceAt + sourceWidth * 4), destinationAt);
-    }
-  };
-  copy(
-    decodePocketRuntimeSurface(top, metadata.topWidth, metadata.topHeight),
-    metadata.topWidth,
-    metadata.topHeight,
-    Math.floor((width - metadata.topWidth) / 2),
-    0,
-  );
-  copy(
-    decodePocketRuntimeSurface(
-      auxiliary,
-      metadata.auxiliaryWidth,
-      metadata.auxiliaryHeight,
-    ),
-    metadata.auxiliaryWidth,
-    metadata.auxiliaryHeight,
-    Math.floor((width - metadata.auxiliaryWidth) / 2),
-    metadata.topHeight,
-  );
-  return encodePNG(Buffer.from(rgba), width, height);
 }
 
 export function parsePocketRuntimeToken(text: string): Uint8Array {

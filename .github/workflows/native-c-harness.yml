@@ -10,8 +10,14 @@ on:
       - "hosts/ipodtouch4/**"
       - "tools/ipodtouch4*.ts"
       - "tools/pocket-runtime-client.ts"
+      - "tools/target-contract.ts"
       - "tests/ipodtouch4*.test.ts"
+      - "tests/pocket-runtime-server.test.ts"
       - "tests/fixtures/ipodtouch4-runtime.c"
+      - "tests/fixtures/dev-*"
+      - "tests/fixtures/3ds-devserver-host.c"
+      - "tests/fixtures/3ds-stubs/**"
+      - "hosts/3ds/src/devserver.c"
       - "engine/ui-cabi/**"
       - "engine/core/**"
       - "framework/src/**"
@@ -37,8 +43,14 @@ on:
       - "hosts/ipodtouch4/**"
       - "tools/ipodtouch4*.ts"
       - "tools/pocket-runtime-client.ts"
+      - "tools/target-contract.ts"
       - "tests/ipodtouch4*.test.ts"
+      - "tests/pocket-runtime-server.test.ts"
       - "tests/fixtures/ipodtouch4-runtime.c"
+      - "tests/fixtures/dev-*"
+      - "tests/fixtures/3ds-devserver-host.c"
+      - "tests/fixtures/3ds-stubs/**"
+      - "hosts/3ds/src/devserver.c"
       - "engine/ui-cabi/**"
       - "engine/core/**"
       - "framework/src/**"
@@ -96,6 +108,8 @@ jobs:
             ensureQuickJsCheckout("iPod runtime harness", process.env.RUNNER_TEMP + "/pocketjs-qjs", {
               repository: c.quickJsRepository, revision: c.quickJsRevision, version: c.quickJsVersion,
             });'
+      - name: Shared Pocket Runtime server behind the 3DS and POSIX socket pumps
+        run: bun test tests/pocket-runtime-server.test.ts
       - name: Pocket Runtime upload, admission, recovery and real guest
         env:
           POCKETJS_QUICKJS_SOURCE: ${{ runner.temp }}/pocketjs-qjs/libquickjs-sys/embed/quickjs

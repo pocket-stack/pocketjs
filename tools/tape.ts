@@ -28,7 +28,7 @@ import {
   type Tape,
 } from "../framework/src/devtools.ts";
 import { __packTouch } from "../framework/src/touch.ts";
-import { encodePNG } from "../tests/png.ts";
+import { encodePNG } from "./png.ts";
 import { SCREEN_H, SCREEN_W } from "../contracts/spec/spec.ts";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));

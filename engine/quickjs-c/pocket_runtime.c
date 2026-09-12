@@ -5,6 +5,7 @@
 #include "quickjs.h"
 #ifdef POCKET_DEV_RUNTIME
 #include "dev_server.h"
+#include <sys/time.h>
 #endif
 #ifdef POCKET_SVC_WIRE
 #include "svcwire.h"
@@ -105,10 +106,17 @@ static int runtime_failed;
 #ifdef POCKET_DEV_RUNTIME
 static uint64_t guest_deadline;
 static char dev_poll_buffer[32769];
+/* Guest time budgets use the executor's own clock; the server's clock is a
+ * transport concern. */
+static uint64_t dev_now_ms(void) {
+  struct timeval time;
+  gettimeofday(&time, NULL);
+  return (uint64_t)time.tv_sec * 1000u + (uint64_t)time.tv_usec / 1000u;
+}
 static int interrupt_guest(JSRuntime *rt, void *opaque) {
   (void)rt;
   (void)opaque;
-  return pocket_devwire_now_ms() >= guest_deadline;
+  return dev_now_ms() >= guest_deadline;
 }
 
 static JSValue dev_console(JSContext *ctx, JSValueConst this_value,
@@ -127,7 +135,7 @@ static JSValue dev_console(JSContext *ctx, JSValueConst this_value,
     message[length] = 0;
     JS_FreeCString(ctx, text);
   }
-  pocket_devwire_log(level == 1 ? "warn" : level == 2 ? "error" : "log", message);
+  pocket_devserver_report_log(level == 1 ? "warn" : level == 2 ? "error" : "log", message);
   return JS_UNDEFINED;
 }
 #endif
@@ -487,12 +495,12 @@ static JSValue host_operation(
     case HostDbgActive:
       return JS_NewBool(ctx, 1);
     case HostDbgPoll: {
-      size_t length = pocket_devwire_poll(dev_poll_buffer, sizeof dev_poll_buffer - 1);
+      size_t length = pocket_devserver_recv_ctrl(dev_poll_buffer, sizeof dev_poll_buffer);
       return JS_NewStringLen(ctx, dev_poll_buffer, length);
     }
     case HostDbgSend:
       if (!string_argument(ctx, argc, argv, 0, &text, &text_length)) return JS_EXCEPTION;
-      pocket_devwire_send(text, text_length);
+      pocket_devserver_send_ctrl(text, text_length);
       JS_FreeCString(ctx, text);
       return JS_UNDEFINED;
 #endif
@@ -632,7 +640,7 @@ static int install_host(int width, int height) {
 static int drain_jobs(void) {
   for (;;) {
 #ifdef POCKET_DEV_RUNTIME
-    if (pocket_devwire_now_ms() >= guest_deadline) {
+    if (dev_now_ms() >= guest_deadline) {
       set_error("guest job drain exceeded its time budget");
       return 0;
     }
@@ -701,7 +709,7 @@ int pocket_runtime_boot(
   JS_SetMaxStackSize(runtime, 256 * 1024);
 #ifdef POCKET_DEV_RUNTIME
   JS_SetMemoryLimit(runtime, 32u * 1024u * 1024u);
-  guest_deadline = pocket_devwire_now_ms() + 2000;
+  guest_deadline = dev_now_ms() + 2000;
   JS_SetInterruptHandler(runtime, interrupt_guest, NULL);
 #endif
   context = JS_NewContext(runtime);
@@ -787,7 +795,7 @@ static int run_frame(
   unsigned int index;
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
 #ifdef POCKET_DEV_RUNTIME
-  guest_deadline = pocket_devwire_now_ms() + 500;
+  guest_deadline = dev_now_ms() + 500;
 #endif
 #ifdef POCKET_SVC_WIRE
   /* Bounded, non-blocking: discovery, connect, rx and tx progress once per
@@ -1074,82 +1082,3 @@ size_t pocket_runtime_length(void) {
 const char *pocket_runtime_error(void) {
   return last_error;
 }
-
-#ifdef POCKET_DEV_RUNTIME
-static int plan_number(JSContext *ctx, JSValueConst object, const char *name, int expected) {
-  JSValue value = JS_GetPropertyStr(ctx, object, name);
-  double number = 0;
-  int ok = JS_IsNumber(value) && JS_ToFloat64(ctx, &number, value) == 0 && number == expected;
-  JS_FreeValue(ctx, value);
-  return ok;
-}
-static int plan_string(JSContext *ctx, JSValueConst object, const char *name, const char *expected) {
-  JSValue value = JS_GetPropertyStr(ctx, object, name);
-  size_t length = 0;
-  const char *text = JS_IsString(value) ? JS_ToCStringLen(ctx, &length, value) : NULL;
-  int ok = text && length == strlen(expected) && memcmp(text, expected, length) == 0;
-  if (text) JS_FreeCString(ctx, text);
-  JS_FreeValue(ctx, value);
-  return ok;
-}
-static int plan_dimensions(JSContext *ctx, JSValueConst object, const char *name, int width, int height) {
-  JSValue array = JS_GetPropertyStr(ctx, object, name);
-  int ok = JS_IsArray(ctx, array) == 1 && plan_number(ctx, array, "length", 2) &&
-    plan_number(ctx, array, "0", width) && plan_number(ctx, array, "1", height);
-  JS_FreeValue(ctx, array);
-  return ok;
-}
-int pocket_runtime_validate_plan(const uint8_t *bytes, size_t length, int width, int height) {
-  if (!bytes || !length || length > 256u * 1024u) return 0;
-  JSRuntime *rt = JS_NewRuntime();
-  if (!rt) return 0;
-  JS_SetMemoryLimit(rt, 4u * 1024u * 1024u);
-  JS_SetMaxStackSize(rt, 128u * 1024u);
-  JSContext *ctx = JS_NewContext(rt);
-  if (!ctx) { JS_FreeRuntime(rt); return 0; }
-  /* JSON parsing does not evaluate package JavaScript or expose host APIs. */
-  JSValue plan = JS_ParseJSON(ctx, (const char *)bytes, length, "plan.json");
-  if (JS_IsException(plan) || !JS_IsObject(plan)) {
-    JS_FreeValue(ctx, plan);
-    JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
-    return 0;
-  }
-  JSValue target = JS_GetPropertyStr(ctx, plan, "target");
-  JSValue viewport = JS_GetPropertyStr(ctx, plan, "viewport");
-  JSValue surfaces = JS_GetPropertyStr(ctx, plan, "surfaces");
-  JSValue extension = JS_GetPropertyStr(ctx, plan, "hostExtension");
-  JSValue features = JS_GetPropertyStr(ctx, plan, "features");
-  int ok = JS_IsObject(plan) && !JS_IsException(plan) &&
-    plan_string(ctx, target, "id", POCKETJS_TARGET_ID) &&
-    plan_number(ctx, target, "hostAbi", POCKETJS_HOST_ABI) &&
-    plan_dimensions(ctx, viewport, "logical", width, height) &&
-    plan_dimensions(ctx, viewport, "physical", width * POCKET_RASTER_DENSITY, height * POCKET_RASTER_DENSITY) &&
-    plan_number(ctx, viewport, "rasterDensity", POCKET_RASTER_DENSITY) &&
-    plan_string(ctx, viewport, "presentation", "native") &&
-    JS_IsUndefined(surfaces) && JS_IsUndefined(extension) && JS_IsObject(features);
-  JSPropertyEnum *properties = NULL;
-  uint32_t count = 0;
-  if (ok && JS_GetOwnPropertyNames(ctx, &properties, &count, features, JS_GPN_STRING_MASK | JS_GPN_ENUM_ONLY) == 0) {
-    for (uint32_t i = 0; i < count; ++i) {
-      const char *name = JS_AtomToCString(ctx, properties[i].atom);
-      JSValue value = JS_GetProperty(ctx, features, properties[i].atom);
-      if (!JS_IsBool(value) || (JS_ToBool(ctx, value) && (!name ||
-          (strcmp(name, "input.touch") && strcmp(name, "text.glyphs.baked"))))) ok = 0;
-      JS_FreeValue(ctx, value);
-      if (name) JS_FreeCString(ctx, name);
-      JS_FreeAtom(ctx, properties[i].atom);
-    }
-    js_free(ctx, properties);
-  } else ok = 0;
-  JS_FreeValue(ctx, features);
-  JS_FreeValue(ctx, extension);
-  JS_FreeValue(ctx, surfaces);
-  JS_FreeValue(ctx, viewport);
-  JS_FreeValue(ctx, target);
-  JS_FreeValue(ctx, plan);
-  JS_FreeContext(ctx);
-  JS_FreeRuntime(rt);
-  return ok;
-}
-#endif

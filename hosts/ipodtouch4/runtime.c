@@ -32,6 +32,7 @@ static const char *pocket_ipod_runtime_root(void) {
   return path;
 }
 #define POCKET_DEV_RUNTIME_ROOT pocket_ipod_runtime_root()
+#define POCKET_DEV_RUNTIME_LABEL "PocketJS iPod4"
 #endif
 
 /* The iPod touch 4 shares the iPhone 4S legacy UIKit implementation. */

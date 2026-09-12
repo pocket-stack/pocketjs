@@ -21,7 +21,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { bundleHash, launcherBundleHash } from "./bundle-hash.ts";
-import { encodePNG } from "../tests/png.ts";
+import { encodePNG } from "./png.ts";
 
 export interface BridgeEvent {
   type:

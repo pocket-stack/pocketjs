@@ -28,7 +28,8 @@ core/                 pocketjs-3ds-core: the ui_* C ABI over pocketjs-core
 include/pocket_core.h the C header for the above
 src/main.c            process boot, reusable guest lifecycle, frame loop
 src/runtime.c         .pocket admission, immutable storage, active/rollback state
-src/devserver.c       discovery, paired TCP pump, uploads, screenshots, receipts
+src/devserver.c       libctru socket pump for the shared Pocket Runtime server
+                      (engine/runtime/dev_server.c): discovery, uploads, screenshots
 src/dev_protocol.c    byte-order-safe development wire encoding and admission
 src/devmenu.c         Runtime-owned bottom-screen development menu
 src/gfx.c             the DrawList -> citro3d walker
@@ -170,6 +171,17 @@ accepted.
 
 **The key authenticates a client but does not encrypt the TCP stream.** Use the
 listener on a trusted LAN, and pass `--rotate` to `pair` after a key is exposed.
+
+**What a frame means is decided in one place, `engine/runtime/dev_server.c`,
+for this host and for the iPod touch 4 Runtime:** the hello/ack handshake
+(a wrong key receives a status-2 ack before the close), unknown frame types skipped for
+forward compatibility, control records rejected on a newline or a full ring,
+uploads that stream to `network-upload.pocket` and survive a disconnect once
+committed, the reserved PONG, screenshot chunking, and the idle timeouts of
+3 s before the hello and 15 s after. `src/devserver.c` moves bytes between
+that server and libctru sockets and supplies the ARM11 clock and linear
+screenshot buffers. `tests/pocket-runtime-server.test.ts` runs this same pump
+on the desktop with libctru stubbed out.
 
 After pairing, ftpd is not part of the development loop:
 

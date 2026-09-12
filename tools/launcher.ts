@@ -26,7 +26,7 @@ import {
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 import type { ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
-import { encodePNG } from "../tests/png.ts";
+import { encodePNG } from "./png.ts";
 import { SHOT_W, SHOT_H, downscaleShot } from "../hosts/sim/shot.ts";
 import {
   SYMBIAN_E7_DEFAULT_VIEWPORT,

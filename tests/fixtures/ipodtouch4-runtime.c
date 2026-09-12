@@ -1,5 +1,6 @@
 #include "guest_runtime.h"
 #include "pocket_runtime.h"
+#include "pocket_target_contract.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +15,7 @@ static int boot(const PocketGuestPackage *guest) {
     guest->pak, guest->pak_length, 320, 480);
 }
 static int validate(const uint8_t *bytes, size_t length) {
-  return pocket_runtime_validate_plan(bytes, length, 320, 480);
+  return pocket_package_validate_plan(bytes, length, &POCKET_TARGET_CONTRACT) == 0;
 }
 int main(int argc, char **argv) {
   if (argc != 3) return 2;
@@ -23,7 +24,7 @@ int main(int argc, char **argv) {
   static const uint8_t javascript[] = "globalThis.frame = function() {};";
   static const uint8_t pak[] = {0};
   const PocketGuestPackage recovery = {javascript, sizeof javascript, pak, sizeof pak, NULL, 0, 0, 0};
-  const PocketDevHost host = {boot, pocket_runtime_shutdown, validate, pocket_runtime_error};
+  const PocketDevHost host = {boot, pocket_runtime_shutdown, validate, pocket_runtime_error, "Pocket Harness"};
   if (!pocket_dev_runtime_init(argv[1], &host, &recovery, (uint16_t)atoi(argv[2]))) return 3;
   puts("runtime harness ready");
   fflush(stdout);
