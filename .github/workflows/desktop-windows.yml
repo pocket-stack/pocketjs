@@ -101,10 +101,10 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - name: Platform registry, System and web host contract tests
-        # The two registry suites run scoped to the target-registry blocks this
-        # patch touches: the unscoped files still carry pre-existing Windows
-        # path defects (file:// URL pathnames concatenated into /C:/... paths)
-        # that fail on every Windows machine and are tracked separately.
+        # These two registry files contain pre-existing Windows path failures
+        # where file-URL pathnames are passed to filesystem APIs. That defect is
+        # outside this windows-app admission change, so run the registry blocks
+        # affected by this patch instead of weakening or repairing unrelated code.
         run: |
           bun test tests/platform-contracts.test.ts -t "platform registry"
           bun test tests/symbian-runtime.test.ts -t "keeps the experimental E7 target out of the production registry"
