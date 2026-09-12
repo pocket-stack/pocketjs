@@ -1,8 +1,9 @@
 name: Windows portable renderer
 
 # windows-app is the third stock target of the hosts/desktop portable host.
-# The runner builds and tests the host; real native window acceptance runs on
-# local Windows hardware (see docs/BACKENDS.md).
+# This workflow validates the Windows execution path advertised by that target;
+# it does not claim Windows support for unrelated device or site tooling.
+# Real native window acceptance runs on local Windows hardware (see docs/BACKENDS.md).
 
 on:
   pull_request:
@@ -100,33 +101,42 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - name: Platform registry, System and web host contract tests
-        # These two registry files contain pre-existing Windows path failures
-        # where file-URL pathnames are passed to filesystem APIs. That defect is
-        # outside this windows-app admission change, so run the registry blocks
-        # affected by this patch instead of weakening or repairing unrelated code.
+      - name: windows-app contracts and portable service tests
+        # The full registry files also exercise unrelated device/tooling paths
+        # that are not part of the windows-app support boundary. Run the target
+        # inventory blocks changed here, then the portable services that
+        # windows-app actually advertises.
         run: |
           bun test tests/platform-contracts.test.ts -t "platform registry"
           bun test tests/symbian-runtime.test.ts -t "keeps the experimental E7 target out of the production registry"
-          bun test tests/pocket-system.test.ts tests/web-system-host.test.ts
+          bun test tests/pocket-system.test.ts tests/text-layout-client.test.ts tests/offload-provider.test.ts tests/companion-session.test.ts
 
-      - name: Resolve and build the note for windows-app
+      - name: Resolve and build windows-app guests
         run: |
           bun -e '
           import { validateAndResolveBuildPlan } from "./framework/src/manifest/resolve.ts";
           import { mkdirSync } from "node:fs";
-          const manifest = await Bun.file("apps/note/pocket.json").json();
-          const result = validateAndResolveBuildPlan(manifest, { target: "windows-app" });
-          if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+          const apps = [
+            ["apps/note/pocket.json", "note-main"],
+            ["apps/text-offload/pocket.json", "text-offload-main"],
+          ];
           mkdirSync(".pocket/windows-app", { recursive: true });
-          await Bun.write(".pocket/windows-app/note-main.plan.json", JSON.stringify(result.plan, null, 2) + "\n");'
+          for (const [manifestPath, output] of apps) {
+            const manifest = await Bun.file(manifestPath).json();
+            const result = validateAndResolveBuildPlan(manifest, { target: "windows-app" });
+            if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+            await Bun.write(`.pocket/windows-app/${output}.plan.json`, JSON.stringify(result.plan, null, 2) + "\n");
+          }'
           bun tools/build.ts --plan=.pocket/windows-app/note-main.plan.json
+          bun tools/build.ts --plan=.pocket/windows-app/text-offload-main.plan.json
 
       - name: Rust format, lint and tests
         run: |
           cargo fmt --check --manifest-path hosts/desktop/Cargo.toml
           cargo clippy --locked --manifest-path hosts/desktop/Cargo.toml -- -D warnings
           cargo test --locked --manifest-path hosts/desktop/Cargo.toml
+          cargo test --locked --manifest-path engine/Cargo.toml -p pocket-ui-surface
+          cargo test --locked --manifest-path engine/crates/pocket-text/Cargo.toml
 
       - name: Build windows-app release host
         run: cargo build --release --locked --manifest-path hosts/desktop/Cargo.toml
