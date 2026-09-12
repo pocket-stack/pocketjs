@@ -515,7 +515,7 @@ static JSValue host_audio_write_pcm(
   JSValueConst *argv
 ) {
   int32_t handle = 0;
-  uint8_t *bytes = 0;
+  const uint8_t *bytes = 0;
   size_t length = 0;
   if (!int_argument(ctx, argc, argv, 0, &handle)) return JS_EXCEPTION;
   if (!bytes_argument(ctx, argc, argv, 1, &bytes, &length)) return JS_EXCEPTION;

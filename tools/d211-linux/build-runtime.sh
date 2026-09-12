@@ -132,6 +132,18 @@ first_party_flags=(
   -c "$REPO_ROOT/hosts/d211-linux/input.c" \
   -o "$objects/input.o"
 
+"$gcc" "${first_party_flags[@]}" \
+  -I"$REPO_ROOT/hosts/d211-linux" \
+  -I"$REPO_ROOT/engine/quickjs-c" \
+  -c "$REPO_ROOT/hosts/d211-linux/audio.c" \
+  -o "$objects/audio.o"
+
+"$gcc" "${first_party_flags[@]}" \
+  -I"$REPO_ROOT/hosts/d211-linux" \
+  -I"$REPO_ROOT/engine/quickjs-c" \
+  -c "$REPO_ROOT/hosts/d211-linux/backlight.c" \
+  -o "$objects/backlight.o"
+
 "$gcc" \
   -B"$LLD_SHIM_DIR" \
   -fuse-ld=lld \
@@ -142,12 +154,14 @@ first_party_flags=(
   -Wl,--no-undefined \
   -o "$staging/pocketjs-d211" \
   "$objects/main.o" \
+  "$objects/audio.o" \
+  "$objects/backlight.o" \
   "$objects/input.o" \
   "$objects/pocket_runtime.o" \
   "$objects/rust_eh_personality.o" \
   "$BUILD_DIR/libquickjs.a" \
   "$RUST_CORE_ARCHIVE" \
-  -lm
+  -lm -lpthread
 
 "$readelf" -h -l -A -d "$staging/pocketjs-d211" > "$BUILD_DIR/pocketjs-d211.readelf.txt"
 "$nm" -g "$staging/pocketjs-d211" > "$BUILD_DIR/pocketjs-d211.symbols.txt"

@@ -27,6 +27,11 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <sys/mman.h>
+#include <sys/stat.h>
+
+#include "audio.h"
+#include "backlight.h"
 #include "input.h"
 #include "pocket_runtime.h"
 #include "pocket_ui_cabi.h"
@@ -65,37 +70,39 @@ static uint64_t now_ns(void) {
   return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
 
+/*
+ * Assets are mmap'd read-only instead of read into anonymous memory. The
+ * runtime borrows the pack for the whole app lifetime, so the pages stay
+ * mapped either way; file-backed pages are reclaimable under memory pressure
+ * (the 64 MB board OOM-kills the process when app.pak grows past ~8 MB with
+ * malloc'd assets).
+ */
+/** 释放 mmap 资源（0 长度或空指针为空操作）。 */
+static void release_asset(uint8_t *data, size_t length) {
+  if (data != 0 && length > 0) munmap(data, length);
+}
+
 static uint8_t *read_asset(const char *path, size_t *out_length) {
-  FILE *file = fopen(path, "rb");
-  if (file == 0) {
+  int descriptor = open(path, O_RDONLY);
+  if (descriptor < 0) {
     fprintf(stderr, "d211: cannot open %s: %s\n", path, strerror(errno));
     return 0;
   }
-  if (fseek(file, 0, SEEK_END) != 0) {
-    fclose(file);
-    return 0;
-  }
-  long length = ftell(file);
-  if (length <= 0) {
-    fclose(file);
+  struct stat info;
+  if (fstat(descriptor, &info) != 0 || info.st_size <= 0) {
+    close(descriptor);
     fprintf(stderr, "d211: %s is empty\n", path);
     return 0;
   }
-  rewind(file);
-  uint8_t *data = malloc((size_t)length);
-  if (data == 0) {
-    fclose(file);
-    fprintf(stderr, "d211: out of memory reading %s\n", path);
+  size_t length = (size_t)info.st_size;
+  uint8_t *data = mmap(0, length, PROT_READ, MAP_PRIVATE, descriptor, 0);
+  if (data == MAP_FAILED) {
+    close(descriptor);
+    fprintf(stderr, "d211: cannot mmap %s: %s\n", path, strerror(errno));
     return 0;
   }
-  if (fread(data, 1, (size_t)length, file) != (size_t)length) {
-    free(data);
-    fclose(file);
-    fprintf(stderr, "d211: short read on %s\n", path);
-    return 0;
-  }
-  fclose(file);
-  *out_length = (size_t)length;
+  close(descriptor);
+  *out_length = length;
   return data;
 }
 
@@ -386,7 +393,7 @@ int main(void) {
   if (java_script == 0) return 1;
   uint8_t *pack = read_asset(pack_path, &pack_length);
   if (pack == 0) {
-    free(java_script);
+    release_asset(java_script, java_script_length);
     return 1;
   }
 
@@ -402,8 +409,8 @@ int main(void) {
   );
   D211Framebuffer framebuffer;
   if (!fb_open(&framebuffer, framebuffer_path)) {
-    free(java_script);
-    free(pack);
+    release_asset(java_script, java_script_length);
+    release_asset(pack, pack_length);
     return 1;
   }
 
@@ -424,6 +431,11 @@ int main(void) {
     fprintf(stderr, "d211: no touch-capable evdev device found\n");
   }
 
+  /* 宿主模块：真实音频输出（aplay）与面板背光（sysfs）。 */
+  pocket_runtime_set_audio_ops(d211_audio_ops_table());
+  pocket_runtime_set_backlight_ops(d211_backlight_ops_table());
+  fprintf(stderr, "d211: host modules: audio + backlight\n");
+
   uint64_t boot_start = now_ns();
   if (!pocket_runtime_boot(
         (const char *)java_script,
@@ -436,8 +448,8 @@ int main(void) {
     fprintf(stderr, "d211: boot failed: %s\n", pocket_runtime_error());
     d211_input_close(&touch);
     fb_close(&framebuffer);
-    free(java_script);
-    free(pack);
+    release_asset(java_script, java_script_length);
+    release_asset(pack, pack_length);
     return 1;
   }
   fprintf(
@@ -593,7 +605,7 @@ int main(void) {
   pocket_runtime_shutdown();
   d211_input_close(&touch);
   fb_close(&framebuffer);
-  free(java_script);
-  free(pack);
+  release_asset(java_script, java_script_length);
+  release_asset(pack, pack_length);
   return 0;
 }
