@@ -94,6 +94,8 @@ static char reported_action_name[POCKETJS_ACTION_NAME_CAPACITY];
 static int32_t reported_action_value;
 static unsigned long reported_action_sequence;
 static int runtime_failed;
+static const PocketAudioOps *audio_ops;
+static const PocketBacklightOps *backlight_ops;
 #ifdef POCKET_SVC_WIRE
 /* spec SVC_POLL_BUF (8192) + terminator: one svcPoll batch. */
 static char svc_poll_buffer[8193];
@@ -468,6 +470,203 @@ static JSValue host_operation(
   return JS_ThrowInternalError(ctx, "unknown PocketJS HostOp");
 }
 
+/* ------------------------------------------------------------------ */
+/* Host modules: audio (contracts/spec/audio.ts) and backlight.        */
+/* The host fills the op tables before boot; absent tables leave the   */
+/* globals unset and the framework player degrades to a no-op.         */
+
+void pocket_runtime_set_audio_ops(const PocketAudioOps *ops) {
+  audio_ops = ops;
+}
+
+void pocket_runtime_set_backlight_ops(const PocketBacklightOps *ops) {
+  backlight_ops = ops;
+}
+
+static JSValue host_audio_create_stream(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  uint32_t rate = 0;
+  uint32_t channels = 0;
+  if (!uint_argument(ctx, argc, argv, 0, &rate)) return JS_EXCEPTION;
+  if (!uint_argument(ctx, argc, argv, 1, &channels)) return JS_EXCEPTION;
+  return JS_NewInt32(ctx, audio_ops->create_stream(rate, channels));
+}
+
+static JSValue host_audio_destroy_stream(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  int32_t handle = 0;
+  if (!int_argument(ctx, argc, argv, 0, &handle)) return JS_EXCEPTION;
+  audio_ops->destroy_stream(handle);
+  return JS_UNDEFINED;
+}
+
+static JSValue host_audio_write_pcm(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  int32_t handle = 0;
+  const uint8_t *bytes = 0;
+  size_t length = 0;
+  if (!int_argument(ctx, argc, argv, 0, &handle)) return JS_EXCEPTION;
+  if (!bytes_argument(ctx, argc, argv, 1, &bytes, &length)) return JS_EXCEPTION;
+  return JS_NewInt32(ctx, audio_ops->write_pcm(handle, bytes, length));
+}
+
+static JSValue host_audio_play(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  int32_t handle = 0;
+  if (!int_argument(ctx, argc, argv, 0, &handle)) return JS_EXCEPTION;
+  audio_ops->play(handle);
+  return JS_UNDEFINED;
+}
+
+static JSValue host_audio_pause(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  int32_t handle = 0;
+  if (!int_argument(ctx, argc, argv, 0, &handle)) return JS_EXCEPTION;
+  audio_ops->pause(handle);
+  return JS_UNDEFINED;
+}
+
+static JSValue host_audio_stop(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  int32_t handle = 0;
+  if (!int_argument(ctx, argc, argv, 0, &handle)) return JS_EXCEPTION;
+  audio_ops->stop(handle);
+  return JS_UNDEFINED;
+}
+
+static JSValue host_audio_set_volume(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  int32_t handle = 0;
+  double volume = 1.0;
+  if (!int_argument(ctx, argc, argv, 0, &handle)) return JS_EXCEPTION;
+  if (argc < 2 || JS_ToFloat64(ctx, &volume, argv[1]) != 0) {
+    JS_ThrowTypeError(ctx, "missing argument 1");
+    return JS_EXCEPTION;
+  }
+  if (volume < 0.0) volume = 0.0;
+  if (volume > 1.0) volume = 1.0;
+  audio_ops->set_volume(handle, volume);
+  return JS_UNDEFINED;
+}
+
+static JSValue host_audio_end_stream(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  int32_t handle = 0;
+  if (!int_argument(ctx, argc, argv, 0, &handle)) return JS_EXCEPTION;
+  audio_ops->end_stream(handle);
+  return JS_UNDEFINED;
+}
+
+static JSValue host_audio_poll(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  const char *line = audio_ops->poll();
+  return line == 0 ? JS_UNDEFINED : JS_NewString(ctx, line);
+}
+
+static JSValue host_backlight_get(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  return JS_NewInt32(ctx, backlight_ops->get());
+}
+
+static JSValue host_backlight_set(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  int32_t percent = 100;
+  if (!int_argument(ctx, argc, argv, 0, &percent)) return JS_EXCEPTION;
+  if (percent < 0) percent = 0;
+  if (percent > 100) percent = 100;
+  backlight_ops->set(percent);
+  return JS_UNDEFINED;
+}
+
+static int add_module_function(
+  JSContext *ctx,
+  JSValueConst object,
+  const char *name,
+  int arity,
+  JSCFunction *function
+) {
+  JSValue value = JS_NewCFunction(ctx, function, name, arity);
+  if (JS_IsException(value)) return 0;
+  return JS_SetPropertyStr(ctx, object, name, value) >= 0;
+}
+
+static int install_audio(void) {
+  JSValue audio;
+  if (audio_ops == 0) return 1;
+  audio = JS_NewObject(context);
+  if (JS_IsException(audio)) return 0;
+  if (!add_module_function(context, audio, "createStream", 2, host_audio_create_stream) ||
+      !add_module_function(context, audio, "destroyStream", 1, host_audio_destroy_stream) ||
+      !add_module_function(context, audio, "writePcm", 2, host_audio_write_pcm) ||
+      !add_module_function(context, audio, "play", 1, host_audio_play) ||
+      !add_module_function(context, audio, "pause", 1, host_audio_pause) ||
+      !add_module_function(context, audio, "stop", 1, host_audio_stop) ||
+      !add_module_function(context, audio, "setVolume", 2, host_audio_set_volume) ||
+      !add_module_function(context, audio, "endStream", 1, host_audio_end_stream) ||
+      !add_module_function(context, audio, "poll", 0, host_audio_poll)) {
+    JS_FreeValue(context, audio);
+    return 0;
+  }
+  return JS_SetPropertyStr(context, global, "audio", audio) >= 0;
+}
+
+static int install_backlight(void) {
+  JSValue backlight;
+  if (backlight_ops == 0) return 1;
+  backlight = JS_NewObject(context);
+  if (JS_IsException(backlight)) return 0;
+  if (!add_module_function(context, backlight, "get", 0, host_backlight_get) ||
+      !add_module_function(context, backlight, "set", 1, host_backlight_set)) {
+    JS_FreeValue(context, backlight);
+    return 0;
+  }
+  return JS_SetPropertyStr(context, global, "backlight", backlight) >= 0;
+}
+
 static int add_host_operation(
   JSContext *ctx,
   JSValueConst object,
@@ -630,7 +829,7 @@ int pocket_runtime_boot(
   }
   REPORT_BOOT_STAGE(5);
   global = JS_GetGlobalObject(context);
-  if (!install_host(width, height)) {
+  if (!install_host(width, height) || !install_audio() || !install_backlight()) {
     take_exception(context);
     pocket_runtime_shutdown();
     return 0;
