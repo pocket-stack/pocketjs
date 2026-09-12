@@ -260,6 +260,7 @@
     "meizu-m8": "bun tools/meizu-m8.ts",
     "blackberry-android": "bun tools/blackberry-android.ts",
     "blackberry-qnx": "bun tools/blackberry-qnx.ts",
+    "d211-linux": "bun tools/d211-linux.ts",
     "3ds": "bun tools/3ds.ts",
     "vita:art": "bun tools/generate-vita-livearea.ts",
     "vita:art:check": "bun tools/generate-vita-livearea.ts --check",
