@@ -104,6 +104,17 @@ static int32_t reported_action_value;
 static unsigned long reported_action_sequence;
 static int runtime_failed;
 #ifdef POCKET_DEV_RUNTIME
+/* Guest time budgets: a boot or a frame turn (including its job drain) that
+ * runs past its budget is interrupted and reported as a guest failure. The
+ * defaults fit the slowest supported device, an 800 MHz Cortex-A8 evaluating
+ * a few hundred KiB of bundle; the host harness compiles tighter values so
+ * its hung-guest cases stay short. */
+#ifndef POCKET_DEV_GUEST_BOOT_BUDGET_MS
+#define POCKET_DEV_GUEST_BOOT_BUDGET_MS 15000u
+#endif
+#ifndef POCKET_DEV_GUEST_TURN_BUDGET_MS
+#define POCKET_DEV_GUEST_TURN_BUDGET_MS 3000u
+#endif
 static uint64_t guest_deadline;
 static char dev_poll_buffer[32769];
 /* Guest time budgets use the executor's own clock; the server's clock is a
@@ -709,7 +720,7 @@ int pocket_runtime_boot(
   JS_SetMaxStackSize(runtime, 256 * 1024);
 #ifdef POCKET_DEV_RUNTIME
   JS_SetMemoryLimit(runtime, 32u * 1024u * 1024u);
-  guest_deadline = dev_now_ms() + 2000;
+  guest_deadline = dev_now_ms() + POCKET_DEV_GUEST_BOOT_BUDGET_MS;
   JS_SetInterruptHandler(runtime, interrupt_guest, NULL);
 #endif
   context = JS_NewContext(runtime);
@@ -795,7 +806,7 @@ static int run_frame(
   unsigned int index;
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
 #ifdef POCKET_DEV_RUNTIME
-  guest_deadline = dev_now_ms() + 500;
+  guest_deadline = dev_now_ms() + POCKET_DEV_GUEST_TURN_BUDGET_MS;
 #endif
 #ifdef POCKET_SVC_WIRE
   /* Bounded, non-blocking: discovery, connect, rx and tx progress once per

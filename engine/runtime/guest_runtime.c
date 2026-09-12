@@ -32,6 +32,8 @@ static uint64_t active_hash, last_good_hash, running_hash, requested_hash;
 static uint64_t rejected[3];
 static size_t rejected_count;
 static int initialized, running, awaiting_frame, failure_pending;
+/* Measured on the device for the install receipts and runtime.status. */
+static uint64_t boot_started_ms, boot_ms, first_frame_ms;
 
 static void error_text(const char *text) {
   if (text == last_error) return;
@@ -101,12 +103,15 @@ static int boot(LoadedPackage *package) {
   running_hash = package ? package->guest.package_hash : 0;
   frames = 0;
   failure_pending = 0;
+  boot_started_ms = pocket_devwire_now_ms();
+  boot_ms = first_frame_ms = 0;
   if (!host.boot(package ? &package->guest : &embedded)) {
     error_text(host.error());
     reject_hash(running_hash);
     stop_guest();
     return 0;
   }
+  boot_ms = pocket_devwire_now_ms() - boot_started_ms;
   running = awaiting_frame = 1;
   snprintf(phase, sizeof phase, "%s", requested_hash ? "candidate" : "recovering");
   return 1;
@@ -208,9 +213,11 @@ void pocket_dev_runtime_status(char *out, size_t length) {
   snprintf(out, length,
     "{\"t\":\"runtime.status\",\"target\":\"%s\",\"hostAbi\":%u,\"phase\":\"%s\","
     "\"generation\":%u,\"active\":\"%016llx\",\"lastGood\":\"%016llx\",\"running\":\"%016llx\","
-    "\"frame\":%u,\"transport\":\"%s\"}", POCKETJS_TARGET_ID, (unsigned)POCKETJS_HOST_ABI, phase,
+    "\"frame\":%u,\"bootMs\":%llu,\"firstFrameMs\":%llu,\"transport\":\"%s\"}",
+    POCKETJS_TARGET_ID, (unsigned)POCKETJS_HOST_ABI, phase,
     generation, (unsigned long long)active_hash, (unsigned long long)last_good_hash,
-    (unsigned long long)running_hash, frames, pocket_devwire_state_name());
+    (unsigned long long)running_hash, frames, (unsigned long long)boot_ms,
+    (unsigned long long)first_frame_ms, pocket_devwire_state_name());
 }
 int pocket_dev_runtime_init(const char *root, const PocketDevHost *callbacks,
   const PocketGuestPackage *recovery, uint16_t port) {
@@ -281,7 +288,10 @@ void pocket_dev_runtime_pump(void) {
   rejected_count = 0;
   requested_hash = hash;
   if (boot(candidate)) {
-    pocket_devserver_report_install("staged", hash, "guest booted; waiting for presentation");
+    char message[96];
+    snprintf(message, sizeof message, "guest booted in %llu ms; waiting for presentation",
+      (unsigned long long)boot_ms);
+    pocket_devserver_report_install("staged", hash, message);
   } else {
     pocket_devserver_report_install("rejected", hash, last_error);
     requested_hash = 0;
@@ -304,7 +314,13 @@ void pocket_dev_runtime_presented(void) {
   awaiting_frame = 0;
   rejected_count = 0;
   strcpy(phase, "accepted");
-  if (requested_hash) pocket_devserver_report_install("accepted", requested_hash, "first frame presented");
+  first_frame_ms = pocket_devwire_now_ms() - boot_started_ms;
+  if (requested_hash) {
+    char message[96];
+    snprintf(message, sizeof message, "first frame presented %llu ms after boot (boot %llu ms)",
+      (unsigned long long)first_frame_ms, (unsigned long long)boot_ms);
+    pocket_devserver_report_install("accepted", requested_hash, message);
+  }
   requested_hash = 0;
 }
 void pocket_dev_runtime_shutdown(void) {

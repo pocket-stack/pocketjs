@@ -75,6 +75,9 @@ beforeAll(async () => {
   }
   await run(["cc", "-std=c11", "-D_DEFAULT_SOURCE", "-D_GNU_SOURCE", "-Wall", "-Wextra", "-Werror",
     '-DPOCKETJS_TARGET_ID="ipodtouch4-dev"', "-DPOCKETJS_HOST_ABI=8", "-DPOCKET_RASTER_DENSITY=2", "-DPOCKET_DEV_RUNTIME",
+    // Tight guest budgets keep the hung-guest cases short; the device build
+    // keeps the defaults sized for the iPod's CPU.
+    "-DPOCKET_DEV_GUEST_BOOT_BUDGET_MS=2000u", "-DPOCKET_DEV_GUEST_TURN_BUDGET_MS=500u",
     "-I", join(ROOT, "engine/runtime"), "-I", join(ROOT, "engine/quickjs-c"), "-I", join(ROOT, "engine/ui-cabi/include"),
     "-I", join(ROOT, "contracts/generated"), "-I", directory, "-isystem", quickjs,
     join(ROOT, "tests/fixtures/ipodtouch4-runtime.c"), join(ROOT, "engine/quickjs-c/pocket_runtime.c"),

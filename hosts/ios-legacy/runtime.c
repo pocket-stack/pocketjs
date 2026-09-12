@@ -21,6 +21,7 @@ static int g_dev_suspended;
 #endif
 
 #include <fcntl.h>
+#include <mach/mach.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -360,8 +361,16 @@ static unsigned long now_us(void) {
 }
 
 /* Best-effort, device-local proof fetched through the scoped USB SSH helper. */
+/* Resident set of this process, for leak checks across guest swaps. */
+static unsigned long resident_kilobytes(void) {
+  struct task_basic_info info;
+  mach_msg_type_number_t count = TASK_BASIC_INFO_COUNT;
+  if (task_info(mach_task_self(), TASK_BASIC_INFO, (task_info_t)&info, &count) != KERN_SUCCESS) return 0;
+  return (unsigned long)(info.resident_size / 1024);
+}
+
 static void write_acceptance_record(void) {
-  char record[896];
+  char record[1024];
   unsigned long next_heartbeat = g_status_heartbeat + 1;
   time_t written_at = time(NULL);
   const char *state = g_state == POCKET_STATE_RUNNING
@@ -380,7 +389,7 @@ static void write_acceptance_record(void) {
     "frame_us=%lu\nsubmit_us=%lu\npresent_us=%lu\n"
     "window_frames=%lu\nwindow_us=%lu\nblit_us=%lu\n"
     "damage_attempts=%lu\ndamage_failures=%lu\ndamage_full_redraws=%lu\n"
-    "damage_pixels=%lu\ncomposites=%lu\ndamage_regions_last=%lu\nsvc=%s\nerror=%s\n",
+    "damage_pixels=%lu\ncomposites=%lu\ndamage_regions_last=%lu\nresident_kb=%lu\nsvc=%s\nerror=%s\n",
     POCKET_BUILD_ID,
     state,
     (long)getpid(),
@@ -413,6 +422,7 @@ static void write_acceptance_record(void) {
     pocket_runtime_damage_pixels(),
     g_composites,
     g_damage_regions_last,
+    resident_kilobytes(),
     POCKET_SVC_STATE_NAME(),
     g_state == POCKET_STATE_FAILED ? g_status_message : ""
   );
@@ -2036,11 +2046,15 @@ static Class register_view_class(void) {
 #ifdef POCKET_DEV_RUNTIME
 static void dev_resign_active(id self, SEL command, id application) {
   (void)self; (void)command; (void)application;
+  /* Registered for both applicationWillResignActive: and
+   * applicationDidEnterBackground:. GL work is allowed only in the first,
+   * while the app is still in the foreground; a GL call after entering the
+   * background is a reason for iOS to terminate the process. */
+  if (!g_dev_suspended && g_gl_ready) glFinish();
   g_dev_suspended = 1;
   memset(g_touch_slots, 0, sizeof g_touch_slots);
   g_touch_awaiting_completion = 0;
   pocket_devwire_suspend(1);
-  if (g_gl_ready) glFinish();
 }
 static void dev_become_active(id self, SEL command, id application) {
   (void)self; (void)command; (void)application;

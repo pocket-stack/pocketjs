@@ -262,6 +262,8 @@ interface DeviceStatus {
   readonly raster_density: number;
   readonly drawable_width: number;
   readonly drawable_height: number;
+  /** Resident set in KiB; 0 for records written before the field existed. */
+  readonly resident_kb: number;
   readonly error: string;
 }
 
@@ -1006,6 +1008,18 @@ export async function withIPodTouch4RuntimeUsb<T>(operation: (host: string, port
   });
 }
 
+/** Bring another app to the foreground (or this one back) through
+ * SpringBoard, the transition the Runtime acceptance pass exercises. */
+async function openUrl(url: string | undefined): Promise<void> {
+  if (!url || !/^[a-z][a-z0-9+.-]*:[^'\s]*$/i.test(url)) {
+    throw new Error("pocket ipodtouch4: open-url needs one URL without quotes or spaces");
+  }
+  await withTunnel((port) => {
+    mustRemote(port, `/bin/su mobile -c '/usr/bin/uiopen ${url}'; echo opened`);
+    console.log(`opened ${url}`);
+  });
+}
+
 async function uninstall(): Promise<void> {
   await withTunnel((port) => {
     const app = installedApp(port);
@@ -1074,6 +1088,7 @@ async function readDeviceStatus(port: number, paths: ReturnType<typeof ipodAppRe
     raster_density: number("raster_density"),
     drawable_width: number("drawable_width"),
     drawable_height: number("drawable_height"),
+    resident_kb: values.has("resident_kb") ? number("resident_kb") : 0,
     error: values.get("error") ?? "",
   };
 }
@@ -1235,6 +1250,9 @@ export async function main(args: readonly string[] = Bun.argv.slice(2)): Promise
       break;
     case "deploy":
       await deploy();
+      break;
+    case "open-url":
+      await openUrl(args[1]);
       break;
     case "uninstall":
       await uninstall();

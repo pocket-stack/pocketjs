@@ -248,13 +248,25 @@ guest leaves the native development listener available for another upload.
 
 **Reload creates a new JavaScript realm and discards its in-memory state.**
 Native code changes require an IPA update. The development shell caps the
-QuickJS heap at 32 MiB, guest boot at two seconds and each guest turn at
-500 ms. Those time limits include the pending job drain. They do not bound
-native rendering calls. Packages are limited to 24 MiB.
+QuickJS heap at 32 MiB, guest boot at 15 s and each guest turn at 3 s
+(`POCKET_DEV_GUEST_BOOT_BUDGET_MS` and `POCKET_DEV_GUEST_TURN_BUDGET_MS`,
+build-time constants; the host harness compiles 2 s and 500 ms). Those time
+limits include the pending job drain. They do not bound native rendering
+calls. On the iPod touch 4 the embedded Clear guest needs more than two
+seconds to evaluate and mount, so a 2 s boot budget rejects every guest on the
+device. `runtime.status` reports the measured `bootMs` and `firstFrameMs` of
+the running guest, and the `staged`/`accepted` receipts carry the same
+numbers. Packages are limited to 24 MiB.
 
 **Runtime receives updates while the application is in the foreground.**
 Resigning active closes its development sockets and discards a partial
-upload. Returning to the foreground reopens the paired listener. The shell
+upload. **After the background transition iOS 6 terminates the shell instead
+of suspending it** (`applicationWillTerminate:` arrives; the legacy
+single-app shell records the same `terminated` state). The next launch, from
+the icon or from `bun ipodtouch4 open-url`, reads the newest committed
+generation, boots the active package (about 2.4 s for Clear) and reopens the
+paired listener; the desktop session reconnects without operator action.
+Guest memory state does not survive a trip to the background. The shell
 disables auto-lock while active. The installed User app retains native
 SpringBoard deletion; removing it deletes its packages and development key.
 
@@ -284,33 +296,46 @@ installation or the iPod GPU.
 ### Device acceptance
 
 The host tests do not cover UIKit, EAGL, presentation, installation or USB
-forwarding. Before a Runtime build is treated as accepted, run this pass on an
-iPod touch 4 and record the results in the pull request:
+forwarding. Before a Runtime build is treated as accepted, run the acceptance
+command against a paired Runtime in the foreground and put its receipt
+numbers in the pull request:
 
 ```sh
 bun ipodtouch4:runtime deploy && bun ipodtouch4:runtime pair && bun ipodtouch4:runtime launch
-bun ipodtouch4:runtime status            # phase accepted, generation 0, active 0
-bun ipodtouch4:runtime push --app clear  # accepted; status shows generation 1
+bun ipodtouch4:runtime acceptance --app clear --auto-background   # SpringBoard app switch
+bun ipodtouch4:runtime acceptance --app clear                     # prompts once for the Home button
+bun ipodtouch4:runtime acceptance --app clear --skip-background
 ```
 
-1. **Repeated replacement.** Push Clear five times with a source edit between
-   pushes. Each push reports `accepted`; `status` advances the generation each
-   time and the device stays responsive to touch after every swap.
-2. **First-frame failure.** Push a guest whose `frame()` throws on its first
-   call. The report is `rejected`, `status` keeps the previous `active` hash
-   and the previous guest is back on screen.
-3. **Later-frame failure.** Push a guest that throws after a few seconds. The
-   push is `accepted`; after the failure `status` shows the previous package
-   as `active` with the failed hash absent from `lastGood`.
-4. **Foreground and background.** With `dev` attached, press Home, wait ten
-   seconds and reopen Runtime. `dev` logs the disconnect and the reconnect, a
-   push after the reconnect is `accepted`, and a transfer interrupted by the
-   Home press is reported as `transfer-error` and does not activate.
-5. **Reconnect.** Kill `dev` while connected, start it again with `--no-push`
-   and confirm the tree and eval answers return on the new connection.
-6. **GL teardown.** After steps 1–5, `bun ipodtouch4 status` (the wrapper's
-   acceptance record) must show an advancing frame counter and the 640×960
-   density-2 drawable, and `capture` must produce the current guest. Read the
-   process memory in the SSH session (`vmmap` or `ps -o rss`) before step 1
-   and after step 5: the resident size must not grow with the number of
-   swaps beyond one guest's working set.
+The command builds Clear, then runs these steps and writes
+`.pocket-build/validation/ipodtouch4-runtime/<run>/receipt.json` (an ignored
+directory) with every status record it read:
+
+1. **Repeated replacement** (`--pushes`, default 5): the compiled Clear guest
+   with a distinct trailer each time. Each push must report `accepted`,
+   `status` must show the new hash as `active` and a generation advanced by
+   one, and the receipt keeps the measured `bootMs` and `firstFrameMs`.
+2. **First-frame failure**: a guest whose `frame()` throws on its first call
+   must be `rejected` with `active` unchanged.
+3. **Later-frame failure**: a guest that throws after 90 frames must be
+   `accepted`, then within 20 s `status` must show the previous package as
+   `active` and `running` with the failed hash absent from `lastGood`.
+4. **Reconnect**: the client closes its connection, the session reconnects,
+   and `getTree` and an `eval` of `ui.__host` answer on the new connection.
+5. **Foreground and background** (skipped by `--skip-background`): with
+   `--auto-background` the command opens Settings through SpringBoard
+   (`bun ipodtouch4 open-url prefs:root=General`) and, ten seconds later,
+   Runtime again; without it, the command waits up to three minutes for the
+   operator to press Home and reopen Runtime. The session must report the
+   disconnect and the reconnect, the package that was active before the
+   switch must still be `active`, and a push after the return must be
+   `accepted`. Because iOS 6 terminates the shell in the background, the
+   return is a relaunch: the shell's `pid` changes and the receipt carries a
+   new `bootMs`.
+6. **Resident memory**: the shell's acceptance record (`bun ipodtouch4
+   status`, field `resident_kb`, read through `task_info`) before the first
+   push and after the last step; the resident set must not grow by more than
+   half. Device validation on 2026-09-12 measured 22160 KiB before and
+   22288 KiB after seven swaps within one process, Clear booting in
+   2.0–2.1 s with its first frame at 2.4 s, recovery from a later-frame
+   failure in 4.0 s, and a push accepted after the background round trip.
