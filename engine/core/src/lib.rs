@@ -43,6 +43,7 @@ pub mod draw;
 pub mod layout;
 pub mod package;
 pub mod pak;
+pub mod plan;
 pub mod raster;
 pub mod compositor;
 pub mod spec;

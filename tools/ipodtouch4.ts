@@ -9,7 +9,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { createServer } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractHostBuildInputs } from "../framework/src/manifest/host-build-inputs.ts";
@@ -33,7 +33,9 @@ import {
   IPODTOUCH4_PHYSICAL_VIEWPORT,
   IPODTOUCH4_RASTER_DENSITY,
   resolveIPodTouch4BuildPlan,
+  IPODTOUCH4_DEV_CONTRACTS,
 } from "./ipodtouch4-profile.ts";
+import { renderTargetContractHeader, resolveNativeTargetContract } from "./target-contract.ts";
 
 import {
   IPOD_INSTALLER, ipodAppReceiptPaths, parseInstalledIPodApp, shellQuote, userDeploymentScript,
@@ -89,6 +91,8 @@ export interface IPodTouch4App {
   readonly svcWire: boolean;
   /** Disable iOS's idle timer while the app runs (a remote must not auto-lock). */
   readonly keepAwake: boolean;
+  /** A persistent native shell that accepts validated .pocket replacements. */
+  readonly devRuntime?: boolean;
 }
 
 /** The fields an external app's descriptor file must carry. */
@@ -105,6 +109,20 @@ const EXTERNAL_FIELDS = [
 ] as const;
 
 export const IPODTOUCH4_APPS: Readonly<Record<string, IPodTouch4App>> = {
+  runtime: {
+    id: "runtime",
+    manifest: "apps/clear/pocket.json",
+    bundleId: "dev.pocket-stack.runtime.ipodtouch4",
+    bundleName: "PocketRuntime.app",
+    executable: "PocketRuntime",
+    title: "Pocket Runtime",
+    scheme: "pocket-runtime-ipodtouch4",
+    receiptSlug: "pocket-runtime-ipodtouch4",
+    actionName: ACTION_NAME,
+    svcWire: true,
+    keepAwake: true,
+    devRuntime: true,
+  },
   clear: {
     id: "clear",
     manifest: "apps/clear/pocket.json",
@@ -244,6 +262,8 @@ interface DeviceStatus {
   readonly raster_density: number;
   readonly drawable_width: number;
   readonly drawable_height: number;
+  /** Resident set in KiB; 0 for records written before the field existed. */
+  readonly resident_kb: number;
   readonly error: string;
 }
 
@@ -640,6 +660,14 @@ async function build(): Promise<void> {
   const cargoHome = join(ipodtouch4CacheRoot(), "build/cargo-home");
   rmSync(nativeBuild, { recursive: true, force: true });
   mkdirSync(nativeBuild, { recursive: true });
+  if (APP.devRuntime) {
+    // The plan admission contract the shell bakes in: viewport from the
+    // verified plan, capabilities from the target registry.
+    writeFileSync(
+      join(nativeBuild, "pocket_target_contract.h"),
+      renderTargetContractHeader(resolveNativeTargetContract(inputs, IPODTOUCH4_DEV_CONTRACTS)),
+    );
+  }
   mkdirSync(rustTarget, { recursive: true });
   mkdirSync(cargoHome, { recursive: true });
 
@@ -692,6 +720,9 @@ async function build(): Promise<void> {
 
   const firstParty = [
     ...warnings,
+    ...(APP.devRuntime
+      ? ["-DPOCKET_DEV_RUNTIME", "-I", join(REPOSITORY, "engine/runtime"), "-I", join(REPOSITORY, "engine/ui-cabi/include"), "-I", nativeBuild]
+      : []),
     `-DPOCKET_LOGICAL_WIDTH=${inputs.viewport.logical[0]}`,
     `-DPOCKET_LOGICAL_HEIGHT=${inputs.viewport.logical[1]}`,
     `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`,
@@ -701,6 +732,16 @@ async function build(): Promise<void> {
     ...(APP.svcWire ? ["-DPOCKET_SVC_WIRE"] : []),
   ];
   const svcWireDefines = APP.svcWire ? ["-DPOCKET_SVC_WIRE", "-I", join(REPOSITORY, "hosts/ios-legacy")] : [];
+  const devDefines = APP.devRuntime ? ["-DPOCKET_DEV_RUNTIME", "-I", join(REPOSITORY, "engine/runtime")] : [];
+  const devObjects: string[] = [];
+  if (APP.devRuntime) {
+    for (const name of ["dev_protocol", "dev_server", "dev_wire_posix", "guest_runtime"]) {
+      const object = join(nativeBuild, `${name}.o`);
+      compile(join(REPOSITORY, `engine/runtime/${name}.c`), object, [...warnings,
+        `-DPOCKETJS_TARGET_ID=\"${inputs.target}\"`, `-DPOCKETJS_HOST_ABI=${inputs.hostAbi}`]);
+      devObjects.push(object);
+    }
+  }
   const crtGlobalsObject = join(nativeBuild, "crt_globals.o");
   const runtimeIdentityObject = join(nativeBuild, "runtime.build-id-input.o");
   const pocketRuntimeObject = join(nativeBuild, "pocket_runtime.o");
@@ -716,6 +757,7 @@ async function build(): Promise<void> {
   compile(join(REPOSITORY, "engine/quickjs-c/pocket_runtime.c"), pocketRuntimeObject, [
     ...warnings,
     ...svcWireDefines,
+    ...devDefines,
     `-DPOCKETJS_TARGET_ID=\"${inputs.target}\"`,
     `-DPOCKETJS_HOST_ABI=${inputs.hostAbi}`,
     `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`,
@@ -756,6 +798,7 @@ async function build(): Promise<void> {
     { label: "native/runtime.build-id-input.o", path: runtimeIdentityObject },
     { label: "native/pocket_runtime.o", path: pocketRuntimeObject },
     ...(APP.svcWire ? [{ label: "native/svcwire.o", path: svcWireObject }] : []),
+    ...devObjects.map((path) => ({ label: `native/${path.slice(nativeBuild.length + 1)}`, path })),
     { label: "native/compat.o", path: compatObject },
     ...quickJsObjects.map((path) => ({ label: `native/${path.slice(nativeBuild.length + 1)}`, path })),
     { label: "native/libpocketjs_symbian_core.a", path: rustLibrary },
@@ -782,7 +825,7 @@ async function build(): Promise<void> {
     "-no_source_version", "-no_compact_unwind", "-no_adhoc_codesign", "-no_encryption",
     "-e", "start", "-o", executable, join(nativeBuild, "csu-start.o"),
     join(nativeBuild, "csu-dyld-glue.o"), crtGlobalsObject,
-    runtimeObject, pocketRuntimeObject, ...(APP.svcWire ? [svcWireObject] : []), compatObject,
+    runtimeObject, pocketRuntimeObject, ...(APP.svcWire ? [svcWireObject] : []), ...devObjects, compatObject,
     "-force_load", rustLibrary, ...quickJsObjects,
     "-sectcreate", "__DATA", "__pocket_js", embeddedJavaScript,
     "-sectcreate", "__DATA", "__pocket_pak", guestPak,
@@ -896,9 +939,85 @@ async function deploy(): Promise<void> {
   console.log(`deployed User app ${receipt.buildId} with byte-exact readback`);
 }
 
-function installedApp(port: number) {
-  const raw = mustRemote(port, `${IPOD_INSTALLER} lookup ${shellQuote(BUNDLE_ID)}`);
-  return parseInstalledIPodApp(raw, BUNDLE_ID, BUNDLE_NAME);
+function installedApp(port: number, app = APP) {
+  const raw = mustRemote(port, `${IPOD_INSTALLER} lookup ${shellQuote(app.bundleId)}`);
+  return parseInstalledIPodApp(raw, app.bundleId, app.bundleName);
+}
+
+/** Runtime keys are local development secrets, separate from SSH credentials. */
+export const IPODTOUCH4_RUNTIME_KEYS = join(REPOSITORY, ".pocket/ipodtouch4/devices");
+
+export async function pairIPodTouch4Runtime(rotate = false): Promise<void> {
+  await withTunnel((port, udid) => {
+    const app = installedApp(port, IPODTOUCH4_APPS.runtime);
+    const root = `${app.Container}/Library/PocketRuntime`;
+    const remoteKey = `${root}/dev.key`;
+    let token = randomBytes(32).toString("hex");
+    if (!rotate && remote(port, `test -f ${shellQuote(remoteKey)}`).exitCode === 0) {
+      token = mustRemote(port, `cat ${shellQuote(remoteKey)}`).trim();
+      if (!/^[0-9a-f]{64}$/i.test(token)) throw new Error("runtime dev.key is invalid; use pair --rotate to replace it");
+    }
+    mkdirSync(IPODTOUCH4_RUNTIME_KEYS, { recursive: true, mode: 0o700 });
+    const deviceName = createHash("sha256").update(udid).digest("hex").slice(0, 24);
+    const key = join(IPODTOUCH4_RUNTIME_KEYS, `${deviceName}.key`);
+    const temporary = `${key}.${randomBytes(8).toString("hex")}.tmp`;
+    writeFileSync(temporary, token + "\n", { mode: 0o600 });
+    try {
+      mustRemote(port, `set -eu; mkdir -p ${shellQuote(root)}; chmod 700 ${shellQuote(root)}; chown mobile:mobile ${shellQuote(root)}`);
+      copyToDevice(port, temporary, `${remoteKey}.new`);
+      mustRemote(port, `set -eu; chmod 600 ${shellQuote(remoteKey + ".new")}; chown mobile:mobile ${shellQuote(remoteKey + ".new")}; mv ${shellQuote(remoteKey + ".new")} ${shellQuote(remoteKey)}`);
+      if (mustRemote(port, `cat ${shellQuote(remoteKey)}`).trim() !== token) throw new Error("runtime pairing readback failed");
+      writeFileSync(key, token + "\n", { mode: 0o600 });
+      chmodSync(key, 0o600);
+    } finally { rmSync(temporary, { force: true }); }
+    console.log(`paired Pocket Runtime; key file: ${key}${rotate ? "; relaunch Runtime to activate the new key" : ""}`);
+  });
+}
+
+/** Forward the Runtime through the existing pinned USB SSH connection. This
+ * also supports POCKETJS_IPODTOUCH4_VIA without requiring LAN access on iOS. */
+export async function withIPodTouch4RuntimeUsb<T>(operation: (host: string, port: number, token: Uint8Array) => Promise<T>): Promise<T> {
+  return await withTunnel(async (sshPort, udid) => {
+    const deviceName = createHash("sha256").update(udid).digest("hex").slice(0, 24);
+    const key = join(IPODTOUCH4_RUNTIME_KEYS, `${deviceName}.key`);
+    if (!existsSync(key)) throw new Error("run bun ipodtouch4:runtime pair for this USB device first");
+    const text = readFileSync(key, "utf8").trim();
+    if (!/^[0-9a-f]{64}$/i.test(text)) throw new Error("local runtime pairing key is invalid");
+    const local = await availableLocalPort();
+    const relay = Bun.spawn(["ssh", ...sshArgs(sshPort, "").slice(0, -2),
+      "-o", "ExitOnForwardFailure=yes", "-N", "-L", `127.0.0.1:${local}:127.0.0.1:8131`, "root@127.0.0.1"],
+    { stdin: "ignore", stdout: "ignore", stderr: "pipe" });
+    try {
+      for (let attempt = 0; attempt < 30; ++attempt) {
+        if (relay.exitCode !== null) break;
+        const ready = await new Promise<boolean>((resolveReady) => {
+          const socket = createConnection({ host: "127.0.0.1", port: local });
+          const finish = (ok: boolean) => { socket.destroy(); resolveReady(ok); };
+          socket.once("connect", () => finish(true));
+          socket.once("error", () => finish(false));
+          socket.setTimeout(200, () => finish(false));
+        });
+        if (ready) return await operation("127.0.0.1", local, Buffer.from(text, "hex"));
+        await Bun.sleep(100);
+      }
+      throw new Error("Runtime USB forwarding did not become ready");
+    } finally {
+      if (relay.exitCode === null) relay.kill();
+      await relay.exited;
+    }
+  });
+}
+
+/** Bring another app to the foreground (or this one back) through
+ * SpringBoard, the transition the Runtime acceptance pass exercises. */
+async function openUrl(url: string | undefined): Promise<void> {
+  if (!url || !/^[a-z][a-z0-9+.-]*:[^'\s]*$/i.test(url)) {
+    throw new Error("pocket ipodtouch4: open-url needs one URL without quotes or spaces");
+  }
+  await withTunnel((port) => {
+    mustRemote(port, `/bin/su mobile -c '/usr/bin/uiopen ${url}'; echo opened`);
+    console.log(`opened ${url}`);
+  });
 }
 
 async function uninstall(): Promise<void> {
@@ -969,6 +1088,7 @@ async function readDeviceStatus(port: number, paths: ReturnType<typeof ipodAppRe
     raster_density: number("raster_density"),
     drawable_width: number("drawable_width"),
     drawable_height: number("drawable_height"),
+    resident_kb: values.has("resident_kb") ? number("resident_kb") : 0,
     error: values.get("error") ?? "",
   };
 }
@@ -1130,6 +1250,9 @@ export async function main(args: readonly string[] = Bun.argv.slice(2)): Promise
       break;
     case "deploy":
       await deploy();
+      break;
+    case "open-url":
+      await openUrl(args[1]);
       break;
     case "uninstall":
       await uninstall();

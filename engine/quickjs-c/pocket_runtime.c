@@ -3,6 +3,10 @@
 #include "pocket_ui_cabi.h"
 #include "pocket_spec.h"
 #include "quickjs.h"
+#ifdef POCKET_DEV_RUNTIME
+#include "dev_server.h"
+#include <sys/time.h>
+#endif
 #ifdef POCKET_SVC_WIRE
 #include "svcwire.h"
 #endif
@@ -72,6 +76,11 @@ typedef enum {
   HostDebugPause,
   HostDebugStep,
   HostReportAppAction,
+#ifdef POCKET_DEV_RUNTIME
+  HostDbgActive,
+  HostDbgPoll,
+  HostDbgSend,
+#endif
 #ifdef POCKET_SVC_WIRE
   /* spec ops 30..32 — the host service channel over the PKNT wire
    * (svcwire.c). Present only in builds whose companion is on the network,
@@ -94,6 +103,53 @@ static char reported_action_name[POCKETJS_ACTION_NAME_CAPACITY];
 static int32_t reported_action_value;
 static unsigned long reported_action_sequence;
 static int runtime_failed;
+#ifdef POCKET_DEV_RUNTIME
+/* Guest time budgets: a boot or a frame turn (including its job drain) that
+ * runs past its budget is interrupted and reported as a guest failure. The
+ * defaults fit the slowest supported device, an 800 MHz Cortex-A8 evaluating
+ * a few hundred KiB of bundle; the host harness compiles tighter values so
+ * its hung-guest cases stay short. */
+#ifndef POCKET_DEV_GUEST_BOOT_BUDGET_MS
+#define POCKET_DEV_GUEST_BOOT_BUDGET_MS 15000u
+#endif
+#ifndef POCKET_DEV_GUEST_TURN_BUDGET_MS
+#define POCKET_DEV_GUEST_TURN_BUDGET_MS 3000u
+#endif
+static uint64_t guest_deadline;
+static char dev_poll_buffer[32769];
+/* Guest time budgets use the executor's own clock; the server's clock is a
+ * transport concern. */
+static uint64_t dev_now_ms(void) {
+  struct timeval time;
+  gettimeofday(&time, NULL);
+  return (uint64_t)time.tv_sec * 1000u + (uint64_t)time.tv_usec / 1000u;
+}
+static int interrupt_guest(JSRuntime *rt, void *opaque) {
+  (void)rt;
+  (void)opaque;
+  return dev_now_ms() >= guest_deadline;
+}
+
+static JSValue dev_console(JSContext *ctx, JSValueConst this_value,
+  int argc, JSValueConst *argv, int level) {
+  (void)this_value;
+  char message[512] = {0};
+  size_t length = 0;
+  for (int i = 0; i < argc && length + 2 < sizeof message; ++i) {
+    const char *text = JS_ToCString(ctx, argv[i]);
+    if (!text) return JS_EXCEPTION;
+    if (i) message[length++] = ' ';
+    size_t count = strlen(text);
+    if (count > sizeof message - length - 1) count = sizeof message - length - 1;
+    memcpy(message + length, text, count);
+    length += count;
+    message[length] = 0;
+    JS_FreeCString(ctx, text);
+  }
+  pocket_devserver_report_log(level == 1 ? "warn" : level == 2 ? "error" : "log", message);
+  return JS_UNDEFINED;
+}
+#endif
 #ifdef POCKET_SVC_WIRE
 /* spec SVC_POLL_BUF (8192) + terminator: one svcPoll batch. */
 static char svc_poll_buffer[8193];
@@ -446,6 +502,19 @@ static JSValue host_operation(
       reported_action_sequence += 1;
       JS_FreeCString(ctx, text);
       return JS_UNDEFINED;
+#ifdef POCKET_DEV_RUNTIME
+    case HostDbgActive:
+      return JS_NewBool(ctx, 1);
+    case HostDbgPoll: {
+      size_t length = pocket_devserver_recv_ctrl(dev_poll_buffer, sizeof dev_poll_buffer);
+      return JS_NewStringLen(ctx, dev_poll_buffer, length);
+    }
+    case HostDbgSend:
+      if (!string_argument(ctx, argc, argv, 0, &text, &text_length)) return JS_EXCEPTION;
+      pocket_devserver_send_ctrl(text, text_length);
+      JS_FreeCString(ctx, text);
+      return JS_UNDEFINED;
+#endif
 #ifdef POCKET_SVC_WIRE
     case HostSvcOpen: {
       int open;
@@ -490,6 +559,24 @@ static int add_host_operation(
 static int install_host(int width, int height) {
   JSValue ui = JS_NewObject(context);
   if (JS_IsException(ui)) return 0;
+#ifdef POCKET_DEV_RUNTIME
+  if (!add_host_operation(context, ui, "__dbgActive", 0, HostDbgActive) ||
+      !add_host_operation(context, ui, "__dbgPoll", 0, HostDbgPoll) ||
+      !add_host_operation(context, ui, "__dbgSend", 1, HostDbgSend)) {
+    JS_FreeValue(context, ui);
+    return 0;
+  }
+  JSValue console = JS_NewObject(context);
+  const char *methods[] = {"log", "info", "debug", "warn", "error"};
+  for (size_t i = 0; i < sizeof methods / sizeof methods[0]; ++i) {
+    JS_SetPropertyStr(context, console, methods[i], JS_NewCFunctionMagic(context,
+      dev_console, methods[i], 1, JS_CFUNC_generic_magic, i == 3 ? 1 : i == 4 ? 2 : 0));
+  }
+  if (JS_SetPropertyStr(context, global, "console", console) < 0) {
+    JS_FreeValue(context, ui);
+    return 0;
+  }
+#endif
   if (!add_host_operation(context, ui, "createNode", 1, HostCreateNode) ||
       !add_host_operation(context, ui, "destroyNode", 1, HostDestroyNode) ||
       !add_host_operation(context, ui, "insertBefore", 3, HostInsertBefore) ||
@@ -563,6 +650,12 @@ static int install_host(int width, int height) {
 
 static int drain_jobs(void) {
   for (;;) {
+#ifdef POCKET_DEV_RUNTIME
+    if (dev_now_ms() >= guest_deadline) {
+      set_error("guest job drain exceeded its time budget");
+      return 0;
+    }
+#endif
     JSContext *pending_context = 0;
     int result = JS_ExecutePendingJob(runtime, &pending_context);
     if (result > 0) continue;
@@ -575,6 +668,9 @@ static int drain_jobs(void) {
 }
 
 void pocket_runtime_shutdown(void) {
+#if defined(POCKET_DEV_RUNTIME) && defined(POCKET_SVC_WIRE)
+  svcwire_shutdown();
+#endif
   if (context != 0) {
 #if defined(POCKET_RUNTIME_HARNESS)
     if (!JS_IsUndefined(harness_function)) JS_FreeValue(context, harness_function);
@@ -622,6 +718,11 @@ int pocket_runtime_boot(
   }
   REPORT_BOOT_STAGE(4);
   JS_SetMaxStackSize(runtime, 256 * 1024);
+#ifdef POCKET_DEV_RUNTIME
+  JS_SetMemoryLimit(runtime, 32u * 1024u * 1024u);
+  guest_deadline = dev_now_ms() + POCKET_DEV_GUEST_BOOT_BUDGET_MS;
+  JS_SetInterruptHandler(runtime, interrupt_guest, NULL);
+#endif
   context = JS_NewContext(runtime);
   if (context == 0) {
     set_error("QuickJS context allocation failed");
@@ -704,6 +805,9 @@ static int run_frame(
   unsigned int tick;
   unsigned int index;
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
+#ifdef POCKET_DEV_RUNTIME
+  guest_deadline = dev_now_ms() + POCKET_DEV_GUEST_TURN_BUDGET_MS;
+#endif
 #ifdef POCKET_SVC_WIRE
   /* Bounded, non-blocking: discovery, connect, rx and tx progress once per
    * guest turn, before the guest polls. */

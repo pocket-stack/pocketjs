@@ -127,3 +127,215 @@ action — a receipt that a gesture interaction completed on the hardware.
 `dist/ipodtouch4/device-frame.png`.
 
 User application icons use **opaque 57×57 and 114×114 artwork**. SpringBoard applies the rounded mask and shadow; `UIPrerenderedIcon` suppresses the stock gloss. The System application path uses a precomposed transparent mask instead. Baking that mask into a User icon adds an inset rim under the native mask. Icon filenames include the artwork revision so an update selects a fresh SpringBoard cache entry.
+
+## Persistent Pocket Runtime
+
+**`bun ipodtouch4:runtime deploy` installs `PocketRuntime.app` as a separate
+User application**, with bundle identifier `dev.pocket-stack.runtime.ipodtouch4`.
+Its embedded recovery guest is Clear. The shell owns a **320×480 logical
+surface at density 2**, publishes `ipodtouch4-dev` / ABI 8, and accepts other
+applications built for that viewport and capability profile.
+
+```sh
+bun ipodtouch4:runtime deploy
+bun ipodtouch4:runtime pair
+bun ipodtouch4:runtime launch
+bun ipodtouch4:runtime push --app clear
+bun ipodtouch4:runtime dev --app clear
+```
+
+`deploy` builds and installs the native IPA through the deployment path above.
+`pair` uses the pinned USB SSH connection to install a 32-byte development
+key in the application's container and stores its local copy under
+`.pocket/ipodtouch4/devices/`. A repeated `pair` retains the device key;
+`pair --rotate` replaces it. Relaunch Runtime after rotation to activate the
+replacement. The listener starts after a valid key is present.
+
+**Guest updates use the 3DS Pocket Runtime wire protocol, with TCP and UDP on
+port 8131, and the same server state machine the 3DS host compiles.**
+`engine/runtime/dev_protocol.*` is the codec; `engine/runtime/dev_server.*`
+owns pairing, the hello/ack handshake, frame dispatch, control records,
+uploads, screenshot streaming and the idle timeouts (3 s before the hello,
+15 s after). A host adds its socket pump and clock and nothing else:
+`engine/runtime/dev_wire_posix.*` for UIKit shells and the host harness,
+`hosts/3ds/src/devserver.c` for libctru. The generic desktop client lives in
+`tools/pocket-runtime-client.ts`; PICA200 surface decoding and the dual-screen
+PNG stay in `tools/3ds-runtime-client.ts`. The default USB route forwards TCP
+through the pinned SSH connection. It supports
+`POCKETJS_IPODTOUCH4_VIA` and requires no Wi-Fi connection on the device.
+The application service channel (`svcwire`, PKNT) has a separate connection
+and lifecycle from the Runtime development channel (PKRT).
+
+```sh
+bun ipodtouch4:runtime discover
+bun ipodtouch4:runtime status --lan
+bun ipodtouch4:runtime push --app clear --lan
+bun ipodtouch4:runtime dev --app clear --lan
+
+# Select a device when UDP discovery cannot cross the network.
+bun ipodtouch4:runtime status --host 192.168.1.42 --key /path/to/device.key
+```
+
+LAN discovery matches a device's pairing-derived identifier with a local key.
+**The key authenticates the TCP connection; PKRT does not encrypt LAN traffic.**
+The USB SSH route provides encryption through SSH.
+
+### Package builds and development
+
+**`pack` builds a `.pocket` without compiling or signing native code.** It
+resolves the application's manifest against the private iPod profile and
+packages the plan, identity, JavaScript and asset pack. A package upload checks
+its manifest and plan on the desktop, then checks its footer, target, ABI and
+JavaScript terminator on the device before replacing the guest. **After those
+checks the device admits the plan against the target contract baked into the
+shell:**
+`tools/target-contract.ts` renders `pocket_target_contract.h` for every native
+build from the verified plan (viewport, presentation, raster density) and the
+`ipodtouch4-dev` registry entry (capability list), and
+`pocket_package_validate_plan` in the package layer (`engine/core/src/plan.rs`
+through `engine/ui-cabi`) rejects a plan whose target, ABI, surfaces,
+presentation or enabled features differ from it. The QuickJS executor holds no
+device policy; the registry that resolves manifests on the desktop is the same
+source the device checks against.
+
+```sh
+bun ipodtouch4:runtime pack --app clear
+bun ipodtouch4:runtime push --package dist/ipodtouch4/packages/clear-main/clear-main.pocket
+
+bun ipodtouch4:runtime pack --manifest pocket.json --project-root /path/to/app
+bun ipodtouch4:runtime dev --manifest pocket.json --project-root /path/to/app
+bun ipodtouch4:runtime dev --package /path/to/app.pocket --lan
+```
+
+`dev` watches source changes, rebuilds the guest, pushes its package and opens
+a connection to the existing DevTools hub. It prints the panel URL. Tree
+inspection, evaluation and logs use the guest's DevTools bindings; status and
+package installation remain in native code. `--no-push` attaches without an
+initial update. Subsequent source changes trigger updates. A broken connection
+starts a reconnect loop; LAN discovery follows the paired device across an
+address change. Compile and admission errors wait for another source change.
+
+The native capture command remains available:
+
+```sh
+bun ipodtouch4:runtime capture
+```
+
+It uses the USB capture path and writes `dist/ipodtouch4/device-frame.png`.
+The Runtime TCP transport has no screenshot stream in this version.
+
+### Replacement and recovery
+
+Runtime keeps uploaded packages and generation records under
+`<container>/Library/PocketRuntime`. Each transfer writes `upload.tmp` in
+bounded binary chunks, then flushes and validates the completed file. Admission
+failure leaves the running guest intact. An incomplete upload is discarded when
+its connection closes or a new transfer begins; a completed upload is admitted
+on the next frame, and the desktop's connection state has no part in that.
+
+**A candidate becomes active after its first successful GLES presentation.**
+The shell releases the previous guest's textures and QuickJS realm, clears
+touch contacts and starts the candidate. It then commits a generation record
+with the active and previous accepted package hashes. Stored package filenames
+derive from their hashes. Garbage collection retains the active and last-good
+packages, plus the newest two generation records.
+
+A boot or frame error selects the previous accepted package. If that package
+fails, Runtime tries the last-good package and then embedded Clear. A restart
+reads the newest committed generation; a candidate that failed before
+presentation cannot replace that record. Failure of the embedded recovery
+guest leaves the native development listener available for another upload.
+
+**Reload creates a new JavaScript realm and discards its in-memory state.**
+Native code changes require an IPA update. The development shell caps the
+QuickJS heap at 32 MiB, guest boot at 15 s and each guest turn at 3 s
+(`POCKET_DEV_GUEST_BOOT_BUDGET_MS` and `POCKET_DEV_GUEST_TURN_BUDGET_MS`,
+build-time constants; the host harness compiles 2 s and 500 ms). Those time
+limits include the pending job drain. They do not bound native rendering
+calls. On the iPod touch 4 the embedded Clear guest needs more than two
+seconds to evaluate and mount, so a 2 s boot budget rejects every guest on the
+device. `runtime.status` reports the measured `bootMs` and `firstFrameMs` of
+the running guest, and the `staged`/`accepted` receipts carry the same
+numbers. Packages are limited to 24 MiB.
+
+**Runtime receives updates while the application is in the foreground.**
+Resigning active closes its development sockets and discards a partial
+upload. **After the background transition iOS 6 terminates the shell instead
+of suspending it** (`applicationWillTerminate:` arrives; the legacy
+single-app shell records the same `terminated` state). The next launch, from
+the icon or from `bun ipodtouch4 open-url`, reads the newest committed
+generation, boots the active package (about 2.4 s for Clear) and reopens the
+paired listener; the desktop session reconnects without operator action.
+Guest memory state does not survive a trip to the background. The shell
+disables auto-lock while active. The installed User app retains native
+SpringBoard deletion; removing it deletes its packages and development key.
+
+### Validation
+
+```sh
+bun test tests/pocket-runtime-server.test.ts
+bun test tests/ipodtouch4-package.test.ts
+bun test tests/ipodtouch4-runtime.test.ts
+```
+
+`pocket-runtime-server.test.ts` replays one transcript through the shared
+server without a transport, then drives the desktop client against the
+Nintendo 3DS socket pump (compiled on the host with libctru stubbed out) and
+the POSIX pump with one scenario: discovery, a rejected key, heartbeats,
+control records, uploads, transfer errors, rejected footers and, on the 3DS
+pump, a dual-screen screenshot. The runtime tests link the real QuickJS
+sources, package reader and retained UI core into a host process. They
+exercise TCP transfer, admission failures, target-contract policy, timeouts,
+guest replacement, recovery after restart and the compiled Clear application.
+`POCKETJS_QUICKJS_SOURCE` can select the pinned QuickJS C source directory;
+its default is the legacy Apple source cache. The Native C harness workflow
+acquires those sources from the repository's pinned revision and runs the
+tests on Linux and macOS. These tests do not exercise UIKit, device
+installation or the iPod GPU.
+
+### Device acceptance
+
+The host tests do not cover UIKit, EAGL, presentation, installation or USB
+forwarding. Before a Runtime build is treated as accepted, run the acceptance
+command against a paired Runtime in the foreground and put its receipt
+numbers in the pull request:
+
+```sh
+bun ipodtouch4:runtime deploy && bun ipodtouch4:runtime pair && bun ipodtouch4:runtime launch
+bun ipodtouch4:runtime acceptance --app clear --auto-background   # SpringBoard app switch
+bun ipodtouch4:runtime acceptance --app clear                     # prompts once for the Home button
+bun ipodtouch4:runtime acceptance --app clear --skip-background
+```
+
+The command builds Clear, then runs these steps and writes
+`.pocket-build/validation/ipodtouch4-runtime/<run>/receipt.json` (an ignored
+directory) with every status record it read:
+
+1. **Repeated replacement** (`--pushes`, default 5): the compiled Clear guest
+   with a distinct trailer each time. Each push must report `accepted`,
+   `status` must show the new hash as `active` and a generation advanced by
+   one, and the receipt keeps the measured `bootMs` and `firstFrameMs`.
+2. **First-frame failure**: a guest whose `frame()` throws on its first call
+   must be `rejected` with `active` unchanged.
+3. **Later-frame failure**: a guest that throws after 90 frames must be
+   `accepted`, then within 20 s `status` must show the previous package as
+   `active` and `running` with the failed hash absent from `lastGood`.
+4. **Reconnect**: the client closes its connection, the session reconnects,
+   and `getTree` and an `eval` of `ui.__host` answer on the new connection.
+5. **Foreground and background** (skipped by `--skip-background`): with
+   `--auto-background` the command opens Settings through SpringBoard
+   (`bun ipodtouch4 open-url prefs:root=General`) and, ten seconds later,
+   Runtime again; without it, the command waits up to three minutes for the
+   operator to press Home and reopen Runtime. The session must report the
+   disconnect and the reconnect, the package that was active before the
+   switch must still be `active`, and a push after the return must be
+   `accepted`. Because iOS 6 terminates the shell in the background, the
+   return is a relaunch: the shell's `pid` changes and the receipt carries a
+   new `bootMs`.
+6. **Resident memory**: the shell's acceptance record (`bun ipodtouch4
+   status`, field `resident_kb`, read through `task_info`) before the first
+   push and after the last step; the resident set must not grow by more than
+   half. Device validation on 2026-09-12 measured 22160 KiB before and
+   22288 KiB after seven swaps within one process, Clear booting in
+   2.0–2.1 s with its first frame at 2.4 s, recovery from a later-frame
+   failure in 4.0 s, and a push accepted after the background round trip.

@@ -128,6 +128,20 @@ The shim needs only `{ send(line), recv() -> line | null }`:
   but does not encrypt the LAN connection. The channel updates `.pocket`
   guests; native `.3dsx` or CIA host changes still require deployment and
   restart.**
+- **iPod touch 4 over USB or Wi-Fi:** `bun ipodtouch4:runtime dev --app clear`
+  watches guest sources and bridges the existing panel to Pocket Runtime.
+  USB forwards the connection through the pinned SSH tunnel; `--lan` selects
+  the paired device through UDP discovery. **Tree inspection, evaluation and
+  logs share the PKRT TCP connection with binary `.pocket` uploads.** The
+  receiver is the server state machine the 3DS host compiles
+  (`engine/runtime/dev_server.c`) behind a POSIX socket pump; it validates
+  each package against the shell's baked target contract before changing
+  guests and commits its generation after a GLES presentation. Resigning
+  active closes sockets, and iOS 6 terminates the shell in the background;
+  the relaunch reloads the committed generation and the desktop session
+  reconnects when Runtime is back in the foreground.
+  `bun ipodtouch4:runtime capture` uses the USB capture path. See
+  [iPod touch 4](IPODTOUCH4.md#persistent-pocket-runtime).
 - **Native desktop (macOS et al., `pocket-ui-wgpu`):** the same file mailbox,
   minus the USB cable — `engine/crates/pocket-ui-wgpu/src/dbg.rs` is the
   std twin of the PSP transport. Probed once at `UiSurface::mount`: root =

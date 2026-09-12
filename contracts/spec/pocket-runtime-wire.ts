@@ -42,9 +42,11 @@ export const POCKET_RUNTIME_MSG = {
 
 export interface PocketRuntimeAck {
   readonly accepted: boolean;
+  /** 0 accepted; 2 the pairing key did not match (the Runtime closes next). */
   readonly status: number;
   readonly hostAbi: number;
   readonly generation: number;
+  /** Bit 0: the Runtime admits `.pocket` uploads (engine/runtime/dev_server.h). */
   readonly flags: number;
   readonly activeHash: bigint;
 }

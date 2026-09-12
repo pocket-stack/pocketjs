@@ -25,6 +25,7 @@ import {
 import {
   PocketRuntimeClient,
   discoverPocketRuntimes,
+  render3dsScreenshotPng,
   type DiscoveredPocketRuntime,
   type PocketRuntimeScreenshot,
 } from "../../tools/3ds-runtime-client.ts";
@@ -201,17 +202,19 @@ async function evaluate(
   return await result;
 }
 
-function assertScreenshot(screenshot: PocketRuntimeScreenshot): void {
+function assertScreenshot(screenshot: PocketRuntimeScreenshot): Buffer {
   if (screenshot.metadata.topWidth !== 400 || screenshot.metadata.topHeight !== 240 ||
       screenshot.metadata.auxiliaryWidth !== 320 || screenshot.metadata.auxiliaryHeight !== 240) {
     throw new Error(`wrong screenshot surfaces: ${JSON.stringify(screenshot.metadata)}`);
   }
-  if (screenshot.png.subarray(1, 4).toString() !== "PNG") {
+  const png = render3dsScreenshotPng(screenshot);
+  if (png.subarray(1, 4).toString() !== "PNG") {
     throw new Error("combined screenshot is not a PNG");
   }
-  if (screenshot.png.readUInt32BE(16) !== 400 || screenshot.png.readUInt32BE(20) !== 480) {
+  if (png.readUInt32BE(16) !== 400 || png.readUInt32BE(20) !== 480) {
     throw new Error("combined screenshot is not 400 x 480");
   }
+  return png;
 }
 
 let client: PocketRuntimeClient | null = null;
@@ -287,8 +290,7 @@ try {
   const screenshotPromise = client.waitForScreenshot(20_000);
   await client.sendCtrl({ t: "screenshot" });
   const screenshot = await screenshotPromise;
-  assertScreenshot(screenshot);
-  writeFileSync(SCREENSHOT, screenshot.png);
+  writeFileSync(SCREENSHOT, assertScreenshot(screenshot));
   console.log(`PASS captured both screens at frame ${screenshot.frame}`);
 
   const good = new Uint8Array(readFileSync(pocket));

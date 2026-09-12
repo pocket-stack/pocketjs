@@ -33,6 +33,7 @@ import {
   combinePocketRuntimeScreens,
   decodePocketRuntimeSurface,
   discoverPocketRuntimes,
+  render3dsScreenshotPng,
 } from "../tools/3ds-runtime-client.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -44,7 +45,7 @@ afterEach(() => {
 
 describe("Nintendo 3DS Pocket Runtime wire", () => {
   test("keeps TypeScript and C protocol constants byte-exact", () => {
-    const header = readFileSync(join(ROOT, "hosts/3ds/src/dev_protocol.h"), "utf8");
+    const header = readFileSync(join(ROOT, "engine/runtime/dev_protocol.h"), "utf8");
     expect(header).toContain("#define POCKET_RUNTIME_WIRE_MAGIC 0x54524b50u");
     expect(header).toContain("#define POCKET_RUNTIME_DISCOVERY_MAGIC 0x44524b50u");
     expect(header).toContain("#define POCKET_RUNTIME_WIRE_PORT 8131u");
@@ -343,7 +344,8 @@ describe("Nintendo 3DS Pocket Runtime wire", () => {
       await client.sendCtrl({ t: "screenshot" });
       const image = await screenshot;
       expect(image.frame).toBe(77);
-      expect(image.png.subarray(1, 4).toString()).toBe("PNG");
+      expect(image.top).toEqual(Uint8Array.of(0, 0, 255, 0, 255, 0));
+      expect(render3dsScreenshotPng(image).subarray(1, 4).toString()).toBe("PNG");
     } finally {
       client.close();
       connection.peer?.destroy();
