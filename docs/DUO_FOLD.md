@@ -2,10 +2,9 @@
 
 **Pocket Fold displays a SpringBoard snapshot through a moving glass plane.**
 The screenshot stays on the plane defined by the calibrated pose. Core Motion
-supplies the device attitude and rotation rate. **All three rotation axes
-participate in the projection.** The screen rotates about its center in X/Y
-and lifts in Z until its lowest corner touches the screenshot plane. Rays
-from a fixed eye pass through the tilted screen and intersect that plane. The distance
+supplies the device attitude and rotation rate. Rotation around the screen's
+vertical axis selects the far edge as the hinge. Rays from a fixed eye pass
+through the tilted screen and intersect the screenshot plane. The distance
 between the screen and that plane sets the blur radius and light attenuation.
 
 **This is an app-local effect on a static snapshot.** It does not alter
@@ -59,14 +58,8 @@ source at 320×480. Updating the app preserves the snapshot in Documents.
   The initial panel hides after eight seconds of rendering when a snapshot
   is present.
 
-Hold the iPod in portrait orientation, face the screen head-on, and press
-**Set zero**. Then turn, pitch, or roll the iPod while keeping your viewing
-position fixed. The reference plane remains fixed until calibration. Core
-Motion supplies rotation; it does not track eye position or device translation.
-Moving the viewer or translating the device changes the observed alignment.
-The angle readout measures the separation between the current and calibrated
-screen normals, from 0 to 180 degrees. Manual yaw previews retain their sign.
-Home returns to iOS.
+Hold the iPod in portrait orientation and rotate it about its vertical axis.
+The reference plane remains fixed until calibration. Home returns to iOS.
 The host stops motion updates on resignation of active status and starts a
 new reference pose on activation. The app disables auto-lock while open.
 
@@ -80,29 +73,23 @@ stay in the native host; the guest receives a state record at ten updates
 per second. Each build selects one local or network service provider.
 
 **Core Motion is requested at 100 Hz and sampled once per display frame.**
-The host rejects duplicate and stale samples and resolves the attitude matrix
-convention against gravity. It preserves the full relative quaternion, predicts
-40 ms ahead using all three device-local gyro rates, and interpolates rotations
-with an elapsed-time smoothing factor. The projection keeps yaw, pitch, and roll
-through the framebuffer Y-axis conversion. It renders black when the screen's
-normal faces away from the calibrated viewer. Manual yaw previews are bounded
-to ±85 degrees.
+The host rejects duplicate and stale samples, resolves the attitude matrix
+convention against gravity, and computes tilt relative to the calibrated
+screen axes. A 40 ms gyro prediction and an elapsed-time smoothing factor
+cover sensor/display delay. The rendered angle is bounded to ±85 degrees.
 
-**OpenGL ES 1.1 uses projective texture coordinates and at most fifteen
+**OpenGL ES 1.1 uses projective texture coordinates and at most fourteen
 draw calls for the background.** Filled-disk blur levels at radii
 0, 2, 4, 8, 12, 20, 30 and 40 points are baked on the Mac. Neighboring levels
-are blended according to the gap at each screen position. Convex polygons
-follow the two-dimensional gap gradient, including diagonal blur regions.
-Blur radius is capped at 40 points, with a final band covering larger gaps. Black padding
+are blended according to the gap at each screen position. Black padding
 provides samples beyond the screenshot's boundaries. Eight 512×1024 RGBA
 textures use 16 MiB of texture storage; no new image is uploaded per frame.
 The retained PocketJS UI is drawn over the host background without clearing it.
 
 The projection and motion model follow
 [DuoLikeAnimation](https://github.com/elijah-semyonov/DuoLikeAnimation).
-The port extends the source's single-axis far-edge hinge to a full attitude
-projection about the screen center. It replaces the Metal shader's sparse
-random disk samples with baked filled-disk convolution and omits the per-pixel grain. The upstream MIT
+The port replaces the Metal shader's sparse random disk samples with baked
+filled-disk convolution and omits the per-pixel grain. The upstream MIT
 notice is retained in [ATTRIBUTION.md](../apps/duo-fold/ATTRIBUTION.md).
 
 ## Device checks
@@ -114,14 +101,11 @@ bun ipodtouch4 fold-command manual -45
 bun ipodtouch4 capture
 bun ipodtouch4 fold-command manual 45
 bun ipodtouch4 capture
-bun ipodtouch4 fold-command pose 45 -25 15
-bun ipodtouch4 capture
 bun ipodtouch4 fold-command calibrate
 ```
 
 `fold-status` reports the runtime build and the native motion receipt,
-including samples, calibrations, sensor age, angle range, calibrated-frame
-screen normal, and mode. Runtime
+including samples, calibrations, sensor age, angle range and mode. Runtime
 receipts remain in the app's current container. `fold-command` writes a
 bounded command into that container for the same validator used by the guest.
 `capture` saves `dist/ipodtouch4/device-frame.png`.
@@ -131,8 +115,8 @@ Move the device after calibration and check that samples advance and the
 sensor-angle range expands. Tap the controls and run
 `bun ipodtouch4 status --require-action` for a completed `fold_control`
 receipt. Software-generated UIKit events validate dispatch but do not establish
-physical-finger acceptance. Verify plane alignment under compound rotation,
-perceived delay, and return-to-zero behavior while holding the device.
+physical-finger acceptance. Verify hinge direction, perceived delay, and
+return-to-zero behavior while holding the device.
 
 ```sh
 bun test --conditions=browser tests/duo-fold.test.ts tests/quickjs-c-harness.test.ts \

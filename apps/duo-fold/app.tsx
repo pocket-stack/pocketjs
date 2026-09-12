@@ -17,7 +17,7 @@ export default function Fold() {
     if (state) {
       setDegrees(Math.round(state.degrees));
       setSource(state.source);
-      setMode(state.manual ? "Manual preview" : state.available && state.samples > 0 ? "Plane locked" : "Waiting for motion");
+      setMode(state.manual ? "Manual preview" : state.available && state.samples > 0 ? "Live gyroscope" : "Waiting for motion");
     }
     if (frames === 480 && source()) setVisible(false);
   });
@@ -35,16 +35,15 @@ export default function Fold() {
         <View class="absolute left-[22] top-[164] w-[276] flex-col gap-3">
           <Text class="text-2xl font-bold text-white">Pocket Fold</Text>
           <Text class="text-sm text-slate-300">Capture a home screen to begin.</Text>
-          <Text class="text-sm text-slate-300">{service ? "Face the screen, then Set zero." : "Requires the iPod touch 4 host."}</Text>
+          <Text class="text-sm text-slate-300">{service ? "Tilt to fold. Set zero to align." : "Requires the iPod touch 4 host."}</Text>
         </View>
       </Show>
       <Show when={visible()}>
-        <View class="absolute left-[12] bottom-[14] w-[296] h-[156] flex-col p-[12] gap-[10] rounded-[16] bg-slate-900 border-slate-600 border">
+        <View class="absolute left-[12] bottom-[14] w-[296] h-[132] flex-col p-[12] gap-[10] rounded-[16] bg-slate-900 border-slate-600 border">
           <View class="flex-row justify-between items-center">
             <Text class="text-sm font-bold text-white">{mode()}</Text>
             <Text class="text-sm text-cyan-300">{degrees()} deg</Text>
           </View>
-          <Text class="text-xs text-slate-300">Face screen, then Set zero</Text>
           <View class="flex-row gap-[8]">
             <Focusable debugName="FoldCalibrate" onPress={() => send({ op: "calibrate" })}
               class="w-[128] h-[34] rounded-lg bg-sky-600 items-center justify-center">
