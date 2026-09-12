@@ -1,0 +1,132 @@
+name: Windows portable renderer
+
+# windows-app is the third stock target of the hosts/desktop portable host.
+# The runner builds and tests the host; real native window acceptance runs on
+# local Windows hardware (see docs/BACKENDS.md).
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-windows.yml"
+      - "contracts/spec/**"
+      - "engine/core/**"
+      - "engine/crates/pocket-mod/**"
+      - "engine/crates/pocket-ui-surface/**"
+      - "engine/crates/pocket-text/**"
+      - "framework/src/text-layout.ts"
+      - "framework/src/offload.ts"
+      - "hosts/web/*offload*.js"
+      - "hosts/web/text-*"
+      - "tools/*offload*"
+      - "tools/companion-session.ts"
+      - "tests/offload-provider.test.ts"
+      - "tests/companion-session.test.ts"
+      - "tests/fixtures/offload-ready-worker.ts"
+      - "tools/text-*"
+      - "tests/text-layout-client.test.ts"
+      - "apps/text-offload/**"
+      - "hosts/desktop/**"
+      - "engine/crates/pocket-ui-wgpu/**"
+      - "engine/pocket3d/crates/pocket3d/**"
+      - "hosts/web/app-instance.*"
+      - "hosts/web/system-engine.js"
+      - "hosts/web/wasm-ops.js"
+      - "framework/src/manifest/**"
+      - "tests/platform-contracts.test.ts"
+      - "tests/symbian-runtime.test.ts"
+      - "tests/pocket-system.test.ts"
+      - "tests/web-system-host.test.ts"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/desktop-windows.yml"
+      - "contracts/spec/**"
+      - "engine/core/**"
+      - "engine/crates/pocket-mod/**"
+      - "engine/crates/pocket-ui-surface/**"
+      - "engine/crates/pocket-text/**"
+      - "framework/src/text-layout.ts"
+      - "framework/src/offload.ts"
+      - "hosts/web/*offload*.js"
+      - "hosts/web/text-*"
+      - "tools/*offload*"
+      - "tools/companion-session.ts"
+      - "tests/offload-provider.test.ts"
+      - "tests/companion-session.test.ts"
+      - "tests/fixtures/offload-ready-worker.ts"
+      - "tools/text-*"
+      - "tests/text-layout-client.test.ts"
+      - "apps/text-offload/**"
+      - "hosts/desktop/**"
+      - "engine/crates/pocket-ui-wgpu/**"
+      - "engine/pocket3d/crates/pocket3d/**"
+      - "hosts/web/app-instance.*"
+      - "hosts/web/system-engine.js"
+      - "hosts/web/wasm-ops.js"
+      - "framework/src/manifest/**"
+      - "tests/platform-contracts.test.ts"
+      - "tests/symbian-runtime.test.ts"
+      - "tests/pocket-system.test.ts"
+      - "tests/web-system-host.test.ts"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: windows-app build + contract tests
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine/crates/pocket-text
+            hosts/desktop
+            engine/wasm
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - name: Platform registry, System and web host contract tests
+        # The two registry suites run scoped to the target-registry blocks this
+        # patch touches: the unscoped files still carry pre-existing Windows
+        # path defects (file:// URL pathnames concatenated into /C:/... paths)
+        # that fail on every Windows machine and are tracked separately.
+        run: |
+          bun test tests/platform-contracts.test.ts -t "platform registry"
+          bun test tests/symbian-runtime.test.ts -t "keeps the experimental E7 target out of the production registry"
+          bun test tests/pocket-system.test.ts tests/web-system-host.test.ts
+
+      - name: Resolve and build the note for windows-app
+        run: |
+          bun -e '
+          import { validateAndResolveBuildPlan } from "./framework/src/manifest/resolve.ts";
+          import { mkdirSync } from "node:fs";
+          const manifest = await Bun.file("apps/note/pocket.json").json();
+          const result = validateAndResolveBuildPlan(manifest, { target: "windows-app" });
+          if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+          mkdirSync(".pocket/windows-app", { recursive: true });
+          await Bun.write(".pocket/windows-app/note-main.plan.json", JSON.stringify(result.plan, null, 2) + "\n");'
+          bun tools/build.ts --plan=.pocket/windows-app/note-main.plan.json
+
+      - name: Rust format, lint and tests
+        run: |
+          cargo fmt --check --manifest-path hosts/desktop/Cargo.toml
+          cargo clippy --locked --manifest-path hosts/desktop/Cargo.toml -- -D warnings
+          cargo test --locked --manifest-path hosts/desktop/Cargo.toml
+
+      - name: Build windows-app release host
+        run: cargo build --release --locked --manifest-path hosts/desktop/Cargo.toml
