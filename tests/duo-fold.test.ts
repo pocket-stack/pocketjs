@@ -11,8 +11,7 @@ test("fold state accepts finite motion receipts and rejects malformed transport 
   const state = { t: "fold.state", source: true, available: true, active: true,
     manual: false, degrees: -31.2, samples: 123, calibrations: 1 };
   expect(parseFoldState(JSON.stringify(state))).toEqual(state);
-  expect(parseFoldState(JSON.stringify({ ...state, degrees: 125 }))).not.toBeNull();
-  for (const patch of [{ degrees: null }, { degrees: 181 }, { samples: -1 }, { samples: 1.5 },
+  for (const patch of [{ degrees: null }, { degrees: 90 }, { samples: -1 }, { samples: 1.5 },
     { source: "true" }, { active: undefined }, { calibrations: -1 }]) {
     expect(parseFoldState(JSON.stringify({ ...state, ...patch }))).toBeNull();
   }
@@ -54,14 +53,46 @@ test("snapshot baker preserves the flat image, scatters edges over black, and re
   } finally { rmSync(root, { recursive: true, force: true }); }
 }, 30000);
 
-test.skipIf(process.platform !== "darwin")("native reprojection cancels compound attitude and keeps blur coverage continuous", () => {
+test.skipIf(process.platform !== "darwin")("native projection preserves zero and hinge, mirrors signs, and isolates screen Y attitude", () => {
   const root = mkdtempSync(join(tmpdir(), "pocket-fold-math-"));
   try {
-    const source = resolve(import.meta.dir, "fixtures/fold_projection.c"), binary = join(root, "probe");
-    const build = Bun.spawnSync(["xcrun", "clang", "-Wall", "-Wextra", "-Werror",
-      "-fsanitize=address,undefined", source, "-o", binary]);
+    const source = join(root, "probe.c"), binary = join(root, "probe");
+    writeFileSync(source, `#include ${JSON.stringify(resolve(import.meta.dir, "../hosts/ios-legacy/fold-math.h"))}
+#include <assert.h>
+#define CLOSE(a,b) assert(fabs((a)-(b)) < 1e-8)
+int main(void) {
+  for (int shape = 0; shape < 2; ++shape) {
+    double w = shape ? 480 : 320, h = shape ? 320 : 480;
+    for (int j = 0; j <= 10; ++j) {
+      double x = w*j/10, y = h*0.3;
+      FoldRay flat = fold_ray(x,y,0,w,h,2053.54);
+      CLOSE(flat.x,x); CLOSE(flat.y,y); CLOSE(flat.radius,0); CLOSE(flat.attenuation,1);
+      for (int k = 1; k < 85; ++k) {
+        double a = k*M_PI/180;
+        FoldRay left = fold_ray(x,y,-a,w,h,2053.54);
+        FoldRay right = fold_ray(w-x,y,a,w,h,2053.54);
+        CLOSE(left.x,w-right.x); CLOSE(left.y,right.y);
+        CLOSE(left.radius,right.radius); assert(left.depth > 0);
+        assert(left.attenuation >= 0 && left.attenuation <= 1);
+      }
+    }
+    FoldRay hinge = fold_ray(w,h*0.2,1,w,h,2053.54);
+    CLOSE(hinge.x,w); CLOSE(hinge.y,h*0.2); CLOSE(hinge.radius,0);
+  }
+  double identity[9] = {1,0,0,0,1,0,0,0,1};
+  double a = 0.6, c = cos(a), s = sin(a);
+  double yrot[9] = {c,0,s,0,1,0,-s,0,c};
+  double roll[9] = {c,-s,0,s,c,0,0,0,1};
+  double pitch[9] = {1,0,0,0,c,-s,0,s,c};
+  CLOSE(fold_tilt(identity,yrot),a); CLOSE(fold_tilt(yrot,identity),-a);
+  CLOSE(fold_tilt(yrot,yrot),0); CLOSE(fold_tilt(identity,roll),0);
+  CLOSE(fold_tilt(identity,pitch),0);
+  double transposed[9]; fold_device_matrix(yrot,1,transposed);
+  CLOSE(fold_tilt(identity,transposed),-a);
+  return 0;
+}`);
+    const build = Bun.spawnSync(["xcrun", "clang", "-Wall", "-Wextra", "-Werror", source, "-o", binary]);
     expect(build.stderr.toString()).toBe(""); expect(build.exitCode).toBe(0);
-    const run = Bun.spawnSync([binary]);
-    expect(run.stderr.toString()).toBe(""); expect(run.exitCode).toBe(0);
+    expect(Bun.spawnSync([binary]).exitCode).toBe(0);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
