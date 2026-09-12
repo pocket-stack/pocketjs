@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "toolchainVersion": "d211-linux-riscv64-luban-v1",
+  "cachePath": "d211-linux",
+  "luban": {
+    "outputDirectory": "output/d211",
+    "gccPrefix": "riscv64-unknown-linux-gnu"
+  },
+  "rust": {
+    "toolchain": "nightly-2026-07-02",
+    "target": "riscv64gc-unknown-linux-gnu"
+  },
+  "quickjs": {
+    "version": "2026-06-04",
+    "repository": "https://github.com/pocket-stack/quickjs-rs.git",
+    "revision": "ba5bdd0dc013518768e76cd9e05cd30ed53dd35b"
+  },
+  "device": {
+    "name": "ArtInChip D211DBV (SPI NAND)",
+    "platform": "Luban Linux 5.10",
+    "cpu": "riscv64",
+    "physicalViewport": [800, 480],
+    "logicalViewport": [800, 480],
+    "rasterDensity": 1
+  },
+  "app": {
+    "manifest": "apps/d211-demo/pocket.json",
+    "binary": "pocketjs-d211",
+    "outputDirectory": "dist/d211-linux"
+  }
+}
