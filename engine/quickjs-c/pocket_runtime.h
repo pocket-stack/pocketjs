@@ -27,6 +27,45 @@ int pocket_runtime_boot(
   int width,
   int height
 );
+/*
+ * Host module ops (append-only). A host that has device audio fills the table
+ * and installs it BEFORE pocket_runtime_boot: the runtime then exposes
+ * `globalThis.audio` with the methods the audio spec pins
+ * (contracts/spec/audio.ts: createStream/destroyStream/writePcm/play/pause/
+ * stop/setVolume/endStream/poll). Hosts without the table leave the global
+ * absent and the framework's player degrades to a silent no-op.
+ *
+ * Frame/tick contract: the host owns the native audio clock and MUST NOT call
+ * into the guest; consumed frames surface as `credit`/`underrun`/`ended`
+ * event lines returned one per `poll()` call (JSON, shapes in the spec).
+ * write_pcm BORROWS the caller's buffer for the duration of the call.
+ */
+typedef struct {
+  int (*create_stream)(unsigned int sample_rate, unsigned int channels);
+  void (*destroy_stream)(int handle);
+  /* Returns frames accepted; `bytes` is interleaved s16 LE at the stream rate. */
+  int (*write_pcm)(int handle, const void *pcm, size_t bytes);
+  void (*play)(int handle);
+  void (*pause)(int handle);
+  void (*stop)(int handle);
+  void (*set_volume)(int handle, double volume);
+  void (*end_stream)(int handle);
+  /* One queued event line, or NULL when the queue is empty. */
+  const char *(*poll)(void);
+} PocketAudioOps;
+
+/*
+ * Backlight ops (host module `globalThis.backlight`): percent 0-100, with the
+ * host mapping to its native scale. Not yet a spec module — the method set is
+ * pinned here until a display spec lands.
+ */
+typedef struct {
+  int (*get)(void);
+  void (*set)(int percent);
+} PocketBacklightOps;
+
+void pocket_runtime_set_audio_ops(const PocketAudioOps *ops);
+void pocket_runtime_set_backlight_ops(const PocketBacklightOps *ops);
 /* `pack` is borrowed by QuickJS and must remain valid until shutdown. */
 /*
  * One guest turn followed by exactly one core tick — the frame contract
