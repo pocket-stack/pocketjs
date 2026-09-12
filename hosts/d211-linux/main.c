@@ -412,12 +412,13 @@ int main(void) {
   if (touch_available) {
     fprintf(
       stderr,
-      "d211: touch %s axes=%d/%d range=%dx%d\n",
+      "d211: touch %s axes=%d/%d range=%dx%d %s\n",
       touch.name,
       touch.axis_x,
       touch.axis_y,
       touch.max_x,
-      touch.max_y
+      touch.max_y,
+      touch.multi_touch ? "multi" : "single"
     );
   } else {
     fprintf(stderr, "d211: no touch-capable evdev device found\n");
@@ -463,8 +464,9 @@ int main(void) {
 
   D211Stats stats;
   memset(&stats, 0, sizeof(stats));
-  int contact_hit = 0;
-  int last_down = 0;
+  int contact_hits[D211_MAX_CONTACTS];
+  memset(contact_hits, 0, sizeof(contact_hits));
+  unsigned int previous_active_mask = 0;
   int presented_once = 0;
   uint64_t frames = 0;
   uint64_t stats_start = now_ns();
@@ -473,33 +475,48 @@ int main(void) {
   while (!g_stop) {
     uint64_t frame_start = now_ns();
 
+    D211ContactState contacts;
+    memset(&contacts, 0, sizeof(contacts));
     if (touch_available) {
       struct pollfd descriptor;
       descriptor.fd = touch.fd;
       descriptor.events = POLLIN;
       uint64_t remaining = next_frame > frame_start ? next_frame - frame_start : 0;
       poll(&descriptor, 1, (int)(remaining / 1000000));
-      int down_edge = d211_input_pump(&touch);
-      if (down_edge) {
-        /* The bounds hit is resolved once, at the contact's down edge. */
-        int logical_x = scale_axis(touch.x, touch.max_x, POCKET_LOGICAL_WIDTH);
-        int logical_y = scale_axis(touch.y, touch.max_y, POCKET_LOGICAL_HEIGHT);
-        contact_hit = pocket_runtime_hit_test_bounds((float)logical_x, (float)logical_y);
-        if (touch_log) {
-          fprintf(
-            stderr,
-            "d211: touch down raw=(%d,%d) logical=(%d,%d) hit=%d\n",
-            touch.x,
-            touch.y,
-            logical_x,
-            logical_y,
-            contact_hit
+      unsigned int down_edges = d211_input_pump(&touch, &contacts);
+      unsigned int active_mask = 0;
+      for (int index = 0; index < contacts.count; index++) {
+        const D211Contact *contact = &contacts.contacts[index];
+        active_mask |= 1u << contact->id;
+        int logical_x = scale_axis(contact->x, touch.max_x, POCKET_LOGICAL_WIDTH);
+        int logical_y = scale_axis(contact->y, touch.max_y, POCKET_LOGICAL_HEIGHT);
+        if ((down_edges & (1u << index)) != 0) {
+          /* The bounds hit is resolved once, at the contact's down edge. */
+          contact_hits[contact->id] = pocket_runtime_hit_test_bounds(
+            (float)logical_x,
+            (float)logical_y
           );
+          if (touch_log) {
+            fprintf(
+              stderr,
+              "d211: touch down id=%d raw=(%d,%d) logical=(%d,%d) hit=%d\n",
+              contact->id,
+              contact->x,
+              contact->y,
+              logical_x,
+              logical_y,
+              contact_hits[contact->id]
+            );
+          }
         }
-      } else if (touch_log && !touch.down && last_down) {
-        fprintf(stderr, "d211: touch up\n");
       }
-      last_down = touch.down;
+      for (int id = 0; id < D211_MAX_CONTACTS; id++) {
+        if ((active_mask & (1u << id)) == 0 && (previous_active_mask & (1u << id)) != 0) {
+          contact_hits[id] = 0;
+          if (touch_log) fprintf(stderr, "d211: touch up id=%d\n", id);
+        }
+      }
+      previous_active_mask = active_mask;
     } else {
       uint64_t remaining = next_frame > frame_start ? next_frame - frame_start : 0;
       struct timespec pause;
@@ -508,19 +525,19 @@ int main(void) {
       nanosleep(&pause, 0);
     }
 
-    PocketRuntimeInput input;
-    input.buttons = 0;
-    input.touch_down = touch_available ? touch.down : 0;
-    input.touch_x = touch_available
-      ? scale_axis(touch.x, touch.max_x, POCKET_LOGICAL_WIDTH)
-      : 0;
-    input.touch_y = touch_available
-      ? scale_axis(touch.y, touch.max_y, POCKET_LOGICAL_HEIGHT)
-      : 0;
-    input.touch_hit = input.touch_down ? contact_hit : 0;
+    PocketRuntimeContactsInput input;
+    memset(&input, 0, sizeof(input));
+    for (int index = 0; index < contacts.count; index++) {
+      const D211Contact *contact = &contacts.contacts[index];
+      PocketRuntimeContact *output = &input.contacts[input.contact_count++];
+      output->id = contact->id;
+      output->x = scale_axis(contact->x, touch.max_x, POCKET_LOGICAL_WIDTH);
+      output->y = scale_axis(contact->y, touch.max_y, POCKET_LOGICAL_HEIGHT);
+      output->hit = contact_hits[contact->id];
+    }
 
     uint64_t tick_start = now_ns();
-    if (!pocket_runtime_tick(&input)) {
+    if (!pocket_runtime_tick_contacts(&input)) {
       fprintf(stderr, "d211: tick failed: %s\n", pocket_runtime_error());
       break;
     }

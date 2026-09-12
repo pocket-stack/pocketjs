@@ -120,12 +120,15 @@ describe("private D211 Linux build profile", () => {
     expect(main).toContain("ui_render_incremental_scaled(POCKET_RASTER_DENSITY)");
     expect(main).toContain("pocket_runtime_damage_bounds");
     expect(main).toContain("pocket_runtime_hit_test_bounds");
-    expect(main).toContain("pocket_runtime_tick(&input)");
+    expect(main).toContain("pocket_runtime_tick_contacts(&input)");
+    expect(main).toContain("PocketRuntimeContactsInput");
     expect(main).not.toContain("/dev/input/event0");
     expect(input).toContain("EVIOCGNAME");
     expect(input).toContain("EVIOCGBIT");
     expect(input).toContain("EVIOCGABS");
     expect(input).toContain("ABS_MT_POSITION_X");
+    expect(input).toContain("ABS_MT_SLOT");
+    expect(input).toContain("ABS_MT_TRACKING_ID");
     expect(input).not.toContain("/dev/input/event0");
     expect(header).toContain("ui_render_incremental_scaled");
   });
@@ -147,6 +150,7 @@ describe("private D211 Linux build profile", () => {
     expect(script).not.toContain("rm -");
     expect(tooling).toContain('"bare-platform,software-only"');
     expect(tooling).toContain("D211_LUBAN_SDK");
+    expect(tooling).toContain('"killall", "-9"');
     expect(tooling).toContain('const DEVICE_DIRECTORY = "/opt/pocketjs"');
     expect(tooling).not.toContain('"/tmp/pocketjs-d211"');
     expect(workflow).toContain("D211_REMOTE");

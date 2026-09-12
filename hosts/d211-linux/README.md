@@ -42,12 +42,16 @@ layout coordinates map one-to-one onto the framebuffer.
 **The touch device is found by capability, not by `eventN`.** `d211_input_open`
 scans `/dev/input`, reads `EVIOCGNAME`, and accepts a device with the
 `ABS_MT_POSITION_X/Y` pair, falling back to `ABS_X/ABS_Y` plus `BTN_TOUCH`. The
-board exposes `goodix-ts` with the MT pair and a 800×480 axis range.
+panel exposes `goodix-ts` with the MT pair and a 800×480 axis range.
 
-Raw axis values are scaled into the logical viewport with the `EVIOCGABS`
-maximum. **The bounds hit is resolved once at the contact's down edge** with
-`pocket_runtime_hit_test_bounds()`, and the same contact id is delivered for
-the rest of the press. `POCKET_TOUCH_LOG=1` writes down/up edges with raw
+**Multi-touch is parsed with the protocol-B slot state machine**
+(`ABS_MT_SLOT`, `ABS_MT_TRACKING_ID`, per-slot positions) and delivered
+through `pocket_runtime_tick_contacts()`; the host tracks up to
+`D211_MAX_CONTACTS` (8) simultaneous contacts, and a single-contact device
+maps to one id-0 contact. **Each contact's bounds hit is resolved once at its
+own down edge** and carried for that contact's lifetime. Raw axis values are
+scaled into the logical viewport with the `EVIOCGABS` maximum.
+`POCKET_TOUCH_LOG=1` writes per-contact down/up edges with id, raw
 coordinates, logical coordinates, and the resolved hit to stderr.
 
 ## Memory
@@ -86,7 +90,7 @@ workflow takes the builder from `D211_REMOTE` with an optional
 
 ```sh
 # on the machine with the D211 on USB
-bun tools/d211-linux.ts stop-ui         # test_lvgl owns the panel at boot
+bun tools/d211-linux.ts stop-ui         # test_lvgl ignores SIGTERM; stop-ui sends SIGKILL
 bun tools/d211-linux.ts deploy          # /opt/pocketjs on the rootfs
 bun tools/d211-linux.ts run             # foreground, stats on stderr
 ```
@@ -114,6 +118,13 @@ Build `472f7e072276bd38` with PocketJS `d211-linux-dev` (host ABI 11),
 The 800×480 framebuffer was captured through `dd if=/dev/fb0` and converted
 to PNG; every pixel is non-black, the channel order matches the guest output,
 and the screenshot above is the captured frame after thirty-three taps.
+
+The multi-contact path was validated with a local probe build
+(`1a07303606c5edba`) that rendered one marker per contact: **five
+simultaneous contacts** from the panel, each id keeping its own coordinates
+through its down/up edges and its own down-edge hit.
+
+![Five simultaneous contacts, one marker per id](d211-touch.png)
 
 `dist/d211-linux/build-receipt.json` records the PocketJS commit, the Rust
 toolchain and target, GCC and LLD versions, the sysroot path, the pinned

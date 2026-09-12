@@ -398,8 +398,9 @@ function runOnDevice(): void {
 
 function stopUi(): void {
   requireAdb();
-  run("adb", ["shell", "killall", "test_lvgl"]);
-  console.log(`${LABEL}: stopped test_lvgl when present`);
+  /* test_lvgl ignores SIGTERM; SIGKILL is what actually releases the panel. */
+  run("adb", ["shell", "killall", "-9", "test_lvgl"]);
+  console.log(`${LABEL}: stopped test_lvgl (SIGKILL) when present`);
 }
 
 function receipt(): void {
