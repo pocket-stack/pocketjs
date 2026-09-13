@@ -33,6 +33,7 @@
 #include "audio.h"
 #include "backlight.h"
 #include "input.h"
+#include "ipc.h"
 #include "pocket_runtime.h"
 #include "pocket_ui_cabi.h"
 
@@ -434,7 +435,8 @@ int main(void) {
   /* 宿主模块：真实音频输出（aplay）与面板背光（sysfs）。 */
   pocket_runtime_set_audio_ops(d211_audio_ops_table());
   pocket_runtime_set_backlight_ops(d211_backlight_ops_table());
-  fprintf(stderr, "d211: host modules: audio + backlight\n");
+  pocket_runtime_set_ipc_ops(d211_ipc_ops_table());
+  fprintf(stderr, "d211: host modules: audio + backlight + ipc\n");
 
   uint64_t boot_start = now_ns();
   if (!pocket_runtime_boot(

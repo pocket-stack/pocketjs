@@ -96,6 +96,7 @@ static unsigned long reported_action_sequence;
 static int runtime_failed;
 static const PocketAudioOps *audio_ops;
 static const PocketBacklightOps *backlight_ops;
+static const PocketIpcOps *ipc_ops;
 #ifdef POCKET_SVC_WIRE
 /* spec SVC_POLL_BUF (8192) + terminator: one svcPoll batch. */
 static char svc_poll_buffer[8193];
@@ -479,6 +480,10 @@ void pocket_runtime_set_audio_ops(const PocketAudioOps *ops) {
   audio_ops = ops;
 }
 
+void pocket_runtime_set_ipc_ops(const PocketIpcOps *ops) {
+  ipc_ops = ops;
+}
+
 void pocket_runtime_set_backlight_ops(const PocketBacklightOps *ops) {
   backlight_ops = ops;
 }
@@ -622,6 +627,70 @@ static JSValue host_backlight_set(
   return JS_UNDEFINED;
 }
 
+/* One ipc.recv() datagram cap: MAX_PAYLOAD (64 KiB) + frame header. */
+#define HOST_IPC_MAX_DATAGRAM 65552
+
+static JSValue host_ipc_connect(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  if (ipc_ops == 0) return JS_NewBool(ctx, 0);
+  const char *path = 0;
+  size_t path_length = 0;
+  if (!string_argument(ctx, argc, argv, 0, &path, &path_length)) return JS_EXCEPTION;
+  int connected = ipc_ops->connect(path);
+  JS_FreeCString(ctx, path);
+  return JS_NewBool(ctx, connected >= 0);
+}
+
+static JSValue host_ipc_close(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  (void)ctx;
+  (void)this_value;
+  (void)argc;
+  (void)argv;
+  if (ipc_ops != 0) ipc_ops->close();
+  return JS_UNDEFINED;
+}
+
+static JSValue host_ipc_send(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  if (ipc_ops == 0) return JS_NewInt32(ctx, -1);
+  const uint8_t *bytes = 0;
+  size_t length = 0;
+  if (!bytes_argument(ctx, argc, argv, 0, &bytes, &length)) return JS_EXCEPTION;
+  if (length == 0) return JS_NewInt32(ctx, 0);
+  int written = ipc_ops->send(bytes, length);
+  return JS_NewInt32(ctx, written < 0 ? -1 : written);
+}
+
+static JSValue host_ipc_recv(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv
+) {
+  uint8_t buffer[HOST_IPC_MAX_DATAGRAM];
+  if (ipc_ops == 0) return JS_NewArrayBufferCopy(ctx, buffer, 0);
+  int32_t capacity = HOST_IPC_MAX_DATAGRAM;
+  if (argc > 0 && !int_argument(ctx, argc, argv, 0, &capacity)) return JS_EXCEPTION;
+  if (capacity < 1) capacity = 1;
+  if (capacity > HOST_IPC_MAX_DATAGRAM) capacity = HOST_IPC_MAX_DATAGRAM;
+  int count = ipc_ops->recv(buffer, (size_t)capacity);
+  if (count < 0) count = 0;
+  return JS_NewArrayBufferCopy(ctx, buffer, (size_t)count);
+}
+
 static int add_module_function(
   JSContext *ctx,
   JSValueConst object,
@@ -665,6 +734,21 @@ static int install_backlight(void) {
     return 0;
   }
   return JS_SetPropertyStr(context, global, "backlight", backlight) >= 0;
+}
+
+static int install_ipc(void) {
+  JSValue ipc;
+  if (ipc_ops == 0) return 1;
+  ipc = JS_NewObject(context);
+  if (JS_IsException(ipc)) return 0;
+  if (!add_module_function(context, ipc, "connect", 1, host_ipc_connect) ||
+      !add_module_function(context, ipc, "close", 0, host_ipc_close) ||
+      !add_module_function(context, ipc, "send", 1, host_ipc_send) ||
+      !add_module_function(context, ipc, "recv", 1, host_ipc_recv)) {
+    JS_FreeValue(context, ipc);
+    return 0;
+  }
+  return JS_SetPropertyStr(context, global, "ipc", ipc) >= 0;
 }
 
 static int add_host_operation(
@@ -829,7 +913,8 @@ int pocket_runtime_boot(
   }
   REPORT_BOOT_STAGE(5);
   global = JS_GetGlobalObject(context);
-  if (!install_host(width, height) || !install_audio() || !install_backlight()) {
+  if (!install_host(width, height) || !install_audio() || !install_backlight() ||
+      !install_ipc()) {
     take_exception(context);
     pocket_runtime_shutdown();
     return 0;

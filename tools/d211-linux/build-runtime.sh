@@ -144,6 +144,12 @@ first_party_flags=(
   -c "$REPO_ROOT/hosts/d211-linux/backlight.c" \
   -o "$objects/backlight.o"
 
+"$gcc" "${first_party_flags[@]}" \
+  -I"$REPO_ROOT/hosts/d211-linux" \
+  -I"$REPO_ROOT/engine/quickjs-c" \
+  -c "$REPO_ROOT/hosts/d211-linux/ipc.c" \
+  -o "$objects/ipc.o"
+
 "$gcc" \
   -B"$LLD_SHIM_DIR" \
   -fuse-ld=lld \
@@ -156,6 +162,7 @@ first_party_flags=(
   "$objects/main.o" \
   "$objects/audio.o" \
   "$objects/backlight.o" \
+  "$objects/ipc.o" \
   "$objects/input.o" \
   "$objects/pocket_runtime.o" \
   "$objects/rust_eh_personality.o" \

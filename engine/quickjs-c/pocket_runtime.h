@@ -66,6 +66,22 @@ typedef struct {
 
 void pocket_runtime_set_audio_ops(const PocketAudioOps *ops);
 void pocket_runtime_set_backlight_ops(const PocketBacklightOps *ops);
+
+/*
+ * IPC ops (host module `globalThis.ipc`): one SOCK_SEQPACKET connection to a
+ * local daemon (device) or its stream fallback (development hosts). send()
+ * BORROWS the guest buffer for the duration of the call; recv() copies one
+ * datagram into the given buffer and returns 0 when idle. Not yet a spec
+ * module — the method set is pinned here until an IPC spec lands.
+ */
+typedef struct {
+  int (*connect)(const char *path);
+  void (*close)(void);
+  int (*send)(const uint8_t *data, size_t length);
+  int (*recv)(uint8_t *buffer, size_t capacity);
+} PocketIpcOps;
+
+void pocket_runtime_set_ipc_ops(const PocketIpcOps *ops);
 /* `pack` is borrowed by QuickJS and must remain valid until shutdown. */
 /*
  * One guest turn followed by exactly one core tick — the frame contract

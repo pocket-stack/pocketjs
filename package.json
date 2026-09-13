@@ -162,6 +162,7 @@
     "./resource-view": "./framework/src/resource-view.ts",
     "./resource": "./framework/src/resource.ts",
     "./audio": "./framework/src/audio-api.ts",
+    "./ipc": "./framework/src/ipc-api.ts",
     "./media": "./framework/src/media.ts",
     "./media/provider": "./tools/media-stream.ts",
     "./media/audio": "./contracts/spec/media-adpcm.ts",
