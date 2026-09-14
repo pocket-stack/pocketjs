@@ -6,15 +6,11 @@
 // renderer's end-of-frame sweep [R] — so Solid effects triggered by input run
 // before detached subtrees are destroyed.
 
-// queueMicrotask polyfill (QuickJS lacks it; Solid's resource/transition paths
-// reference it lazily, so installing at module-eval time is early enough).
-if (typeof (globalThis as { queueMicrotask?: unknown }).queueMicrotask !== "function") {
-  (globalThis as { queueMicrotask?: (fn: () => void) => void }).queueMicrotask = (
-    fn: () => void,
-  ) => {
-    Promise.resolve().then(fn);
-  };
-}
+// Runtime scheduler globals (queueMicrotask/setTimeout/clearTimeout/console).
+// QuickJS provides none of them and the Solid entry needs the same shims the
+// Vapor/Octane preludes install: Promise-based user code (IPC handshakes,
+// timeouts) calls setTimeout during mount, before any frame runs.
+import "./scheduler-polyfill.ts";
 
 import {
   detectHost,
