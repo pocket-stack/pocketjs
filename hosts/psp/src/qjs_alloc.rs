@@ -21,6 +21,48 @@ use crate::arena;
 // size so `free`/`realloc`/`usable_size` can recover it.
 const HEADER: usize = 16;
 
+static mut ALLOC_CALLS: usize = 0;
+static mut LIVE_REQUESTED: usize = 0;
+static mut PEAK_REQUESTED: usize = 0;
+static mut LARGEST_REQUEST: usize = 0;
+static mut LAST_FAILED_REQUEST: usize = 0;
+
+#[derive(Clone, Copy)]
+pub struct Stats {
+    pub alloc_calls: usize,
+    pub live_requested: usize,
+    pub peak_requested: usize,
+    pub largest_request: usize,
+    pub last_failed_request: usize,
+}
+
+pub unsafe fn stats() -> Stats {
+    Stats {
+        alloc_calls: ALLOC_CALLS,
+        live_requested: LIVE_REQUESTED,
+        peak_requested: PEAK_REQUESTED,
+        largest_request: LARGEST_REQUEST,
+        last_failed_request: LAST_FAILED_REQUEST,
+    }
+}
+
+#[inline]
+unsafe fn raw_size(ptr: *const c_void) -> usize {
+    *((ptr as *const u8).sub(HEADER) as *const usize)
+}
+
+#[inline]
+unsafe fn note_request(size: usize) {
+    ALLOC_CALLS += 1;
+    LARGEST_REQUEST = LARGEST_REQUEST.max(size);
+}
+
+#[inline]
+unsafe fn note_live(old: usize, new: usize) {
+    LIVE_REQUESTED = LIVE_REQUESTED.saturating_sub(old).saturating_add(new);
+    PEAK_REQUESTED = PEAK_REQUESTED.max(LIVE_REQUESTED);
+}
+
 #[inline]
 unsafe fn raw_alloc(size: usize) -> *mut c_void {
     if size == 0 {
@@ -75,10 +117,21 @@ unsafe fn raw_realloc(p: *mut c_void, size: usize) -> *mut c_void {
 }
 
 unsafe extern "C" fn qjs_malloc(_s: *mut JSMallocState, size: size_t) -> *mut c_void {
-    raw_alloc(size as usize)
+    let size = size as usize;
+    note_request(size);
+    let ptr = raw_alloc(size);
+    if ptr.is_null() {
+        LAST_FAILED_REQUEST = size;
+    } else {
+        note_live(0, size);
+    }
+    ptr
 }
 
 unsafe extern "C" fn qjs_free(_s: *mut JSMallocState, ptr: *mut c_void) {
+    if !ptr.is_null() {
+        note_live(raw_size(ptr), 0);
+    }
     raw_free(ptr)
 }
 
@@ -87,14 +140,23 @@ unsafe extern "C" fn qjs_realloc(
     ptr: *mut c_void,
     size: size_t,
 ) -> *mut c_void {
-    raw_realloc(ptr, size as usize)
+    let size = size as usize;
+    let old = if ptr.is_null() { 0 } else { raw_size(ptr) };
+    note_request(size);
+    let next = raw_realloc(ptr, size);
+    if size != 0 && next.is_null() {
+        LAST_FAILED_REQUEST = size;
+    } else {
+        note_live(old, size);
+    }
+    next
 }
 
 unsafe extern "C" fn qjs_usable_size(ptr: *const c_void) -> size_t {
     if ptr.is_null() {
         return 0;
     }
-    (*((ptr as *const u8).sub(HEADER) as *const usize)) as size_t
+    raw_size(ptr) as size_t
 }
 
 /// Create a QuickJS runtime that allocates through the Rust/PSP allocator.

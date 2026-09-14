@@ -230,3 +230,19 @@ pub unsafe fn stats() -> Stats {
         configured_bytes: CONFIGURED_SIZE,
     }
 }
+
+/// Diagnostic snapshot on the allocator's owning thread; never allocates.
+/// Free lists are separate blocks, so total free is not contiguous space.
+pub unsafe fn debug_free() -> (usize, usize) {
+    let mut total = stats().tail_free_bytes;
+    let mut largest = total;
+    for c in MIN_SHIFT..NCLASS {
+        let mut block = FREE[c];
+        if !block.is_null() { largest = largest.max(1usize << c); }
+        while !block.is_null() {
+            total += 1usize << c;
+            block = *(block as *mut *mut u8);
+        }
+    }
+    (total, largest)
+}
