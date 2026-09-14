@@ -32,6 +32,7 @@ pocketjs/
 │  ├─ blackberry-classic/ input sampling shared by both BlackBerry Classic hosts
 │  ├─ blackberry-classic-qnx/ BlackBerry 10 Core Native embedding
 │  ├─ blackberry-classic-android/ BlackBerry 10 Android Runtime embedding
+│  ├─ d211-linux/ ArtInChip D211DBV fbdev host (software raster, evdev touch)
 │  ├─ desktop/    gpui window host — macos-app + linux-app (standalone lone-bin crate)
 │  ├─ web/        browser dev + Pocket System host (wasm core, isolated iframe Realms)
 │  └─ sim/        deterministic headless simulation host (docs/DETERMINISM.md)

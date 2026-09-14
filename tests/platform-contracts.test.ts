@@ -521,6 +521,7 @@ describe("semantic resolution", () => {
     const expected: Record<string, [boolean, boolean, boolean, boolean]> = {
       "3ds-demo": [false, false, false, false], // requires the private 3ds-dev profile's auxiliary display and touch contracts
       "blackberry-classic-demo": [false, false, false, true], // built by the private blackberry-{qnx,android}-dev profiles; macos-app also admits its fixed 360x360 buttons+glyphs contract
+      "d211-demo": [false, false, false, false], // admitted only by the private d211-linux-dev profile (fixed 800x480 fbdev touch surface)
       cafe: [true, true, false, true],
       cards: [true, true, false, true],
       chrome: [true, true, false, true],
