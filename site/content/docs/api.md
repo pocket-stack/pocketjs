@@ -18,10 +18,14 @@ Framework-internal and tests/debug helpers are not exhaustive here. For conceptu
 | `@pocketjs/framework/input` | `BTN`, `touches`, `auxiliaryTouches`, `focusNode`, `getFocused`, `pressNode`, `setActiveNode`, `pushFocusScope`, `pushFocusGrid`, `pushFocusController`, `hitFocusable`, `hitNode`, `enableCursor`, `cursorX`, `cursorY` |
 | `@pocketjs/framework/gesture` | `createGesture`, `attachGesture`, `pushTouchBlock`, gesture types (Solid and Vue Vapor) |
 | `@pocketjs/framework/kinetics` | `createScroller`, `bindDpadScroll`, `Scroller` / `ScrollerOptions` / `ScrollerState` types (Solid and Vue Vapor) |
-| `@pocketjs/framework/osk` | `Osk`, `TextField`, `createOsk`, `OSK_H`, `OSK_LAYERS` (Solid) |
+| `@pocketjs/framework/osk` | `Osk`, `TextField`, `createOsk`, `OSK_H`, `OSK_LAYERS`, `OSK_LAYOUTS`, `oskPanelHeight`, `resetPanelMemory` (Solid) |
 | `@pocketjs/framework/virtual-list` | `VirtualList`, `VirtualListProps`, `VirtualListHandle` (Solid) |
 | `@pocketjs/framework/display` | `auxiliaryViewport`, `hasAuxiliarySurface` |
 | `@pocketjs/framework/platform` | `platform`, `hasFeature` |
+| `@pocketjs/framework/modality` | `modality`, `presentation`, `screen`, `surfaceHasTouch`, `supports`, `glyph` |
+| `@pocketjs/framework/actions` | `useActions`, `ACTION_BUTTONS`, `ACTION_INTENTS`, `HOLD_SECONDS` (Solid) |
+| `@pocketjs/framework/system` | `installSystemLayer`, `SYSTEM_HOLD_SECONDS` (Solid) |
+| `@pocketjs/framework/classic` | `ClassicBar`, `ClassicFooter`, `ClassicList`, `ClassicSelection`, `ClassicSpinner`, `ClassicSkeleton`, `ClassicButton`, `ClassicFace`, `ClassicPanel`, `ClassicSheet`, `CLASSIC` (Solid) |
 | `@pocketjs/framework/clock` | `simulationHz`, `ticksPerFrame`, `virtualFrame`, `virtualNow`, `after` |
 | `@pocketjs/framework/effects` | `installEffectDriver`, `runEffect`, effect types |
 | `@pocketjs/framework/net` | `fetch`, `NetError`, `PocketResponse`, `FetchOptions` |
@@ -1053,6 +1057,81 @@ runtime-created textures; it never changes layout coordinates. Literal
 `hasFeature("…")` calls are folded to booleans during the PocketJS compile, so
 an unavailable enhancement branch can leave the bundle. Computed ids use the
 frozen runtime map.
+
+## `@pocketjs/framework/modality`
+
+```ts
+const modality: Modality;
+const presentation: string;
+function screen(role?: "primary" | "auxiliary"): ScreenModality | undefined
+function surfaceHasTouch(surface?: "primary" | "auxiliary"): boolean
+function supports(requirement: ModalityRequirement): boolean
+function glyph(button: "circle" | "cross" | "triangle" | "square" | "start" | "select" | "ltrigger" | "rtrigger"): string
+```
+
+`modality` is the target's interaction structure the plan resolved
+(`screens`, `touch`, `pointer`, `buttons`, `analog`, `text`, `glyphs`,
+`form`; see [Platform contracts](/docs/platform-contracts/#presentations-and-modality)),
+frozen. `presentation` is the manifest presentation id this bundle compiles,
+`"default"` for the baseline entry. `screen("auxiliary")` is `undefined` on a
+single-screen target. `supports()` evaluates a manifest-shaped requirement
+against `modality`. `glyph("circle")` is `"○"` on a PSP or Vita and `"A"` on a
+3DS, so hint text names the button the shell prints. A bundle built without a
+plan reads the portable PSP modality.
+
+## `@pocketjs/framework/actions`
+
+```ts
+function useActions(actions: ActionMap | (() => ActionMap), options?: { allowWhenBlocked?: boolean }): {
+  legend: () => string;
+  entries: () => readonly ActionEntry[];
+  run(intent: ActionIntent): void;
+}
+```
+
+`ActionMap` maps intents (`confirm`, `back`, `action`, `option`,
+`sectionPrev`, `sectionNext`, `media`) to `{ label?, run?, hold?, when? }`.
+On a device with buttons each intent is bound to one face button
+(`ACTION_BUTTONS`: ○ × △ □ L R START) for the component's lifetime, and
+`legend()` spells the labelled intents with the device's glyphs, so one
+declaration renders `○ play · △ search` on a PSP and `A play · X search` on a
+3DS. An intent with a label and no `run` appears in the legend while the
+focus system delivers the press. `hold` fires after `HOLD_SECONDS` of holding
+the button and silences the tap. Bindings respect the button-handler block a
+keyboard or sheet pushes. On a device without buttons `legend()` is empty and
+nothing binds; `entries()` still lists the intents for touch controls.
+
+## `@pocketjs/framework/system`
+
+```ts
+function installSystemLayer(options: {
+  title: string; version?: string;
+  status?: () => string;
+  items?: () => readonly { label: string; run: () => void; disabled?: boolean }[];
+  surface?: "primary" | "auxiliary";
+}): { open(): void; close(): void; isOpen: () => boolean }
+```
+
+The system layer of `docs/HIG.md` §4 in its guest-side form. **Holding SELECT
+for `SYSTEM_HOLD_SECONDS` opens the system sheet** over the chosen surface:
+the application's title and version, the live `status` line, the `items` the
+application registers for the moment (a playing screen adds "Stop
+playback"), "Return to launcher" where the host switches guests, and Close.
+The sheet is modal: it pushes the button-handler block and the touch block,
+its rows are Focusables (d-pad and tap), and × or SELECT closes it. No
+application binds SELECT itself.
+
+## `@pocketjs/framework/classic`
+
+The bezelled light chrome every classic presentation shares (`docs/HIG.md`):
+`ClassicBar` (36 px title bar with title, trailing text and absolute
+children), `ClassicFooter` (24 px legend strip), `ClassicList` (a
+`VirtualList` with flush rows, the `ClassicSelection` wash on the focused
+row, a trailing loading row that requests the next page for the d-pad and
+for a scrolling finger, and a per-frame `onWindow(first, visible, velocity)`
+report for row prefetching), `ClassicSelection`, `ClassicSpinner` (eight bars,
+no textures), `ClassicSkeleton`, `ClassicButton`, `ClassicFace`,
+`ClassicPanel`, `ClassicSheet`, and the `CLASSIC` color tokens.
 
 ## `@pocketjs/framework/clock`
 
