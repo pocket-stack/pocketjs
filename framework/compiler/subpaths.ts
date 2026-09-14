@@ -60,6 +60,7 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
   "offload/usb-provider": { file: "tools/offload-usb-provider.ts" },
   "offload/capabilities": { file: "tools/offload-capabilities.ts" },
   ime: { file: "framework/src/ime.ts", aliases: TWINS },
+  pak: { file: "framework/src/pak.ts", aliases: TWINS },
   text: { file: "framework/src/text.ts", aliases: TWINS },
   "text-view": { file: "framework/src/text-view.ts", aliases: TWINS },
   "text/provider": { file: "tools/text-glyph-provider.ts" },

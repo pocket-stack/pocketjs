@@ -50,6 +50,7 @@ pub mod stream;
 pub mod stream_rx;
 pub mod style;
 pub mod text;
+pub mod font_pages;
 pub mod touch;
 pub mod tree;
 pub mod wire;

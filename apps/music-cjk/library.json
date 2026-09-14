@@ -1,0 +1,12 @@
+[
+  { "title": "気迫", "artist": "日本語ライブラリ", "filename": "音楽/気迫.mp3" },
+  { "title": "你好世界", "artist": "中文音乐库", "filename": "音乐/你好世界.mp3" },
+  { "title": "明け星", "artist": "日本語ライブラリ", "filename": "音楽/明け星.mp3" },
+  { "title": "夜空中的光", "artist": "中文音乐库", "filename": "音乐/夜空中的光.mp3" },
+  { "title": "放光酸化", "artist": "日本語ライブラリ", "filename": "音楽/放光酸化.mp3" },
+  { "title": "幻灯花火", "artist": "日本語ライブラリ", "filename": "音楽/幻灯花火.mp3" },
+  { "title": "雨后的城市", "artist": "中文音乐库", "filename": "音乐/雨后的城市.mp3" },
+  { "title": "Sommarfågel", "artist": "Unicode library", "filename": "Music/01 - Sommarfågel.flac" },
+  { "title": "カタカナとひらがな", "artist": "日本語ライブラリ", "filename": "音楽/カタカナとひらがな.mp3" },
+  { "title": "半角ｶﾀｶﾅ", "artist": "日本語ライブラリ", "filename": "音楽/半角ｶﾀｶﾅ.mp3" }
+]

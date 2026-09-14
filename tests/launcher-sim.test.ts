@@ -100,8 +100,10 @@ describe("launcher registry admission", () => {
     for (const app of registry.apps.filter((app) => vitaOutputs.has(app.output))) {
       expect(vitaRegistry.apps).toContainEqual(app);
     }
-    expect(registry.apps).toHaveLength(18);
-    expect(vitaRegistry.apps).toHaveLength(19);
+    expect(pspOutputs.has("music-cjk-main")).toBe(true);
+    expect(vitaOutputs.has("music-cjk-main")).toBe(true);
+    expect(registry.apps).toHaveLength(19);
+    expect(vitaRegistry.apps).toHaveLength(20);
   });
 
   test("committed registry.generated.ts is fresh (re-run tools/launcher.ts scan)", async () => {

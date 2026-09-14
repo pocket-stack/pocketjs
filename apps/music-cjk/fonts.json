@@ -1,0 +1,5 @@
+{
+  "fallback": ["../../assets/fonts/NotoSansCJK-Demo.otf"],
+  "characterFiles": ["library.json"],
+  "ranges": ["U+3000-30FF", "U+4E00-4EFF", "U+FF61-FF9F"]
+}

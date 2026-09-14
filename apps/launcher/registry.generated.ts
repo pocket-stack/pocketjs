@@ -30,6 +30,7 @@ export const REGISTRY: readonly RegistryApp[] = [
   { output: "hero-vue-vapor-main", id: "dev.pocket-stack.hero.vue.vapor", title: "PocketJS: Hero Vue Vapor", cover: "covers/cover-hero-vue-vapor-main.png", refl: "covers/refl-hero-vue-vapor-main.png" },
   { output: "stats-main", id: "dev.pocket-stack.stats", title: "PocketJS: Mission Control", cover: "covers/cover-stats-main.png", refl: "covers/refl-stats-main.png" },
   { output: "motions-main", id: "dev.pocket-stack.motions", title: "PocketJS: Motion Lab (yui540 studies on baked keyframe timelines)", cover: "covers/cover-motions-main.png", refl: "covers/refl-motions-main.png" },
+  { output: "music-cjk-main", id: "dev.pocket-stack.music-cjk", title: "PocketJS: Music CJK Library", cover: "covers/cover-music-cjk-main.png", refl: "covers/refl-music-cjk-main.png" },
   { output: "notifications-main", id: "dev.pocket-stack.notifications", title: "PocketJS: Notifications", cover: "covers/cover-notifications-main.png", refl: "covers/refl-notifications-main.png" },
   { output: "music-main", id: "dev.pocket-stack.music", title: "PocketJS: Now Playing", cover: "covers/cover-music-main.png", refl: "covers/refl-music-main.png" },
   { output: "settings-main", id: "dev.pocket-stack.settings", title: "PocketJS: Settings", cover: "covers/cover-settings-main.png", refl: "covers/refl-settings-main.png" },

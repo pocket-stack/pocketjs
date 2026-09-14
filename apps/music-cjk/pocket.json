@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.music-cjk",
+  "name": "pocketjs-music-cjk",
+  "title": "PocketJS: Music CJK Library",
+  "version": "0.1.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked", "input.buttons"] } },
+  "app": {
+    "entry": "apps/music-cjk/main.tsx",
+    "output": "music-cjk-main",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [480, 272], "presentation": "integer-fit" } }
+  }
+}
