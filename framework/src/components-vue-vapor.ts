@@ -10,7 +10,8 @@ import {
 import type { JSX as SolidJSX } from "solid-js";
 import { ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { animate, type EasingName } from "./animation.ts";
-import { pushButtonHandlerBlock, onButtonPress, onFrame, type ButtonPressOptions } from "./frame-vue-vapor.ts";
+import { pushButtonHandlerBlock, onButtonPress, onAxisDelta, onFrame, type ButtonPressOptions } from "./frame-vue-vapor.ts";
+import { VAPOR_RELATIVE_AXES } from "../../contracts/spec/vapor.ts";
 import { BTN } from "./input-api.ts";
 import { pushFocusGrid, pushFocusScope, type FocusGridOptions, type FocusScopeOptions } from "./input.ts";
 import { getOverlayRoot } from "./overlay.ts";
@@ -26,6 +27,8 @@ import {
   type NodeMirror,
 } from "./native-tree.ts";
 import { createRenderRoot, type RenderRoot } from "./renderer-vue-vapor.ts";
+import type { VaporViewProps, VaporTextProps, VaporImageProps, VaporAxisHandlerProps } from "./component-types-vue-vapor.ts";
+export type { VaporViewProps, VaporTextProps, VaporImageProps, VaporStyleProps, VaporFloatInput, VaporAxisHandlerProps, VaporActionHandlerProps, VaporIntegerInput, VaporValue } from "./component-types-vue-vapor.ts";
 
 export type { NodeMirror } from "./renderer-vue-vapor.ts";
 
@@ -47,7 +50,7 @@ const insertVaporBlock = vaporInsert as unknown as (
   parent: NodeMirror,
   anchor?: NodeMirror | null,
 ) => void;
-export interface ViewProps {
+export interface ViewProps extends Omit<VaporViewProps, "style"> {
   class?: string;
   className?: string;
   style?: StyleObject;
@@ -57,7 +60,7 @@ export interface ViewProps {
   children?: VNodeChild;
 }
 
-export interface TextProps {
+export interface TextProps extends VaporTextProps {
   class?: string;
   className?: string;
   style?: StyleObject;
@@ -65,7 +68,7 @@ export interface TextProps {
   children?: VNodeChild;
 }
 
-export interface ImageProps {
+export interface ImageProps extends VaporImageProps {
   class?: string;
   className?: string;
   src?: string;
@@ -106,7 +109,7 @@ function callbackOf<T extends (...args: any[]) => unknown>(value: unknown): T | 
 
 function booleanOption(value: unknown): boolean | undefined {
   const resolved = valueOf(value);
-  return typeof resolved === "boolean" ? resolved : undefined;
+  return resolved === "" ? true : typeof resolved === "boolean" ? resolved : undefined;
 }
 
 function assignRef(refValue: unknown, node: NodeMirror | null): void {
@@ -275,22 +278,23 @@ function createPrimitiveNode(
   return node;
 }
 
-function primitive(tag: "view" | "text" | "image" | "surface") {
+function primitive<P extends object = Record<string, unknown>>(tag: "view" | "text" | "image" | "surface") {
   return definePocketVaporComponent(
-    (_props: Record<string, unknown>, { attrs, slots }: VaporCtx) => createPrimitiveNode(tag, attrs, slots),
+    (_props: P, { attrs, slots }: VaporCtx) => createPrimitiveNode(tag, attrs, slots),
     NO_FALLTHROUGH,
   );
 }
 
-export const View = primitive("view");
-export const Text = primitive("text");
-export const Image = primitive("image");
+type PrimitiveExtras = { children?: VNodeChild; nodeRef?: NodeRef; className?: string | (() => string) };
+export const View = primitive<VaporViewProps & PrimitiveExtras>("view");
+export const Text = primitive<VaporTextProps & PrimitiveExtras & { style?: StyleObject | (() => StyleObject) }>("text");
+export const Image = primitive<VaporImageProps & PrimitiveExtras & { style?: StyleObject | (() => StyleObject) }>("image");
 export const Sprite = primitive("image");
 export const CompositorSurface = primitive("surface");
 
 function resolveActive(active: unknown): boolean {
   const resolved = valueOf(active);
-  return typeof resolved === "function" ? !!resolved() : (resolved as boolean | undefined) ?? true;
+  return typeof resolved === "function" ? !!resolved() : resolved === "" ? true : (resolved as boolean | undefined) ?? true;
 }
 
 export interface ScreenProps extends ViewProps {}
@@ -365,7 +369,20 @@ export interface ActionHandlerProps extends ButtonPressOptions {
   children?: VNodeChild;
 }
 
+function inputPlacement(name: string): NodeMirror {
+  const marker = createCommentNode(name);
+  // The marker gives JS input a position without participating in flex gaps.
+  setProp(marker, "style", { display: ENUMS.Display.None }, undefined);
+  return marker;
+}
+
+function inputBlock(marker: NodeMirror, slots: SlotBag): unknown {
+  const children = defaultBlock(slots);
+  return children == null ? marker : Array.isArray(children) ? [marker, ...children] : [marker, children];
+}
+
 export const ActionHandler = definePocketVaporComponent((_props: ActionHandlerProps, { attrs, slots }: VaporCtx) => {
+  const marker = inputPlacement("action");
   onButtonPress(
     valueOf(attrs.button) as number,
     (pressed, buttons) => callbackOf<ActionHandlerProps["onPress"]>(attrs.onPress)?.(pressed, buttons),
@@ -374,8 +391,20 @@ export const ActionHandler = definePocketVaporComponent((_props: ActionHandlerPr
       active: () => resolveActive(attrs.active),
       latched: booleanOption(attrs.latched),
     },
+    marker,
   );
-  return defaultBlock(slots) ?? createCommentNode("action");
+  return inputBlock(marker, slots);
+}, NO_FALLTHROUGH);
+
+export interface AxisHandlerProps extends VaporAxisHandlerProps { children?: VNodeChild }
+export const AxisHandler = definePocketVaporComponent((_props: AxisHandlerProps, { attrs, slots }: VaporCtx) => {
+  const marker = inputPlacement("axis");
+  const name = valueOf(attrs.axis) as keyof typeof VAPOR_RELATIVE_AXES;
+  if (!(name in VAPOR_RELATIVE_AXES)) throw new Error(`Unknown relative axis ${String(name)}`);
+  onAxisDelta(VAPOR_RELATIVE_AXES[name], delta => callbackOf<(delta: number) => void>(attrs.onDelta)?.(delta), {
+    active: () => resolveActive(attrs.active),
+  }, marker);
+  return inputBlock(marker, slots);
 }, NO_FALLTHROUGH);
 
 export interface PortalProps {

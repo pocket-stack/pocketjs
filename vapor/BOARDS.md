@@ -109,6 +109,24 @@ GBA's wide layout doesn't demand `R` from a 20×18 board.
 they never fail the check — an app is not obligated to fit every board, the
 verdict exists so a store, a CI, or a person can decide with facts.
 
+## Rust SFC input admission
+
+**The Rust SFC compiler derives named button masks and relative-axis ids from
+the template.** `bun vapor/compiler/cli.ts check <app> --boards` reports those
+demands against the existing board input profiles. `--board <name>` selects
+one profile and fails when a required input adapter is absent. `build --board`
+performs the same check before writing generated Rust.
+
+`vapor/compiler/aot-admission.ts` maps native `BTN.CIRCLE`/`BTN.CROSS` to the
+profiles' A/B controls. `VB102` reports an absent button; `VB103` reports a
+chord mapping. **The current profiles declare no relative-axis adapter**, so
+axis demand produces `VB104`. `VB105` is reserved for missing touch support.
+This check covers input adapters, not Rust toolchains or display geometry.
+
+Generated apps also require Rust host traits for each input demand. A host
+implements `HasButton<MASK>` or `HasRelativeAxis<AXIS>` for the inputs it can
+deliver. An unsupported host type fails to satisfy the generated app's bounds.
+
 ## Identity and the registration gate
 
 `esp32BuildId` hashes the generated app, the *derived* board definitions,
