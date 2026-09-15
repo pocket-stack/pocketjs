@@ -35,22 +35,14 @@ type ButtonHandler = (button: number) => void;
 
 const handlers: ButtonHandler[] = [];
 
-export const RelativeAxis = {
-  Primary: 0,
-  Secondary: 1,
-} as const;
+import { RelativeAxis, RelativeAxisUnits, type RelativeAxisId } from "../../contracts/spec/vapor.ts";
+export { RelativeAxis, RelativeAxisUnits, type RelativeAxisId };
 
 /**
  * Canonical rotary-axis resolution. Hosts preserve signed motion in
  * millidegrees; applications own detents, acceleration, and interaction
  * thresholds.
  */
-export const RelativeAxisUnits = {
-  PerDegree: 1_000,
-  PerTurn: 360_000,
-} as const;
-
-export type RelativeAxisId = (typeof RelativeAxis)[keyof typeof RelativeAxis];
 type AxisDeltaHandler = (delta: number) => void;
 
 const axisHandlers = new Map<RelativeAxisId, AxisDeltaHandler[]>();
