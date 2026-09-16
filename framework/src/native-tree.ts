@@ -455,6 +455,8 @@ export function createElement(tag: string): NodeMirror {
 }
 
 export function createTextNode(value: string): NodeMirror {
+  // Solid universal also passes primitive numbers to the host text boundary.
+  value = String(value);
   const ops = getOps();
   const id = ops.createNode(NODE_TYPE.text);
   ops.setText(id, value);
@@ -478,6 +480,7 @@ export function createCommentNode(data = ""): NodeMirror {
 }
 
 export function replaceText(node: NodeMirror, value: string): void {
+  value = String(value);
   getOps().replaceText(node.id, value);
   node.text = value;
   treeMutated();
