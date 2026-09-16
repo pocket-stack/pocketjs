@@ -35,6 +35,8 @@ export interface SubpathDecl {
    *  resolution (`./renderer` ships the framework-neutral shim while the
    *  compiler resolves the per-framework renderer). */
   readonly npmFile?: string;
+  /** Optional generated declarations consumed by TypeScript package resolution. */
+  readonly npmTypes?: string;
   /** Frameworks whose PREFIXED form (`./vue-vapor/<name>`) is also a
    *  published npm export. The bare form is always published. */
   readonly aliases?: readonly PocketFramework[];
@@ -108,7 +110,14 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
     aliases: ALL,
   },
   hot: { file: "framework/src/hot.ts" },
-  input: { file: "framework/src/input-api.ts", aliases: TWINS },
+  input: {
+    file: {
+      solid: "framework/src/input-api.ts",
+      "vue-vapor": "framework/src/input-api-vue-vapor.ts",
+      octane: "framework/src/input-api.ts",
+    },
+    aliases: TWINS,
+  },
   kinetics: {
     file: {
       solid: "framework/src/kinetics.ts",
@@ -148,6 +157,11 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
     aliases: ALL,
   },
   "virtual-list": { file: { solid: "framework/src/virtual-list.ts" } },
+  "vue-vapor/std": {
+    file: { "vue-vapor": "framework/src/std-vue-vapor.ts" },
+    npmFile: "framework/src/std-vue-vapor.ts",
+    npmTypes: "framework/src/std-vue-vapor.d.ts",
+  },
 };
 
 /** The bare npm export target for a row (npmFile > invariant file > solid). */
@@ -165,10 +179,13 @@ function bareNpmTarget(name: string, decl: SubpathDecl): string {
  * declaration order, then each framework's alias group. tools/gen-exports.ts
  * writes this into package.json; tests/contract.ts regenerates and compares.
  */
-export function npmExports(): Record<string, string> {
-  const out: Record<string, string> = {};
+export function npmExports(): Record<string, string | { types: string; default: string }> {
+  const out: Record<string, string | { types: string; default: string }> = {};
   for (const [name, decl] of Object.entries(SUBPATHS)) {
-    out[name === "" ? "." : `./${name}`] = `./${bareNpmTarget(name, decl)}`;
+    const target = `./${bareNpmTarget(name, decl)}`;
+    out[name === "" ? "." : `./${name}`] = decl.npmTypes
+      ? { types: `./${decl.npmTypes}`, default: target }
+      : target;
   }
   for (const fw of POCKET_FRAMEWORKS) {
     for (const [name, decl] of Object.entries(SUBPATHS)) {
