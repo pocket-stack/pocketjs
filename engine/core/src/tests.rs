@@ -3998,3 +3998,17 @@ fn font_revision_changes_only_after_successful_load_and_is_slot_local() {
     assert_eq!(ui.font_atlas_revision(0), 0);
     assert_eq!(ui.font_atlas_revision(255), 0);
 }
+#[test]
+fn node_inspection_rejects_stale_generation_ids() {
+    let mut ui = Ui::new();
+    let text = ui.create_node(1);
+    ui.set_text(text, "retained");
+    assert_eq!(ui.node_type(text), Some(1));
+    assert_eq!(ui.node_text(text), Some("retained"));
+    ui.destroy_node(text);
+    let replacement = ui.create_node(0);
+    assert_ne!(text, replacement);
+    assert_eq!(ui.node_type(text), None);
+    assert_eq!(ui.node_text(text), None);
+    assert_eq!(ui.node_text(replacement), Some(""));
+}
