@@ -65,6 +65,8 @@ export interface PocketManifestV2 {
     readonly entry: string;
     readonly output?: string;
     readonly framework: "solid" | "vue-vapor" | "octane";
+    /** Admit the complete Solid component graph to the AOT view subset. */
+    readonly aot?: boolean;
     readonly viewport: ManifestViewport;
     /** Additional UI output intent. Physical geometry remains target-owned. */
     readonly surfaces?: {
@@ -196,6 +198,7 @@ export const pocketManifestV2Schema = {
           pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
         },
         framework: { enum: ["solid", "vue-vapor", "octane"] },
+        aot: { type: "boolean" },
         surfaces: {
           type: "object",
           additionalProperties: false,
