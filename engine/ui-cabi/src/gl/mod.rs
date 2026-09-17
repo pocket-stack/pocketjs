@@ -145,6 +145,7 @@ impl ImageTexture {
 struct FontTexture {
     name: GLuint,
     source: usize,
+    revision: u64,
     coverage_w: u32,
     coverage_h: u32,
     logical_w: u32,
@@ -435,7 +436,7 @@ impl Renderer {
         }
     }
 
-    unsafe fn upload_font(&self, atlas: &Atlas) -> Option<FontTexture> {
+    unsafe fn upload_font(&self, atlas: &Atlas, revision: u64) -> Option<FontTexture> {
         let (columns, texture_w, texture_h) = self.font_grid(atlas)?;
         let coverage_w = atlas.coverage_width();
         let coverage_h = atlas.coverage_height();
@@ -465,6 +466,7 @@ impl Renderer {
         Some(FontTexture {
             name,
             source: atlas.bitmap.as_ptr() as usize,
+            revision,
             coverage_w,
             coverage_h,
             logical_w: atlas.cell_w,
@@ -525,6 +527,7 @@ impl Renderer {
                     let unchanged = self.fonts[slot].as_ref().is_some_and(|font| {
                         !font.dirty
                             && font.source == atlas.bitmap.as_ptr() as usize
+                            && font.revision == ui.font_atlas_revision(slot as u8)
                             && font.glyph_count == atlas.glyph_count
                     });
                     if unchanged {
@@ -533,13 +536,14 @@ impl Renderer {
                     if let Some(old) = self.fonts[slot].take() {
                         glDeleteTextures(1, &old.name);
                     }
-                    self.fonts[slot] = match self.upload_font(atlas) {
-                        Some(texture) => Some(texture),
-                        None => {
-                            ok = false;
-                            None
-                        }
-                    };
+                    self.fonts[slot] =
+                        match self.upload_font(atlas, ui.font_atlas_revision(slot as u8)) {
+                            Some(texture) => Some(texture),
+                            None => {
+                                ok = false;
+                                None
+                            }
+                        };
                 }
                 None => {
                     if let Some(old) = self.fonts[slot].take() {
@@ -1221,6 +1225,7 @@ mod tests {
         renderer.fonts.push(Some(FontTexture {
             name: 7,
             source: 0,
+            revision: 0,
             coverage_w: 8,
             coverage_h: 8,
             logical_w: 8,
