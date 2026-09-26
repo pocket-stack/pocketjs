@@ -35,9 +35,12 @@ def estimate(text: str) -> float:
     return max(1.6, cjk * 0.156 + (len(text) - cjk) * 0.075)
 
 
-def plan(scenes, voice: str, rate: int, with_audio: bool):
+def plan(scenes, voice: str, speed: float, with_audio: bool):
     """Lay every scene on the clock from the length of its spoken lines."""
     cache = OUT / "voice"
+    spoken = {}
+    if with_audio:
+        spoken = st.prepare([line[0] for scene in scenes for line in scene.lines], voice, speed, cache)
     clock = 0.0
     narration: list = []
     cues: list = []
@@ -46,13 +49,13 @@ def plan(scenes, voice: str, rate: int, with_audio: bool):
         beats = []
         captions = []
         cursor = clock + scene.lead
-        for spoken, text in scene.lines:
+        for text_spoken, text in scene.lines:
             if with_audio:
-                wav = st.speak(spoken, voice, rate, cache)
+                wav = spoken[text_spoken]
                 length = st.duration(wav)
                 narration.append((cursor, wav))
             else:
-                length = estimate(spoken)
+                length = estimate(text_spoken)
             beats.append((cursor - clock, cursor - clock + length + GAP))
             captions.append(text)
             cursor += length + GAP
@@ -127,7 +130,7 @@ def render(args) -> None:
             raise SystemExit(f"no scene named {args.scene}; have {[s.key for s in SCENES]}")
     OUT.mkdir(parents=True, exist_ok=True)
     started = time.time()
-    plan_scenes, total, narration, cues = plan(scenes, args.voice, args.rate, not args.no_audio)
+    plan_scenes, total, narration, cues = plan(scenes, args.voice, args.speed, not args.no_audio)
     print(f"{len(plan_scenes)} scenes, {total:.1f}s, {int(total * args.fps)} frames")
     for entry in plan_scenes:
         print(f"  {entry['scene'].key:<10} {entry['start']:6.1f}s  +{entry['duration']:5.1f}s  {entry['scene'].chapter}")
@@ -204,7 +207,7 @@ def render(args) -> None:
         "seconds": round(total, 2),
         "fps": args.fps,
         "resolution": f"{args.width}x{height}",
-        "voice": None if args.no_audio else f"{args.voice} @ {args.rate} wpm",
+        "voice": None if args.no_audio else f"Kokoro-82M {args.voice} @ {args.speed}x",
         "render_seconds": round(time.time() - started, 1),
         "scenes": [
             {
@@ -225,10 +228,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--width", type=int, default=1920)
-    parser.add_argument("--crf", type=int, default=19)
-    parser.add_argument("--preset", default="medium")
-    parser.add_argument("--voice", default="Tingting", help="macOS `say` voice")
-    parser.add_argument("--rate", type=int, default=270, help="words per minute for `say`")
+    parser.add_argument("--crf", type=int, default=22)
+    parser.add_argument("--preset", default="slow")
+    parser.add_argument("--voice", default="af_heart", help="Kokoro voice id")
+    parser.add_argument("--speed", type=float, default=1.06, help="Kokoro speaking rate")
     parser.add_argument("--no-audio", action="store_true")
     parser.add_argument("--scene", help="comma separated scene keys")
     parser.add_argument("--stills", action="store_true", help="write one PNG per scene instead of video")

@@ -1,13 +1,15 @@
 """Narration and chiptune soundtrack for the MicroTS explainer.
 
-Narration comes from the macOS `say` voices and is cached per line by content
-hash, so re-renders reuse the audio. The music is synthesized here: two square
-channels and a noise channel, ducked under the narration.
+Narration is spoken by Kokoro-82M (Apache-2.0) through MLX, driven by
+`tts_kokoro.py` inside the TTS virtual environment, and cached per line by
+content hash so re-renders reuse the audio. The music is synthesized here: two
+square channels and a noise channel, ducked under the voice.
 """
 from __future__ import annotations
 
 import array
 import hashlib
+import json
 import math
 import subprocess
 import wave
@@ -38,23 +40,49 @@ def write_wav(path: Path, samples: array.array) -> None:
         handle.writeframes(samples.tobytes())
 
 
-def speak(text: str, voice: str, rate: int, cache: Path) -> Path:
-    """Render one narration line, cached by voice, rate and text."""
-    digest = hashlib.sha1(f"{voice}|{rate}|{text}".encode()).hexdigest()[:16]
-    out = cache / f"{digest}.wav"
-    if out.exists():
-        return out
+TTS_SCRIPT = Path(__file__).with_name("tts_kokoro.py")
+TTS_PYTHON = Path(__file__).resolve().parents[2] / ".pocket-build" / "tts" / "venv" / "bin" / "python"
+
+
+def _digest(voice: str, speed: float, text: str) -> str:
+    return hashlib.sha1(f"kokoro|{voice}|{speed}|{text}".encode()).hexdigest()[:16]
+
+
+def prepare(texts, voice: str, speed: float, cache: Path, python: Path = TTS_PYTHON) -> dict:
+    """Speak every missing line in one model load; return text -> 48 kHz WAV."""
     cache.mkdir(parents=True, exist_ok=True)
-    aiff = cache / f"{digest}.aiff"
-    _run(["say", "-v", voice, "-r", str(rate), "-o", str(aiff), text])
-    _run([
-        "ffmpeg", "-y", "-loglevel", "error", "-i", str(aiff),
-        "-ac", "1", "-ar", str(RATE),
-        "-af", "highpass=f=85,dynaudnorm=f=250:g=5:p=0.62,alimiter=limit=0.92",
-        str(out),
-    ])
-    aiff.unlink(missing_ok=True)
-    return out
+    raw = {text: cache / f"{_digest(voice, speed, text)}.kokoro.wav" for text in texts}
+    final = {text: cache / f"{_digest(voice, speed, text)}.wav" for text in texts}
+    missing = [text for text in texts if not final[text].exists() and not raw[text].exists()]
+    if missing:
+        if not Path(python).exists():
+            raise SystemExit(
+                f"TTS environment missing at {python}.\n"
+                "Create it with:\n"
+                "  uv venv --python 3.12 .pocket-build/tts/venv\n"
+                "  uv pip install --python .pocket-build/tts/venv/bin/python mlx-audio soundfile socksio 'misaki[en]' \\\n"
+                "    https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl\n"
+                "  brew install espeak-ng\n"
+                "or render without narration using --no-audio."
+            )
+        manifest = cache / "manifest.json"
+        manifest.write_text(json.dumps([{"text": text, "out": str(raw[text])} for text in missing]))
+        subprocess.run(
+            [str(python), str(TTS_SCRIPT), "--manifest", str(manifest), "--voice", voice, "--speed", str(speed)],
+            check=True,
+        )
+        manifest.unlink(missing_ok=True)
+    for text in texts:
+        if final[text].exists():
+            continue
+        _run([
+            "ffmpeg", "-y", "-loglevel", "error", "-i", str(raw[text]),
+            "-ac", "1", "-ar", str(RATE),
+            "-af", "highpass=f=70,dynaudnorm=f=250:g=5:p=0.65,alimiter=limit=0.94",
+            str(final[text]),
+        ])
+        raw[text].unlink(missing_ok=True)
+    return final
 
 
 def duration(path: Path) -> float:
